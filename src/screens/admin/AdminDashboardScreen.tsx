@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 import { ActionTile } from '../../components/ActionTile';
-import { Badge, dayStatusMeta } from '../../components/Badge';
+import { Badge, type BadgeTone } from '../../components/Badge';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { Screen } from '../../components/Screen';
@@ -17,7 +17,7 @@ import {
 import type { RootNavigation } from '../../navigation/types';
 import { buildDailySummary } from '../../services/attendanceLogic';
 import { colors, fontSize, spacing } from '../../theme';
-import type { DailySummary, DayStatus, Schedule } from '../../types';
+import type { DailySummary, Schedule, StaffDayRecord } from '../../types';
 import {
   formatClockTime,
   formatDateLong,
@@ -36,19 +36,22 @@ const EMPTY_SUMMARY: DailySummary = {
   records: [],
 };
 
-function highlightFor(status: DayStatus): StaffRowHighlight {
-  switch (status) {
-    case 'late':
-      return 'warning';
-    case 'early_exit':
-      return 'danger';
-    case 'absent':
-      return 'none';
-    case 'on_time':
-      return 'success';
-    default:
-      return 'info';
+function highlightFor(record: {
+  log: StaffDayRecord['log'];
+}): StaffRowHighlight {
+  if (!record.log) {
+    return 'none';
   }
+  if (record.log.clockOutStatus === 'early') {
+    return 'danger';
+  }
+  if (record.log.clockInStatus === 'late') {
+    return 'warning';
+  }
+  if (record.log.clockOutTime) {
+    return 'info';
+  }
+  return 'success';
 }
 
 export function AdminDashboardScreen() {
@@ -157,22 +160,53 @@ export function AdminDashboardScreen() {
             />
           ) : (
             summary.records.map((record) => {
-              const meta = dayStatusMeta(record.status);
+              const { log } = record;
+              const arrival: { label: string; tone: BadgeTone } = !log
+                ? { label: 'Absent', tone: 'neutral' }
+                : log.clockInStatus === 'late'
+                  ? { label: 'Late', tone: 'warning' }
+                  : { label: 'Present', tone: 'success' };
+
+              const departure: { label: string; tone: BadgeTone } | null =
+                log?.clockOutTime
+                  ? log.clockOutStatus === 'early'
+                    ? { label: 'Early exit', tone: 'danger' }
+                    : { label: 'Clocked out', tone: 'info' }
+                  : null;
+
+              const detailBits: string[] = [];
+              if (log) {
+                detailBits.push(`In ${formatTime12h(log.clockInTime)}`);
+                if (log.clockInStatus === 'late') {
+                  detailBits.push(`${log.minutesLate}m late`);
+                }
+                if (log.clockOutTime) {
+                  detailBits.push(`Out ${formatTime12h(log.clockOutTime)}`);
+                }
+                if (log.clockOutStatus === 'early') {
+                  detailBits.push(`${log.minutesEarly}m early`);
+                }
+              }
+
               return (
                 <StaffRow
                   key={record.staff.id}
                   staff={record.staff}
-                  highlight={highlightFor(record.status)}
-                  badge={<Badge label={meta.label} tone={meta.tone} />}
+                  highlight={highlightFor(record)}
+                  badge={
+                    <View style={styles.badges}>
+                      <Badge label={arrival.label} tone={arrival.tone} />
+                      {departure ? (
+                        <Badge
+                          label={departure.label}
+                          tone={departure.tone}
+                        />
+                      ) : null}
+                    </View>
+                  }
                   caption={record.staff.phoneNumber || 'No phone number'}
                   detail={
-                    record.log
-                      ? `In ${formatTime12h(record.log.clockInTime)}${
-                          record.log.clockOutTime
-                            ? ` · Out ${formatTime12h(record.log.clockOutTime)}`
-                            : ''
-                        }`
-                      : 'No clock-in recorded'
+                    log ? detailBits.join(' · ') : 'No clock-in recorded'
                   }
                   onPress={() =>
                     navigation.navigate('RegisterStaff', {
@@ -249,6 +283,12 @@ const styles = StyleSheet.create({
   },
   listCard: {
     overflow: 'hidden',
+  },
+  badges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: spacing.xs,
   },
   footnote: {
     marginTop: spacing.lg,

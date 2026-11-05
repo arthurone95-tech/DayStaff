@@ -168,14 +168,26 @@ export function buildDailySummary(date: string): DailySummary {
   const count = (status: DayStatus) =>
     records.filter((record) => record.status === status).length;
 
+  const withLog = records.filter((record) => record.log !== null);
+
   return {
     date,
     totalStaff: staff.length,
-    present: count('on_time'),
-    late: count('late'),
+    // Arrival categories are mutually exclusive.
+    present: withLog.filter(
+      (record) => record.log?.clockInStatus === 'on_time',
+    ).length,
+    late: withLog.filter((record) => record.log?.clockInStatus === 'late')
+      .length,
     absent: count('absent'),
-    clockedOut: count('clocked_out'),
-    earlyExit: count('early_exit'),
+    // Departure categories count everyone who has left, independently of
+    // whether they arrived late.
+    clockedOut: withLog.filter((record) => record.log?.clockOutTime).length,
+    earlyExit: withLog.filter(
+      (record) =>
+        record.log?.clockOutTime &&
+        record.log.clockOutStatus === 'early',
+    ).length,
     records,
   };
 }
