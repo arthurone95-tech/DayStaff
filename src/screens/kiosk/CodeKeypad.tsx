@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     padding: 3,
   },
   key: {
-    height: 42,
+    height: 50,
     borderRadius: radius.sm,
     backgroundColor: colors.kioskSurface,
     borderWidth: 1,
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
   },
   keyLabel: {
     color: colors.kioskText,
-    fontSize: fontSize.md,
+    fontSize: fontSize.lg,
     fontWeight: '700',
   },
   keyLabelDigit: {
