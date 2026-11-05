@@ -25,7 +25,6 @@ export interface Staff {
   fullName: string;
   /** Short alphanumeric code entered on the kiosk keypad. */
   staffCode: string;
-  phoneNumber: string;
   photoUri: string | null;
   /** Visual fingerprint of the profile photo, used by face mode. */
   faceSignature: string | null;
@@ -36,7 +35,6 @@ export interface Staff {
 export interface NewStaff {
   fullName: string;
   staffCode: string;
-  phoneNumber: string;
   photoUri: string | null;
   faceSignature: string | null;
 }

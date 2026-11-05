@@ -121,7 +121,7 @@ After setup, the kiosk is locked. From there:
 - **Excel (.xlsx)** with an `Attendance` sheet and a `Daily totals` sheet.
 - **CSV** for lightweight sharing.
 - Ranges: today, a chosen month, or all time.
-- Includes staff code and phone number columns.
+- Includes staff code column.
 - Handed to the OS share sheet (WhatsApp, email, Files).
 
 ---
@@ -153,7 +153,7 @@ docs/             PRD, technical plan, build phases
 
 | Table             | Purpose                                                        |
 | ----------------- | -------------------------------------------------------------- |
-| `staff`           | name, kiosk code, phone, photo URI, face signature, active flag |
+| `staff`           | name, kiosk code, photo URI, face signature, active flag |
 | `schedules`       | single row: start time, grace minutes, closing time            |
 | `attendance_logs` | one row per staff per day: in/out timestamps, status, minutes  |
 | `app_settings`    | hashed admin PIN, company name, auth method, setup marker      |

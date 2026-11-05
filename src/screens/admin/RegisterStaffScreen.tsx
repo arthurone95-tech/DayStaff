@@ -53,7 +53,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
 
   const [fullName, setFullName] = useState('');
   const [staffCode, setStaffCode] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [initialPhoto, setInitialPhoto] = useState<string | null>(null);
   const [faceSignature, setFaceSignature] = useState<string | null>(null);
@@ -75,7 +74,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       if (existing) {
         setFullName(existing.fullName);
         setStaffCode(existing.staffCode);
-        setPhoneNumber(existing.phoneNumber);
         setPhotoUri(existing.photoUri);
         setInitialPhoto(existing.photoUri);
         setFaceSignature(existing.faceSignature);
@@ -148,7 +146,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
         updateStaff(staffId, {
           fullName,
           staffCode: normalizedCode,
-          phoneNumber,
           photoUri,
           faceSignature: nextSignature,
         });
@@ -159,7 +156,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
         createStaff({
           fullName,
           staffCode: normalizedCode,
-          phoneNumber,
           photoUri,
           faceSignature: nextSignature,
         });

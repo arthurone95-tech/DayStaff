@@ -21,7 +21,6 @@ interface StaffRow {
   id: number;
   full_name: string;
   staff_code: string | null;
-  phone_number: string;
   photo_uri: string | null;
   face_signature: string | null;
   is_active: number;
@@ -58,7 +57,6 @@ const mapStaff = (row: StaffRow): Staff => ({
   id: row.id,
   fullName: row.full_name,
   staffCode: row.staff_code ?? '',
-  phoneNumber: row.phone_number,
   photoUri: row.photo_uri,
   faceSignature: row.face_signature,
   isActive: row.is_active,
@@ -136,12 +134,11 @@ export function createStaff(input: NewStaff): Staff {
   const createdAt = new Date().toISOString();
   const result = getDb().runSync(
     `INSERT INTO staff
-       (full_name, staff_code, phone_number, photo_uri, face_signature, is_active, created_at)
-     VALUES (?, ?, ?, ?, ?, 1, ?)`,
+       (full_name, staff_code, photo_uri, face_signature, is_active, created_at)
+     VALUES (?, ?, ?, ?, 1, ?)`,
     [
       input.fullName.trim(),
       input.staffCode.trim().toUpperCase(),
-      input.phoneNumber.trim(),
       input.photoUri,
       input.faceSignature,
       createdAt,
@@ -157,12 +154,11 @@ export function createStaff(input: NewStaff): Staff {
 export function updateStaff(id: number, input: NewStaff): Staff {
   getDb().runSync(
     `UPDATE staff
-     SET full_name = ?, staff_code = ?, phone_number = ?, photo_uri = ?, face_signature = ?
+     SET full_name = ?, staff_code = ?, photo_uri = ?, face_signature = ?
      WHERE id = ?`,
     [
       input.fullName.trim(),
       input.staffCode.trim().toUpperCase(),
-      input.phoneNumber.trim(),
       input.photoUri,
       input.faceSignature,
       id,
@@ -327,7 +323,6 @@ export interface ExportLogRow {
   log: AttendanceLog;
   staffName: string;
   staffCode: string;
-  phoneNumber: string;
 }
 
 export function getExportLogs(
@@ -335,7 +330,7 @@ export function getExportLogs(
   endDate: string,
 ): ExportLogRow[] {
   const rows = getDb().getAllSync<ExportRow>(
-    `SELECT l.*, s.full_name, s.staff_code, s.phone_number
+    `SELECT l.*, s.full_name, s.staff_code
      FROM attendance_logs l
      JOIN staff s ON s.id = l.staff_id
      WHERE l.date BETWEEN ? AND ?
@@ -346,7 +341,6 @@ export function getExportLogs(
     log: mapLog(row),
     staffName: row.full_name,
     staffCode: row.staff_code ?? '',
-    phoneNumber: row.phone_number,
   }));
 }
 

@@ -203,12 +203,8 @@ export function AdminDashboardScreen() {
                   }
                   caption={
                     record.staff.staffCode
-                      ? `#${record.staff.staffCode}${
-                          record.staff.phoneNumber
-                            ? ` · ${record.staff.phoneNumber}`
-                            : ''
-                        }`
-                      : record.staff.phoneNumber || 'No phone number'
+                      ? `#${record.staff.staffCode}`
+                      : 'No staff code'
                   }
                   detail={
                     log ? detailBits.join(' · ') : 'No clock-in recorded'

@@ -65,9 +65,7 @@ export function StaffListScreen() {
           <StaffRow
             staff={item}
             caption={
-              item.staffCode
-                ? `#${item.staffCode}${item.phoneNumber ? ` · ${item.phoneNumber}` : ''}`
-                : item.phoneNumber || 'No phone number'
+              item.staffCode ? `#${item.staffCode}` : 'No staff code'
             }
             badge={
               <Badge

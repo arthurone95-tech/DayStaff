@@ -39,7 +39,6 @@ function migrate(db: SQLite.SQLiteDatabase): void {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         full_name TEXT NOT NULL,
         staff_code TEXT,
-        phone_number TEXT NOT NULL DEFAULT '',
         photo_uri TEXT,
         face_signature TEXT,
         is_active INTEGER NOT NULL DEFAULT 1,
