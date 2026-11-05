@@ -249,7 +249,12 @@ export async function exportAttendanceReport(
   const rows = getExportLogs(startDate, endDate);
   const safeLabel = label.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
   const fileName = `DayStaff-${safeLabel}.${options.format}`;
-  const uri = `${FileSystem.cacheDirectory}${fileName}`;
+  const baseDirectory =
+    FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+  if (!baseDirectory) {
+    throw new Error('No writable directory is available on this device.');
+  }
+  const uri = `${baseDirectory}${fileName}`;
 
   if (options.format === 'csv') {
     const table = [HEADERS, ...buildRows(rows)];

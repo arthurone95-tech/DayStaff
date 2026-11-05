@@ -10,7 +10,7 @@ import {
 
 import { AppButton } from '../../components/AppButton';
 import { PinInput } from '../../components/PinInput';
-import { verifyAdminPin } from '../../services/pinService';
+import { DEFAULT_ADMIN_PIN, verifyAdminPin } from '../../services/pinService';
 import { colors, fontSize, radius, shadow, spacing } from '../../theme';
 
 interface AdminPinModalProps {
@@ -27,13 +27,32 @@ export function AdminPinModal({
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [checking, setChecking] = useState(false);
+  const [showDefaultHint, setShowDefaultHint] = useState(false);
 
   useEffect(() => {
-    if (visible) {
-      setPin('');
-      setError(undefined);
-      setChecking(false);
+    if (!visible) {
+      return;
     }
+    setPin('');
+    setError(undefined);
+    setChecking(false);
+
+    let mounted = true;
+    verifyAdminPin(DEFAULT_ADMIN_PIN)
+      .then((isDefault) => {
+        if (mounted) {
+          setShowDefaultHint(isDefault);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setShowDefaultHint(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, [visible]);
 
   const handleUnlock = async () => {
@@ -106,7 +125,9 @@ export function AdminPinModal({
             />
           </View>
 
-          <Text style={styles.hint}>First run? The default PIN is 1234.</Text>
+          {showDefaultHint ? (
+            <Text style={styles.hint}>First run? The default PIN is 1234.</Text>
+          ) : null}
         </View>
       </View>
     </Modal>
