@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "DayStaff",
+    "slug": "daystaff",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "daystaff",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#12263F"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.daystaff.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "DayStaff uses Face ID to verify staff attendance."
+      }
+    },
+    "android": {
+      "package": "com.daystaff.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "CAMERA",
+        "READ_MEDIA_IMAGES"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow DayStaff to use Face ID for staff attendance verification."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow DayStaff to choose staff profile photos.",
+          "cameraPermission": "Allow DayStaff to take staff profile photos.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-sqlite",
+      "expo-sharing",
+      "expo-font"
+    ]
+  }
+}
