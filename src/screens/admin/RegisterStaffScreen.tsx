@@ -4,6 +4,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -38,8 +40,6 @@ import { colors, fontSize, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RegisterStaff'>;
 
-const PHONE_PATTERN = /^[+()\d\s-]{6,20}$/;
-
 function normalizeCode(value: string): string {
   return value
     .toUpperCase()
@@ -61,7 +61,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   const [errors, setErrors] = useState<{
     name?: string;
     code?: string;
-    phone?: string;
   }>({});
   const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
@@ -87,7 +86,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   }, [isEditing, staffId, navigation]);
 
   const validate = (): boolean => {
-    const next: { name?: string; code?: string; phone?: string } = {};
+    const next: { name?: string; code?: string } = {};
     if (!fullName.trim()) {
       next.name = 'Full name is required.';
     }
@@ -105,9 +104,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       next.code = 'That code is already assigned to another staff member.';
     }
 
-    if (phoneNumber.trim() && !PHONE_PATTERN.test(phoneNumber.trim())) {
-      next.phone = 'Enter a valid phone number (6–20 digits).';
-    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -215,11 +211,17 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
 
   return (
     <Screen>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.keyboardWrap}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator={false}
+        >
         <Card style={styles.photoCard}>
           <Avatar
             name={fullName || 'New staff'}
@@ -282,7 +284,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
             maxLength={80}
           />
           <TextField
-            label="Kiosk staff code"
+            label="Staff ID / code"
             value={staffCode}
             onChangeText={(value) => {
               setStaffCode(normalizeCode(value));
@@ -293,20 +295,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
             error={errors.code}
             hint={`${STAFF_CODE_MIN_LENGTH}–${STAFF_CODE_MAX_LENGTH} letters or numbers. Staff type this on the kiosk keypad, so it must be unique.`}
             maxLength={STAFF_CODE_MAX_LENGTH}
-          />
-          <TextField
-            label="Phone number"
-            value={phoneNumber}
-            onChangeText={(value) => {
-              setPhoneNumber(value);
-              setErrors((prev) => ({ ...prev, phone: undefined }));
-            }}
-            placeholder="e.g. 024 123 4567"
-            keyboardType="phone-pad"
-            autoCapitalize="none"
-            error={errors.phone}
-            hint="Optional, but useful for admin contact."
-            maxLength={20}
           />
 
           <AppButton
@@ -353,12 +341,16 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
             match, so use a clear, front-facing portrait when possible.
           </Text>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardWrap: {
+    flex: 1,
+  },
   content: {
     padding: spacing.lg,
     paddingBottom: spacing.xxl,

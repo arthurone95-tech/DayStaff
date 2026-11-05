@@ -50,6 +50,8 @@ export function TimeField({
   minuteStep = 5,
 }: TimeFieldProps) {
   const { hours, minutes } = parseTimeString(value);
+  const isPm = hours >= 12;
+  const displayHour = hours % 12 === 0 ? 12 : hours % 12;
 
   const shift = (deltaMinutes: number) => {
     const total = (hours * 60 + minutes + deltaMinutes + 1440) % 1440;
@@ -57,6 +59,18 @@ export function TimeField({
       partsToTimeString({
         hours: Math.floor(total / 60),
         minutes: total % 60,
+      }),
+    );
+  };
+
+  const setPeriod = (period: 'AM' | 'PM') => {
+    if ((period === 'PM') === isPm) {
+      return;
+    }
+    onChange(
+      partsToTimeString({
+        hours: (hours % 12) + (period === 'PM' ? 12 : 0),
+        minutes,
       }),
     );
   };
@@ -70,7 +84,7 @@ export function TimeField({
       <View style={styles.steppers}>
         <Stepper
           label="Hour"
-          value={String(hours).padStart(2, '0')}
+          value={String(displayHour).padStart(2, '0')}
           onDecrement={() => shift(-60)}
           onIncrement={() => shift(60)}
         />
@@ -80,6 +94,38 @@ export function TimeField({
           onDecrement={() => shift(-minuteStep)}
           onIncrement={() => shift(minuteStep)}
         />
+      </View>
+
+      <View style={styles.periodRow}>
+        <Text style={styles.periodCaption}>AM / PM</Text>
+        <View style={styles.periodToggle}>
+          {(['AM', 'PM'] as const).map((period) => {
+            const active = (period === 'PM') === isPm;
+            return (
+              <Pressable
+                key={period}
+                onPress={() => setPeriod(period)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={`Set time to ${period}`}
+                style={({ pressed }) => [
+                  styles.periodButton,
+                  active && styles.periodButtonActive,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.periodLabel,
+                    active && styles.periodLabelActive,
+                  ]}
+                >
+                  {period}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -104,6 +150,7 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '700',
     color: colors.primary,
+    fontVariant: ['tabular-nums'],
   },
   steppers: {
     flexDirection: 'row',
@@ -148,5 +195,50 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.slate900,
     fontVariant: ['tabular-nums'],
+  },
+  periodRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    backgroundColor: colors.slate50,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  periodCaption: {
+    fontSize: fontSize.xs,
+    color: colors.slate500,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    fontWeight: '600',
+  },
+  periodToggle: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  periodButton: {
+    minWidth: 58,
+    height: 36,
+    borderRadius: radius.sm,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  periodButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  periodLabel: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.slate500,
+  },
+  periodLabelActive: {
+    color: colors.white,
   },
 });

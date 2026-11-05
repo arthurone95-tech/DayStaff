@@ -7,11 +7,18 @@
  */
 
 import * as LocalAuthentication from 'expo-local-authentication';
+import { Platform } from 'react-native';
+
+export type BiometricKind = 'face' | 'fingerprint' | 'iris' | 'none';
 
 export interface BiometricStatus {
   hasHardware: boolean;
   isEnrolled: boolean;
   available: boolean;
+  /** Sensor type reported by the OS (Face ID, fingerprint, iris). */
+  kind: BiometricKind;
+  /** Human-readable sensor name, e.g. "Face ID" or "Fingerprint". */
+  label: string;
   message: string;
 }
 
@@ -22,33 +29,115 @@ export interface BiometricResult {
   error?: string;
 }
 
-export async function getBiometricStatus(): Promise<BiometricStatus> {
-  const [hasHardware, isEnrolled] = await Promise.all([
-    LocalAuthentication.hasHardwareAsync(),
-    LocalAuthentication.isEnrolledAsync(),
-  ]);
-
-  let message = 'Biometric verification is ready.';
-  if (!hasHardware) {
-    message = 'This device has no biometric hardware.';
-  } else if (!isEnrolled) {
-    message =
-      'No fingerprint or Face ID is enrolled on this device. Enroll one in device settings.';
+function resolveKind(
+  types: LocalAuthentication.AuthenticationType[],
+): BiometricKind {
+  if (
+    types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)
+  ) {
+    return 'face';
   }
+  if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+    return 'fingerprint';
+  }
+  if (types.includes(LocalAuthentication.AuthenticationType.IRIS)) {
+    return 'iris';
+  }
+  return 'none';
+}
 
-  return {
-    hasHardware,
-    isEnrolled,
-    available: hasHardware && isEnrolled,
-    message,
-  };
+function labelForKind(kind: BiometricKind): string {
+  if (kind === 'face') {
+    return Platform.OS === 'ios' ? 'Face ID' : 'Face recognition';
+  }
+  if (kind === 'iris') {
+    return 'Iris scan';
+  }
+  if (kind === 'fingerprint') {
+    return 'Fingerprint';
+  }
+  return 'Biometrics';
 }
 
 /**
- * Prompt for fingerprint / Face ID.
+ * Inspect the physical sensor and enrolment state before any prompt is shown.
+ * This lets the kiosk explain *why* verification is unavailable on iOS Face ID
+ * devices, Android sensors, and hardware without biometrics.
+ */
+export async function getBiometricStatus(): Promise<BiometricStatus> {
+  try {
+    const [hasHardware, isEnrolled, supportedTypes] = await Promise.all([
+      LocalAuthentication.hasHardwareAsync(),
+      LocalAuthentication.isEnrolledAsync(),
+      LocalAuthentication.supportedAuthenticationTypesAsync(),
+    ]);
+
+    const kind = resolveKind(supportedTypes);
+    const label = labelForKind(kind);
+
+    let message = `${label} is ready.`;
+    if (!hasHardware) {
+      message =
+        'This device has no biometric sensor. Use a device with Face ID, Touch ID, or a fingerprint sensor.';
+    } else if (!isEnrolled) {
+      message = `No ${label.toLowerCase()} is enrolled on this device. Add one in the device settings, then return to the kiosk.`;
+    }
+
+    return {
+      hasHardware,
+      isEnrolled,
+      available: hasHardware && isEnrolled,
+      kind,
+      label,
+      message,
+    };
+  } catch (error) {
+    return {
+      hasHardware: false,
+      isEnrolled: false,
+      available: false,
+      kind: 'none',
+      label: 'Biometrics',
+      message:
+        error instanceof Error
+          ? `Biometric check failed: ${error.message}`
+          : 'Could not read the device biometric sensor.',
+    };
+  }
+}
+
+function mapFailure(error: LocalAuthentication.LocalAuthenticationError): string {
+  switch (error) {
+    case 'user_cancel':
+    case 'app_cancel':
+    case 'system_cancel':
+      return 'Verification cancelled.';
+    case 'lockout':
+      return 'Too many attempts. Wait a moment and try again.';
+    case 'not_available':
+      return 'Biometric verification is not available on this device.';
+    case 'not_enrolled':
+      return 'No biometric is enrolled on this device. Add one in the device settings.';
+    case 'passcode_not_set':
+      return 'The device has no passcode or biometric enrolled.';
+    case 'timeout':
+      return 'The biometric prompt timed out. Try again.';
+    case 'user_fallback':
+      return 'Device passcode fallback is disabled. Try your biometric again.';
+    case 'authentication_failed':
+      return 'Biometric verification failed. Try again.';
+    default:
+      return 'Biometric verification failed.';
+  }
+}
+
+/**
+ * Prompt for the sensor reported by the OS (Face ID / Touch ID / fingerprint).
  *
- * In development, an unavailable sensor falls back to a simulated success so
- * the kiosk can be exercised on simulators. Production builds stay strict.
+ * Device passcode fallback is intentionally disabled: the kiosk must verify a
+ * biometric, not the shared device passcode. In development, an unavailable
+ * sensor falls back to a simulated success so the kiosk can be exercised on
+ * simulators; production builds stay strict.
  */
 export async function authenticateBiometric(
   promptMessage = 'Verify your identity to record attendance',
@@ -68,9 +157,16 @@ export async function authenticateBiometric(
   try {
     const result = await LocalAuthentication.authenticateAsync({
       promptMessage,
+      promptSubtitle:
+        status.kind === 'face' ? 'Look at the front camera' : undefined,
+      promptDescription:
+        status.kind === 'face'
+          ? 'Confirm your attendance with Face ID.'
+          : 'Confirm your attendance with your enrolled biometric.',
       cancelLabel: 'Cancel',
-      fallbackLabel: 'Use device passcode',
-      disableDeviceFallback: false,
+      // Never surface the OS device-passcode prompt for attendance.
+      disableDeviceFallback: true,
+      fallbackLabel: '',
       requireConfirmation: false,
     });
 
@@ -78,14 +174,7 @@ export async function authenticateBiometric(
       return { success: true };
     }
 
-    const error =
-      result.error === 'user_cancel'
-        ? 'Verification cancelled.'
-        : result.error === 'lockout'
-          ? 'Too many attempts. Try again later.'
-          : 'Biometric verification failed.';
-
-    return { success: false, error };
+    return { success: false, error: mapFailure(result.error) };
   } catch (error) {
     return {
       success: false,

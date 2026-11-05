@@ -53,12 +53,18 @@ After setup, the kiosk is locked. From there:
 
 ### Staff code + biometrics (recommended)
 
-- A compact alphanumeric keypad occupies the lower part of the screen; no
-  native QWERTY keyboard is needed.
+- A full-width alphanumeric keypad occupies the lower part of the screen; no
+  native QWERTY keyboard is needed. Letters use a balanced 9-column grid and
+  numbers a separate 5-column grid with a visible divider.
+- A prominent scan card shows the detected sensor (Face ID, fingerprint or
+  iris) and whether it is ready, scanning or unavailable.
 - The staff member types their code. When the code resolves to exactly one
   staff member, the device biometric prompt appears automatically.
 - On success, attendance is recorded and the summary card shows the staff
   name, photo, clock-in/out status and late/early minutes.
+- The device sensor is checked before prompting. Biometric prompts never fall
+  back to the shared device passcode; failed or unavailable sensors show a
+  clear message instead.
 - The "Verify" key retries the biometric prompt if it is cancelled.
 
 ### Face recognition (beta)
@@ -87,7 +93,11 @@ After setup, the kiosk is locked. From there:
 - Dual-mode authentication (staff code + biometrics, or face capture).
 - The state engine records one of:
   - **Clock in** — no record today → on time or late.
-  - **Clock out** — clocked in, not yet out → on time or early.
+  - **Already signed in** — clocked in before closing → a status card offers a
+    prominent manual **Sign out now** action (recorded as an early exit when
+    applicable).
+  - **Clock out** — verification at or after closing finalises the day
+    automatically; on time or early.
   - **Already clocked out** — both records exist.
 - Feedback modal shows the staff member's name, photo, status badge, times and
   exact minutes late/early.
@@ -99,7 +109,8 @@ After setup, the kiosk is locked. From there:
 - Live daily summary: total staff, present, late, clocked out, early exit,
   absent.
 - Colour-coded staff rows (emerald / amber / coral) for instant visibility.
-- Staff registration with camera or gallery photo, phone number and kiosk code.
+- Staff registration with full name, unique staff ID/code and an optional
+  camera or gallery profile photo.
 - Editing, deactivation/reactivation (history preserved).
 - Schedule configuration: official start, grace period, closing time.
 - Auth-mode switch, company name, PIN change, biometric readiness check and
@@ -158,8 +169,12 @@ strings; the local date key (`YYYY-MM-DD`) groups daily records.
 - **On time**: clock-in within `startTime + grace`.
 - **Late**: clock-in after the grace period. Minutes late are measured beyond
   the grace period.
-- **Clocked out**: departure at or after `endTime`.
-- **Early exit**: departure before `endTime`; minutes early are shown.
+- **Already signed in**: a second verification before `endTime` does not clock
+  the staff member out automatically. The kiosk shows the signed-in status card
+  and a manual **Sign out now** button instead.
+- **Clocked out**: verification at or after `endTime` finalises the day
+  automatically.
+- **Early exit**: a manual sign-out before `endTime`; minutes early are shown.
 - No record today = **Absent** on the dashboard.
 
 ## Notes & limitations
@@ -173,6 +188,12 @@ strings; the local date key (`YYYY-MM-DD`) groups daily records.
 - Native device biometrics authenticate the person enrolled on the *device*;
   they cannot enrol each staff member individually with Expo managed APIs.
   Code mode therefore binds the device-level check to an explicit staff code.
+- The kiosk detects the available sensor with
+  `supportedAuthenticationTypesAsync()` (Face ID / Touch ID / fingerprint /
+  iris). Device-passcode fallback is disabled, so the shared passcode can never
+  be used in place of a biometric.
+- Phone numbers are no longer collected during staff registration. Existing
+  records keep any previously stored number for exports.
 - Face mode is a beta heuristic, not a certified biometric system. It always
   falls back to the staff-code keypad and asks for confirmation on uncertain
   matches. Do not use it as the sole identity factor for high-security

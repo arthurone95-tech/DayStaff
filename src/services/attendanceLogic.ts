@@ -66,6 +66,48 @@ export function evaluateClockOut(
   };
 }
 
+/** True when the current time is at or past the configured closing time. */
+export function isAtOrAfterClosing(
+  now: Date,
+  schedule: Schedule,
+  dateKey: string = toDateKey(now),
+): boolean {
+  const scheduledEnd = combineDateAndTime(dateKey, schedule.endTime);
+  return now.getTime() >= scheduledEnd.getTime();
+}
+
+function completeClockOut(
+  staff: Staff,
+  existing: AttendanceLog,
+  now: Date,
+  schedule: Schedule,
+  date: string,
+): AttendanceResult {
+  const evaluation = evaluateClockOut(now, schedule, date);
+  const log = updateClockOut({
+    logId: existing.id,
+    clockOutTime: now.toISOString(),
+    status: evaluation.status,
+    minutesEarly: evaluation.minutesEarly,
+  });
+
+  const detail =
+    evaluation.status === 'early'
+      ? `Left ${formatDuration(evaluation.minutesEarly)} early`
+      : 'On time';
+
+  return {
+    action: 'clock_out',
+    staff,
+    log,
+    message:
+      evaluation.status === 'early'
+        ? 'Clocked out — early departure'
+        : 'Clocked out — on time',
+    detail,
+  };
+}
+
 export function deriveDayStatus(log: AttendanceLog | null): DayStatus {
   if (!log) {
     return 'absent';
@@ -116,29 +158,22 @@ export function recordAttendance(
   }
 
   if (!existing.clockOutTime) {
-    const evaluation = evaluateClockOut(now, schedule, date);
-    const log = updateClockOut({
-      logId: existing.id,
-      clockOutTime: now.toISOString(),
-      status: evaluation.status,
-      minutesEarly: evaluation.minutesEarly,
-    });
+    // During the shift an existing clock-in must not silently become a
+    // clock-out. Show a status card instead so the staff member can choose to
+    // leave early. At/after closing time, verification finalises the day.
+    if (!isAtOrAfterClosing(now, schedule, date)) {
+      return {
+        action: 'already_signed_in',
+        staff,
+        log: existing,
+        message: 'Already signed in',
+        detail: `Signed in at ${formatTime12h(
+          existing.clockInTime,
+        )}. Sign out below when you leave.`,
+      };
+    }
 
-    const detail =
-      evaluation.status === 'early'
-        ? `Left ${formatDuration(evaluation.minutesEarly)} early`
-        : 'On time';
-
-    return {
-      action: 'clock_out',
-      staff,
-      log,
-      message:
-        evaluation.status === 'early'
-          ? 'Clocked out — early departure'
-          : 'Clocked out — on time',
-      detail,
-    };
+    return completeClockOut(staff, existing, now, schedule, date);
   }
 
   return {
@@ -150,6 +185,37 @@ export function recordAttendance(
     )}`,
     detail: `Clocked in at ${formatTime12h(existing.clockInTime)}`,
   };
+}
+
+/**
+ * Manually sign a staff member out (used by the "Already signed in" card).
+ * Early departures are allowed and recorded as an early exit.
+ */
+export function clockOutStaff(
+  staff: Staff,
+  now: Date = new Date(),
+): AttendanceResult {
+  const date = toDateKey(now);
+  const schedule = getSchedule();
+  const existing = getLogForStaffOnDate(staff.id, date);
+
+  if (!existing) {
+    throw new Error('No clock-in has been recorded for today.');
+  }
+
+  if (existing.clockOutTime) {
+    return {
+      action: 'already_completed',
+      staff,
+      log: existing,
+      message: `Already clocked out for today at ${formatTime12h(
+        existing.clockOutTime,
+      )}`,
+      detail: `Clocked in at ${formatTime12h(existing.clockInTime)}`,
+    };
+  }
+
+  return completeClockOut(staff, existing, now, schedule, date);
 }
 
 /** Build the admin dashboard view for a given local date. */

@@ -19,6 +19,8 @@ interface FeedbackModalProps {
   result: AttendanceResult | null;
   simulated?: boolean;
   onClose: () => void;
+  /** Shows a prominent manual sign-out action for an active shift. */
+  onSignOut?: () => void;
 }
 
 interface FeedbackMeta {
@@ -73,6 +75,17 @@ function getMeta(result: AttendanceResult): FeedbackMeta {
     };
   }
 
+  if (result.action === 'already_signed_in') {
+    return {
+      title: 'Already signed in',
+      badge: 'On shift',
+      tone: 'info',
+      icon: 'information-circle',
+      iconColor: colors.info,
+      iconBackground: colors.infoSoft,
+    };
+  }
+
   return {
     title: 'Session complete',
     badge: 'Already clocked out',
@@ -88,6 +101,7 @@ export function FeedbackModal({
   result,
   simulated = false,
   onClose,
+  onSignOut,
 }: FeedbackModalProps) {
   if (!result) {
     return null;
@@ -128,6 +142,20 @@ export function FeedbackModal({
             <Text style={styles.detail}>{result.detail}</Text>
           ) : null}
 
+          {result.action === 'already_signed_in' && onSignOut ? (
+            <View style={styles.activeShiftNote}>
+              <Ionicons
+                name="time-outline"
+                size={15}
+                color={colors.infoDark}
+              />
+              <Text style={styles.activeShiftText}>
+                You are still on the clock. Sign out now if you are leaving
+                early, or wait until closing time to sign out automatically.
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.times}>
             <View style={styles.timeCell}>
               <Text style={styles.timeLabel}>Clock in</Text>
@@ -159,13 +187,39 @@ export function FeedbackModal({
             </View>
           ) : null}
 
-          <AppButton
-            title="Done"
-            onPress={onClose}
-            variant="primary"
-            size="lg"
-            style={styles.button}
-          />
+          {result.action === 'already_signed_in' && onSignOut ? (
+            <>
+              <AppButton
+                title="Sign out now"
+                onPress={onSignOut}
+                variant="danger"
+                size="lg"
+                style={styles.button}
+                icon={
+                  <Ionicons
+                    name="log-out-outline"
+                    size={20}
+                    color={colors.white}
+                  />
+                }
+              />
+              <AppButton
+                title="Keep working"
+                onPress={onClose}
+                variant="ghost"
+                size="md"
+                style={styles.secondaryButton}
+              />
+            </>
+          ) : (
+            <AppButton
+              title="Done"
+              onPress={onClose}
+              variant="primary"
+              size="lg"
+              style={styles.button}
+            />
+          )}
         </View>
       </View>
     </Modal>
@@ -217,6 +271,21 @@ const styles = StyleSheet.create({
     color: colors.slate700,
     textAlign: 'center',
   },
+  activeShiftNote: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.infoSoft,
+  },
+  activeShiftText: {
+    flex: 1,
+    fontSize: fontSize.xs,
+    lineHeight: 18,
+    color: colors.infoDark,
+  },
   times: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -266,6 +335,10 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: spacing.lg,
+    alignSelf: 'stretch',
+  },
+  secondaryButton: {
+    marginTop: spacing.sm,
     alignSelf: 'stretch',
   },
 });

@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
 import { AuthMethodPicker } from '../../components/AuthMethodPicker';
@@ -125,11 +133,17 @@ export function AdminSettingsScreen() {
 
   return (
     <Screen>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.keyboardWrap}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator={false}
+        >
         <Card>
           <Text style={styles.cardTitle}>Company details</Text>
           <Text style={styles.cardHint}>
@@ -249,6 +263,12 @@ export function AdminSettingsScreen() {
                 color={biometric?.isEnrolled ? colors.success : colors.danger}
               />
             </View>
+            <View style={styles.statusRow}>
+              <Text style={styles.statusLabel}>Detected sensor</Text>
+              <Text style={styles.statusValue}>
+                {biometric?.label ?? 'Checking…'}
+              </Text>
+            </View>
           </View>
 
           <Text style={styles.biometricMessage}>
@@ -271,13 +291,17 @@ export function AdminSettingsScreen() {
           />
         </Card>
 
-        <Text style={styles.version}>DayStaff · v1.1.0 · Offline MVP</Text>
-      </ScrollView>
+          <Text style={styles.version}>DayStaff · v1.1.0 · Offline MVP</Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardWrap: {
+    flex: 1,
+  },
   content: {
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
@@ -339,6 +363,11 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.slate700,
     fontWeight: '600',
+  },
+  statusValue: {
+    fontSize: fontSize.sm,
+    color: colors.slate500,
+    fontWeight: '700',
   },
   biometricMessage: {
     marginTop: spacing.sm,

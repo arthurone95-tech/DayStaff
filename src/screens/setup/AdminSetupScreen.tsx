@@ -3,6 +3,8 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   Alert,
   Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -126,12 +128,18 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
 
   return (
     <Screen edges={['top', 'left', 'right', 'bottom']}>
-      <ScrollView
-        ref={scrollRef}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.keyboardWrap}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.shell}>
           <View style={styles.brandRow}>
             <View style={styles.logo}>
@@ -383,12 +391,16 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
             later from Admin → Settings.
           </Text>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardWrap: {
+    flex: 1,
+  },
   content: {
     flexGrow: 1,
     padding: spacing.lg,

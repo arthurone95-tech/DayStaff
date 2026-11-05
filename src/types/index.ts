@@ -11,7 +11,11 @@ export type DayStatus =
   | 'clocked_out'
   | 'early_exit';
 
-export type AttendanceAction = 'clock_in' | 'clock_out' | 'already_completed';
+export type AttendanceAction =
+  | 'clock_in'
+  | 'clock_out'
+  | 'already_signed_in'
+  | 'already_completed';
 
 /** How the kiosk authenticates a staff member. */
 export type AuthMethod = 'PIN_BIOMETRIC' | 'FACE_RECOGNITION';

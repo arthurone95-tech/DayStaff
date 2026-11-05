@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+} from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
@@ -18,8 +24,12 @@ import { getActiveStaff } from '../../database/queries';
 import { useNow } from '../../hooks/useNow';
 import type { RootNavigation } from '../../navigation/types';
 import { getAuthMethod, getCompanyName } from '../../services/appSettings';
-import { recordAttendance } from '../../services/attendanceLogic';
-import { authenticateBiometric } from '../../services/biometricService';
+import { clockOutStaff, recordAttendance } from '../../services/attendanceLogic';
+import {
+  authenticateBiometric,
+  getBiometricStatus,
+  type BiometricStatus,
+} from '../../services/biometricService';
 import {
   ensureStaffFaceSignatures,
   matchFaceToStaff,
@@ -35,6 +45,98 @@ import { FaceScanPanel } from './FaceScanPanel';
 
 const FEEDBACK_TIMEOUT_MS = 8000;
 
+interface BiometricScanCardProps {
+  status: BiometricStatus | null;
+  active: boolean;
+}
+
+/**
+ * Prominent target that shows where the fingerprint / Face ID check happens
+ * and whether the sensor is ready before (and during) a code scan.
+ */
+function BiometricScanCard({ status, active }: BiometricScanCardProps) {
+  const kind = status?.kind ?? 'fingerprint';
+  const available = status ? status.available : true;
+  const icon: ComponentProps<typeof Ionicons>['name'] =
+    kind === 'face'
+      ? 'scan-outline'
+      : kind === 'iris'
+        ? 'eye-outline'
+        : 'finger-print';
+  const label = status?.label ?? 'Biometrics';
+
+  const title = active
+    ? `Verifying with ${label}…`
+    : available
+      ? `${label} ready`
+      : 'Biometric check unavailable';
+  const hint = active
+    ? 'Hold still and follow the on-screen prompt on this device.'
+    : available
+      ? 'Your identity is verified here automatically after your staff code.'
+      : (status?.message ??
+        'This device cannot verify a biometric. Contact an administrator.');
+
+  return (
+    <View
+      style={[
+        styles.scanCard,
+        active && styles.scanCardActive,
+        !available && styles.scanCardUnavailable,
+      ]}
+      accessibilityRole="summary"
+      accessibilityLabel={`${title}. ${hint}`}
+    >
+      <View
+        style={[
+          styles.scanTarget,
+          active && styles.scanTargetActive,
+          !available && styles.scanTargetUnavailable,
+        ]}
+      >
+        {active ? (
+          <ActivityIndicator color={colors.white} />
+        ) : (
+          <Ionicons
+            name={icon}
+            size={28}
+            color={available ? colors.white : colors.kioskMuted}
+          />
+        )}
+      </View>
+
+      <View style={styles.scanCopy}>
+        <Text style={styles.scanTitle}>{title}</Text>
+        <Text style={styles.scanHint} numberOfLines={3}>
+          {hint}
+        </Text>
+      </View>
+
+      <View
+        style={[
+          styles.scanPill,
+          active && styles.scanPillActive,
+          !available && styles.scanPillUnavailable,
+        ]}
+      >
+        {active ? (
+          <ActivityIndicator size="small" color={colors.kioskText} />
+        ) : (
+          <View
+            style={[
+              styles.scanDot,
+              !available && styles.scanDotUnavailable,
+            ]}
+          />
+        )}
+        <Text style={styles.scanPillLabel}>
+          {active ? 'SCANNING' : available ? 'READY' : 'OFFLINE'}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export function KioskTerminalScreen() {
   const navigation = useNavigation<RootNavigation>();
   const now = useNow(1000);
@@ -43,6 +145,9 @@ export function KioskTerminalScreen() {
   const [companyName, setCompanyName] = useState(DEFAULT_COMPANY_NAME);
   const [authMethod, setAuthMethod] = useState<AuthMethod>(DEFAULT_AUTH_METHOD);
   const [useCodeFallback, setUseCodeFallback] = useState(false);
+  const [biometricStatus, setBiometricStatus] = useState<BiometricStatus | null>(
+    null,
+  );
 
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | undefined>();
@@ -78,6 +183,18 @@ export function KioskTerminalScreen() {
       setPendingMatch(null);
       setCapturedPhotoUri(null);
 
+      void getBiometricStatus()
+        .then((status) => {
+          if (active) {
+            setBiometricStatus(status);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setBiometricStatus(null);
+          }
+        });
+
       if (method === 'FACE_RECOGNITION') {
         void ensureStaffFaceSignatures()
           .then((updated) => {
@@ -97,7 +214,7 @@ export function KioskTerminalScreen() {
   );
 
   useEffect(() => {
-    if (!feedbackVisible) {
+    if (!feedbackVisible || feedback?.action === 'already_signed_in') {
       return;
     }
     const timeout = setTimeout(
@@ -147,6 +264,34 @@ export function KioskTerminalScreen() {
     },
     [faceBusy, processingId],
   );
+
+  const handleManualSignOut = useCallback(() => {
+    if (
+      operationRef.current ||
+      !feedback ||
+      feedback.action !== 'already_signed_in'
+    ) {
+      return;
+    }
+    operationRef.current = true;
+    try {
+      const result = clockOutStaff(feedback.staff);
+      setFeedback(result);
+      setSimulated(false);
+      setFeedbackVisible(true);
+      setCode('');
+      submittedCodeRef.current = null;
+    } catch (error) {
+      Alert.alert(
+        'Could not sign out',
+        error instanceof Error
+          ? error.message
+          : 'An unexpected error occurred.',
+      );
+    } finally {
+      operationRef.current = false;
+    }
+  }, [feedback]);
 
   const handleCodeChange = (next: string) => {
     submittedCodeRef.current = null;
@@ -430,6 +575,10 @@ export function KioskTerminalScreen() {
         >
           {mode === 'CODE' ? (
             <>
+              <BiometricScanCard
+                status={biometricStatus}
+                active={processingId !== null}
+              />
               <CodeKeypad
                 code={code}
                 hint={
@@ -501,6 +650,11 @@ export function KioskTerminalScreen() {
         result={feedback}
         simulated={simulated}
         onClose={closeFeedback}
+        onSignOut={
+          feedback?.action === 'already_signed_in'
+            ? handleManualSignOut
+            : undefined
+        }
       />
 
       <FaceMatchModal
@@ -634,6 +788,86 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  scanCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.kioskSurface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.kioskSurfaceRaised,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  scanCardActive: {
+    borderColor: colors.accent,
+    backgroundColor: 'rgba(59, 130, 246, 0.14)',
+  },
+  scanCardUnavailable: {
+    borderColor: 'rgba(248, 113, 113, 0.55)',
+    backgroundColor: 'rgba(127, 29, 29, 0.22)',
+  },
+  scanTarget: {
+    width: 56,
+    height: 64,
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryLight,
+    borderWidth: 2,
+    borderColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanTargetActive: {
+    backgroundColor: colors.accent,
+  },
+  scanTargetUnavailable: {
+    backgroundColor: colors.kioskSurfaceRaised,
+    borderColor: 'rgba(248, 113, 113, 0.55)',
+  },
+  scanCopy: {
+    flex: 1,
+  },
+  scanTitle: {
+    color: colors.kioskText,
+    fontSize: fontSize.md,
+    fontWeight: '800',
+  },
+  scanHint: {
+    marginTop: 2,
+    color: colors.kioskMuted,
+    fontSize: fontSize.xs,
+    lineHeight: 16,
+  },
+  scanPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(5, 150, 105, 0.16)',
+  },
+  scanPillActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.22)',
+  },
+  scanPillUnavailable: {
+    backgroundColor: 'rgba(220, 38, 38, 0.2)',
+  },
+  scanDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.success,
+  },
+  scanDotUnavailable: {
+    backgroundColor: '#F87171',
+  },
+  scanPillLabel: {
+    color: colors.kioskText,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
   },
   body: {
     flex: 1,

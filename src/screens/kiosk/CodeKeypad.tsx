@@ -5,7 +5,16 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { STAFF_CODE_MAX_LENGTH } from '../../config/app';
 import { colors, fontSize, radius, spacing } from '../../theme';
 
-const KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('');
+/**
+ * Balanced rows keep every key the same height while filling the full width.
+ * Letters use 9 columns (9 / 9 / 8) and numbers use 5 columns (5 / 5), which
+ * removes the unused space on the right and keeps the keypad shorter than the
+ * previous 6 × 6 grid.
+ */
+const LETTER_ROWS = ['ABCDEFGHI', 'JKLMNOPQR', 'STUVWXYZ'].map((row) =>
+  row.split(''),
+);
+const DIGIT_ROWS = ['01234', '56789'].map((row) => row.split(''));
 const MAX_CODE_LENGTH = STAFF_CODE_MAX_LENGTH;
 
 interface CodeKeypadProps {
@@ -15,6 +24,34 @@ interface CodeKeypadProps {
   disabled?: boolean;
   onChange: (next: string) => void;
   onSubmit: () => void;
+}
+
+interface KeyButtonProps {
+  value: string;
+  digit?: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}
+
+function KeyButton({ value, digit = false, disabled, onPress }: KeyButtonProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={`Enter ${value}`}
+      style={({ pressed }) => [
+        styles.key,
+        digit && styles.keyDigit,
+        pressed && styles.keyPressed,
+        disabled && styles.keyDisabled,
+      ]}
+    >
+      <Text style={[styles.keyLabel, digit && styles.keyLabelDigit]}>
+        {value}
+      </Text>
+    </Pressable>
+  );
 }
 
 export function CodeKeypad({
@@ -88,25 +125,50 @@ export function CodeKeypad({
         )}
       </View>
 
-      <View style={styles.grid}>
-        {KEYS.map((key) => (
-          <View key={key} style={styles.cell}>
-            <Pressable
-              onPress={() => append(key)}
-              disabled={disabled}
-              accessibilityRole="button"
-              accessibilityLabel={`Enter ${key}`}
-              style={({ pressed }) => [
-                styles.key,
-                pressed && styles.keyPressed,
-                disabled && styles.keyDisabled,
-              ]}
-            >
-              <Text style={styles.keyLabel}>{key}</Text>
-            </Pressable>
-          </View>
-        ))}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionLabel}>Letters A–Z</Text>
+        <View style={styles.sectionLine} />
       </View>
+
+      {LETTER_ROWS.map((row) => (
+        <View key={row.join('')} style={styles.gridRow}>
+          {row.map((key) => (
+            <View
+              key={key}
+              style={[styles.cell, { width: `${100 / row.length}%` }]}
+            >
+              <KeyButton
+                value={key}
+                disabled={disabled}
+                onPress={() => append(key)}
+              />
+            </View>
+          ))}
+        </View>
+      ))}
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionLabel}>Numbers 0–9</Text>
+        <View style={styles.sectionLine} />
+      </View>
+
+      {DIGIT_ROWS.map((row) => (
+        <View key={row.join('')} style={styles.gridRow}>
+          {row.map((key) => (
+            <View
+              key={key}
+              style={[styles.cell, { width: `${100 / row.length}%` }]}
+            >
+              <KeyButton
+                value={key}
+                digit
+                disabled={disabled}
+                onPress={() => append(key)}
+              />
+            </View>
+          ))}
+        </View>
+      ))}
 
       <View style={styles.actions}>
         <Pressable
@@ -164,8 +226,7 @@ export function CodeKeypad({
 const styles = StyleSheet.create({
   wrap: {
     width: '100%',
-    maxWidth: 560,
-    alignSelf: 'center',
+    alignSelf: 'stretch',
   },
   display: {
     backgroundColor: colors.kioskSurface,
@@ -174,7 +235,7 @@ const styles = StyleSheet.create({
     borderColor: colors.kioskSurfaceRaised,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   displayHeader: {
     flexDirection: 'row',
@@ -196,9 +257,9 @@ const styles = StyleSheet.create({
   code: {
     marginTop: spacing.xs,
     color: colors.kioskText,
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '800',
-    letterSpacing: 8,
+    letterSpacing: 7,
     fontVariant: ['tabular-nums'],
   },
   codePlaceholder: {
@@ -218,23 +279,44 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: '600',
   },
-  grid: {
+  sectionHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -3,
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+    marginBottom: 2,
+    paddingHorizontal: 3,
+  },
+  sectionLabel: {
+    color: colors.kioskMuted,
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  sectionLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.kioskSurfaceRaised,
+  },
+  gridRow: {
+    flexDirection: 'row',
   },
   cell: {
-    width: '16.6667%',
     padding: 3,
   },
   key: {
-    height: 46,
+    height: 42,
     borderRadius: radius.sm,
     backgroundColor: colors.kioskSurface,
     borderWidth: 1,
     borderColor: colors.kioskSurfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  keyDigit: {
+    backgroundColor: 'rgba(59, 130, 246, 0.16)',
+    borderColor: 'rgba(59, 130, 246, 0.55)',
   },
   keyPressed: {
     opacity: 0.7,
@@ -245,8 +327,12 @@ const styles = StyleSheet.create({
   },
   keyLabel: {
     color: colors.kioskText,
-    fontSize: fontSize.lg,
+    fontSize: fontSize.md,
     fontWeight: '700',
+  },
+  keyLabelDigit: {
+    color: '#DBEAFE',
+    fontWeight: '800',
   },
   actions: {
     flexDirection: 'row',
@@ -255,7 +341,7 @@ const styles = StyleSheet.create({
   },
   action: {
     flex: 1,
-    height: 52,
+    height: 50,
     borderRadius: radius.md,
     backgroundColor: colors.kioskSurface,
     borderWidth: 1,
@@ -275,7 +361,7 @@ const styles = StyleSheet.create({
   },
   verify: {
     flex: 1.3,
-    height: 52,
+    height: 50,
     borderRadius: radius.md,
     backgroundColor: colors.primaryLight,
     borderWidth: 1,
