@@ -32,6 +32,7 @@ import {
   changeAdminPin,
   isPinFormatValid,
 } from '../../services/pinService';
+import { disableKiosk, isKioskLockTaskAvailable } from '../../services/kioskLockTask';
 import { colors, fontSize, spacing } from '../../theme';
 import type { AuthMethod } from '../../types';
 
@@ -51,6 +52,10 @@ export function AdminSettingsScreen() {
     getAuthMethod(),
   );
   const [biometric, setBiometric] = useState<BiometricStatus | null>(null);
+  const [exitKioskVisible, setExitKioskVisible] = useState(false);
+  const [kioskLockAvailable, setKioskLockAvailable] = useState(
+    isKioskLockTaskAvailable(),
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -129,6 +134,30 @@ export function AdminSettingsScreen() {
     } finally {
       setSavingPin(false);
     }
+  };
+
+  const handleExitKiosk = async () => {
+    Alert.alert(
+      'Exit kiosk mode?',
+      'This will disable the OS-level kiosk lock and return the device to normal operation. You will need the admin PIN to re-enter the admin area.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Exit kiosk',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await disableKiosk();
+            } catch (error) {
+              Alert.alert(
+                'Could not exit kiosk mode',
+                error instanceof Error ? error.message : 'Unknown error.',
+              );
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -289,6 +318,15 @@ export function AdminSettingsScreen() {
             style={styles.lockButton}
             icon={<Ionicons name="lock-closed" size={18} color={colors.white} />}
           />
+          {kioskLockAvailable && (
+            <AppButton
+              title="Exit kiosk mode"
+              onPress={handleExitKiosk}
+              variant="ghost"
+              style={styles.exitKioskButton}
+              icon={<Ionicons name="lock-open" size={18} color={colors.danger} />}
+            />
+          )}
         </Card>
 
           <Text style={styles.version}>DayStaff · v1.1.0 · Offline MVP</Text>
@@ -377,6 +415,9 @@ const styles = StyleSheet.create({
   },
   lockButton: {
     marginTop: spacing.lg,
+  },
+  exitKioskButton: {
+    marginTop: spacing.sm,
   },
   version: {
     marginTop: spacing.xl,

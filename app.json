@@ -63,7 +63,8 @@
       ],
       "expo-sqlite",
       "expo-sharing",
-      "expo-font"
+      "expo-font",
+      "./src/plugins/withKioskLockTask.js"
     ],
     "extra": {
       "eas": {

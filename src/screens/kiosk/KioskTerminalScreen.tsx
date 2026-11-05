@@ -28,6 +28,7 @@ import {
 import { colors, fontSize, radius, spacing } from '../../theme';
 import type { AttendanceResult, AuthMethod, Staff } from '../../types';
 import { formatDateLong, formatTime24h } from '../../utils/date';
+import { enableKiosk, isKioskLockTaskAvailable } from '../../services/kioskLockTask';
 import { AdminPinModal } from '../auth/AdminPinModal';
 import { CodeKeypad } from './CodeKeypad';
 import { FaceMatchModal } from './FaceMatchModal';
@@ -59,6 +60,7 @@ export function KioskTerminalScreen() {
   const [feedbackVisible, setFeedbackVisible] = useState(false);
   const [simulated, setSimulated] = useState(false);
   const [pinVisible, setPinVisible] = useState(false);
+  const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
 
   const mode: 'FACE' | 'CODE' =
     authMethod === 'FACE_RECOGNITION' && !useCodeFallback ? 'FACE' : 'CODE';
@@ -77,6 +79,22 @@ export function KioskTerminalScreen() {
       submittedCodeRef.current = null;
       setPendingMatch(null);
       setCapturedPhotoUri(null);
+
+      // Enable OS-level kiosk lock task mode when the terminal screen becomes
+      // active (production Android builds only; no-op in Expo Go / simulators).
+      if (active && isKioskLockTaskAvailable() && !kioskLockEnabled) {
+        void enableKiosk()
+          .then(() => {
+            if (active) {
+              setKioskLockEnabled(true);
+            }
+          })
+          .catch((error) => {
+            if (__DEV__) {
+              console.warn('Could not enable kiosk lock task:', error);
+            }
+          });
+      }
 
       if (method === 'FACE_RECOGNITION') {
         void ensureStaffFaceSignatures()
