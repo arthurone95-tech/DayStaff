@@ -16,7 +16,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.daystaff.app",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "DayStaff uses Face ID to verify staff attendance."
+        "NSFaceIDUsageDescription": "DayStaff uses Face ID to verify staff attendance.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -29,10 +30,10 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "USE_BIOMETRIC",
-        "USE_FINGERPRINT",
-        "CAMERA",
-        "READ_MEDIA_IMAGES"
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES"
       ]
     },
     "web": {
@@ -63,6 +64,12 @@
       "expo-sqlite",
       "expo-sharing",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a5cb42f2-3bcb-4f99-9ab0-923046218c34"
+      }
+    },
+    "owner": "nana-arthur"
   }
 }
