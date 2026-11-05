@@ -8,7 +8,7 @@
 import * as SQLite from 'expo-sqlite';
 
 export const DATABASE_NAME = 'daystaff.db';
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 let connection: SQLite.SQLiteDatabase | null = null;
 
@@ -33,50 +33,83 @@ function migrate(db: SQLite.SQLiteDatabase): void {
     return;
   }
 
-  db.execSync(`
-    CREATE TABLE IF NOT EXISTS staff (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      full_name TEXT NOT NULL,
-      phone_number TEXT NOT NULL DEFAULT '',
-      photo_uri TEXT,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL
-    );
+  db.withTransactionSync(() => {
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS staff (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        full_name TEXT NOT NULL,
+        staff_code TEXT,
+        phone_number TEXT NOT NULL DEFAULT '',
+        photo_uri TEXT,
+        face_signature TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS schedules (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      start_time TEXT NOT NULL,
-      late_threshold_minutes INTEGER NOT NULL DEFAULT 0,
-      end_time TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
+      CREATE TABLE IF NOT EXISTS schedules (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        start_time TEXT NOT NULL,
+        late_threshold_minutes INTEGER NOT NULL DEFAULT 0,
+        end_time TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS attendance_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      staff_id INTEGER NOT NULL,
-      date TEXT NOT NULL,
-      clock_in_time TEXT NOT NULL,
-      clock_in_status TEXT NOT NULL CHECK (clock_in_status IN ('on_time', 'late')),
-      minutes_late INTEGER NOT NULL DEFAULT 0,
-      clock_out_time TEXT,
-      clock_out_status TEXT CHECK (clock_out_status IN ('on_time', 'early')),
-      minutes_early INTEGER NOT NULL DEFAULT 0,
-      FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE CASCADE,
-      UNIQUE (staff_id, date)
-    );
+      CREATE TABLE IF NOT EXISTS attendance_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        staff_id INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        clock_in_time TEXT NOT NULL,
+        clock_in_status TEXT NOT NULL CHECK (clock_in_status IN ('on_time', 'late')),
+        minutes_late INTEGER NOT NULL DEFAULT 0,
+        clock_out_time TEXT,
+        clock_out_status TEXT CHECK (clock_out_status IN ('on_time', 'early')),
+        minutes_early INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE CASCADE,
+        UNIQUE (staff_id, date)
+      );
 
-    CREATE INDEX IF NOT EXISTS idx_attendance_date
-      ON attendance_logs (date);
-    CREATE INDEX IF NOT EXISTS idx_attendance_staff_date
-      ON attendance_logs (staff_id, date);
+      CREATE INDEX IF NOT EXISTS idx_attendance_date
+        ON attendance_logs (date);
+      CREATE INDEX IF NOT EXISTS idx_attendance_staff_date
+        ON attendance_logs (staff_id, date);
 
-    CREATE TABLE IF NOT EXISTS app_settings (
-      key TEXT PRIMARY KEY NOT NULL,
-      value TEXT NOT NULL
-    );
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY NOT NULL,
+        value TEXT NOT NULL
+      );
+    `);
 
-    PRAGMA user_version = ${SCHEMA_VERSION};
-  `);
+    // v1 databases need the new staff columns added in place.
+    const columns = db.getAllSync<{ name: string }>('PRAGMA table_info(staff)');
+    const columnNames = new Set(columns.map((column) => column.name));
+    if (!columnNames.has('staff_code')) {
+      db.execSync('ALTER TABLE staff ADD COLUMN staff_code TEXT;');
+    }
+    if (!columnNames.has('face_signature')) {
+      db.execSync('ALTER TABLE staff ADD COLUMN face_signature TEXT;');
+    }
+
+    // Give existing staff a deterministic, unique code so the keypad works
+    // immediately after upgrading.
+    db.execSync(`
+      UPDATE staff
+      SET staff_code =
+        (CASE
+          WHEN upper(substr(full_name, 1, 1)) GLOB '[A-Z0-9]'
+            THEN upper(substr(full_name, 1, 1))
+          ELSE 'S'
+        END) || id
+      WHERE staff_code IS NULL OR trim(staff_code) = '';
+    `);
+
+    db.execSync(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_code
+        ON staff (staff_code)
+        WHERE staff_code IS NOT NULL;
+    `);
+
+    db.execSync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
+  });
 }
 
 /**

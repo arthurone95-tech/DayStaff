@@ -9,12 +9,9 @@ import { EmptyState } from '../../components/EmptyState';
 import { Screen } from '../../components/Screen';
 import { StaffRow, type StaffRowHighlight } from '../../components/StaffRow';
 import { StatTile } from '../../components/StatTile';
-import { getSchedule, getSetting } from '../../database/queries';
-import {
-  DEFAULT_SCHOOL_NAME,
-  SCHOOL_NAME_SETTING,
-} from '../../database/seed';
+import { getSchedule } from '../../database/queries';
 import type { RootNavigation } from '../../navigation/types';
+import { getCompanyName } from '../../services/appSettings';
 import { buildDailySummary } from '../../services/attendanceLogic';
 import { colors, fontSize, spacing } from '../../theme';
 import type { DailySummary, Schedule, StaffDayRecord } from '../../types';
@@ -58,13 +55,13 @@ export function AdminDashboardScreen() {
   const navigation = useNavigation<RootNavigation>();
   const [summary, setSummary] = useState<DailySummary>(EMPTY_SUMMARY);
   const [schedule, setSchedule] = useState<Schedule | null>(null);
-  const [schoolName, setSchoolName] = useState(DEFAULT_SCHOOL_NAME);
+  const [companyName, setCompanyName] = useState(getCompanyName());
 
   useFocusEffect(
     useCallback(() => {
       setSummary(buildDailySummary(todayKey()));
       setSchedule(getSchedule());
-      setSchoolName(getSetting(SCHOOL_NAME_SETTING) ?? DEFAULT_SCHOOL_NAME);
+      setCompanyName(getCompanyName());
     }, []),
   );
 
@@ -75,7 +72,7 @@ export function AdminDashboardScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Card style={styles.hero}>
-          <Text style={styles.heroLabel}>{schoolName}</Text>
+          <Text style={styles.heroLabel}>{companyName}</Text>
           <Text style={styles.heroDate}>{formatDateLong(new Date())}</Text>
           {schedule ? (
             <Text style={styles.heroMeta}>
@@ -204,7 +201,15 @@ export function AdminDashboardScreen() {
                       ) : null}
                     </View>
                   }
-                  caption={record.staff.phoneNumber || 'No phone number'}
+                  caption={
+                    record.staff.staffCode
+                      ? `#${record.staff.staffCode}${
+                          record.staff.phoneNumber
+                            ? ` · ${record.staff.phoneNumber}`
+                            : ''
+                        }`
+                      : record.staff.phoneNumber || 'No phone number'
+                  }
                   detail={
                     log ? detailBits.join(' · ') : 'No clock-in recorded'
                   }

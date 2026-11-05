@@ -4,34 +4,33 @@ import { useNavigation } from '@react-navigation/native';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
+import { AuthMethodPicker } from '../../components/AuthMethodPicker';
 import { Card } from '../../components/Card';
 import { PinInput } from '../../components/PinInput';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
-import { getSetting, setSetting } from '../../database/queries';
-import {
-  DEFAULT_SCHOOL_NAME,
-  SCHOOL_NAME_SETTING,
-} from '../../database/seed';
 import type { RootNavigation } from '../../navigation/types';
+import {
+  getAuthMethod,
+  getCompanyName,
+  setAuthMethod,
+  setCompanyName,
+} from '../../services/appSettings';
 import {
   type BiometricStatus,
   getBiometricStatus,
 } from '../../services/biometricService';
 import {
   changeAdminPin,
-  DEFAULT_ADMIN_PIN,
   isPinFormatValid,
-  verifyAdminPin,
 } from '../../services/pinService';
 import { colors, fontSize, spacing } from '../../theme';
+import type { AuthMethod } from '../../types';
 
 export function AdminSettingsScreen() {
   const navigation = useNavigation<RootNavigation>();
 
-  const [schoolName, setSchoolName] = useState(
-    getSetting(SCHOOL_NAME_SETTING) ?? DEFAULT_SCHOOL_NAME,
-  );
+  const [companyName, setCompanyNameState] = useState(getCompanyName());
   const [savingName, setSavingName] = useState(false);
 
   const [currentPin, setCurrentPin] = useState('');
@@ -40,33 +39,34 @@ export function AdminSettingsScreen() {
   const [pinError, setPinError] = useState<string | undefined>();
   const [savingPin, setSavingPin] = useState(false);
 
+  const [authMethod, setAuthMethodState] = useState<AuthMethod>(
+    getAuthMethod(),
+  );
   const [biometric, setBiometric] = useState<BiometricStatus | null>(null);
-  const [usingDefaultPin, setUsingDefaultPin] = useState<boolean | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      const [status, isDefault] = await Promise.all([
-        getBiometricStatus(),
-        verifyAdminPin(DEFAULT_ADMIN_PIN),
-      ]);
+    getBiometricStatus().then((status) => {
       if (mounted) {
         setBiometric(status);
-        setUsingDefaultPin(isDefault);
       }
-    })();
+    });
     return () => {
       mounted = false;
     };
   }, []);
 
   const handleSaveName = () => {
+    const value = companyName.trim();
+    if (!value) {
+      Alert.alert('Company name required', 'Enter a company or school name.');
+      return;
+    }
     setSavingName(true);
     try {
-      const value = schoolName.trim() || DEFAULT_SCHOOL_NAME;
-      setSetting(SCHOOL_NAME_SETTING, value);
-      setSchoolName(value);
-      Alert.alert('Saved', 'The school name has been updated.');
+      setCompanyName(value);
+      setCompanyNameState(value);
+      Alert.alert('Saved', 'The company details have been updated.');
     } catch (error) {
       Alert.alert(
         'Could not save',
@@ -74,6 +74,18 @@ export function AdminSettingsScreen() {
       );
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleAuthMethodChange = (method: AuthMethod) => {
+    try {
+      setAuthMethod(method);
+      setAuthMethodState(method);
+    } catch (error) {
+      Alert.alert(
+        'Could not change kiosk mode',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
     }
   };
 
@@ -98,7 +110,6 @@ export function AdminSettingsScreen() {
       setCurrentPin('');
       setNewPin('');
       setConfirmPin('');
-      setUsingDefaultPin(await verifyAdminPin(DEFAULT_ADMIN_PIN));
       Alert.alert(
         'PIN updated',
         'Use the new PIN the next time you unlock the admin area.',
@@ -120,44 +131,51 @@ export function AdminSettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Card>
-          <Text style={styles.cardTitle}>School details</Text>
+          <Text style={styles.cardTitle}>Company details</Text>
           <Text style={styles.cardHint}>
             Shown on the kiosk and in exported reports.
           </Text>
           <View style={styles.field}>
             <TextField
-              label="School name"
-              value={schoolName}
-              onChangeText={setSchoolName}
-              placeholder={DEFAULT_SCHOOL_NAME}
+              label="Company / school name"
+              value={companyName}
+              onChangeText={setCompanyNameState}
+              placeholder="e.g. Greenfield Academy"
               maxLength={60}
             />
           </View>
           <AppButton
-            title="Save school name"
+            title="Save company name"
             onPress={handleSaveName}
             loading={savingName}
           />
         </Card>
 
         <Card style={styles.card}>
+          <Text style={styles.cardTitle}>Kiosk authentication</Text>
+          <Text style={styles.cardHint}>
+            Choose how staff identify themselves. This takes effect the next
+            time the kiosk is shown.
+          </Text>
+          <View style={styles.authPicker}>
+            <AuthMethodPicker
+              value={authMethod}
+              onChange={handleAuthMethodChange}
+            />
+          </View>
+          <Text style={styles.authNote}>
+            Face mode uses an on-device visual match against staff photos and
+            may ask the staff member to confirm. Code mode uses this device's
+            fingerprint or Face ID.
+          </Text>
+        </Card>
+
+        <Card style={styles.card}>
           <Text style={styles.cardTitle}>Administrator PIN</Text>
           <Text style={styles.cardHint}>
-            The master PIN unlocks the admin dashboard from the kiosk.
+            The master PIN unlocks the admin dashboard from the kiosk. There is
+            no default PIN; this is the PIN you created during setup.
           </Text>
-
-          {usingDefaultPin ? (
-            <View style={styles.warning}>
-              <Ionicons
-                name="warning-outline"
-                size={16}
-                color={colors.warningDark}
-              />
-              <Text style={styles.warningText}>
-                You are still using the default PIN (1234). Change it now.
-              </Text>
-            </View>
-          ) : null}
 
           <View style={styles.pinFields}>
             <Text style={styles.pinLabel}>Current PIN</Text>
@@ -204,7 +222,8 @@ export function AdminSettingsScreen() {
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>Device biometrics</Text>
           <Text style={styles.cardHint}>
-            The kiosk uses the fingerprint or Face ID enrolled on this terminal.
+            Code mode verifies the fingerprint or Face ID enrolled on this
+            terminal. Face-recognition mode uses the camera instead.
           </Text>
 
           <View style={styles.statusList}>
@@ -252,7 +271,7 @@ export function AdminSettingsScreen() {
           />
         </Card>
 
-        <Text style={styles.version}>DayStaff · v1.0.0 · Offline MVP</Text>
+        <Text style={styles.version}>DayStaff · v1.1.0 · Offline MVP</Text>
       </ScrollView>
     </Screen>
   );
@@ -280,20 +299,14 @@ const styles = StyleSheet.create({
   field: {
     marginTop: spacing.lg,
   },
-  warning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.warningSoft,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: spacing.sm,
+  authPicker: {
     marginTop: spacing.md,
   },
-  warningText: {
-    flex: 1,
+  authNote: {
+    marginTop: spacing.md,
     fontSize: fontSize.xs,
-    color: colors.warningDark,
+    lineHeight: 18,
+    color: colors.slate500,
   },
   pinFields: {
     marginTop: spacing.md,

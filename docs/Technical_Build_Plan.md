@@ -1,78 +1,197 @@
-### 1. Recommended Tech Stack
+# DayStaff — Technical Build Plan
 
-* **Framework:** React Native (Expo SDK 50+ or React Native CLI)
-* **Language:** TypeScript (prevents runtime bugs with state machines and timestamps)
-* **Biometrics API:** `expo-local-authentication` (or `react-native-biometrics` if using Bare CLI)
-* **Local Database:** `expo-sqlite` or WatermelonDB (Offline-first, zero server required)
-* **File Export:** `xlsx` (SheetJS) + `expo-sharing` (for direct WhatsApp / Email sharing)
-* **Kiosk Lock:** Custom Android Native module / Android `startLockTask` API
+This document records the implementation approach used by the current codebase.
+It reflects the shipped Expo Go MVP, including first-run setup, staff codes and
+the dual-mode kiosk.
 
 ---
 
-### 2. Suggested Project Folder Structure
+## 1. Tech Stack
 
-Have your agent set up the directory tree like this:
+| Concern        | Choice                                                       |
+| -------------- | ------------------------------------------------------------ |
+| Framework      | React Native via Expo SDK 58                                 |
+| Language       | TypeScript (strict)                                          |
+| Biometrics     | `expo-local-authentication`                                  |
+| Local database | `expo-sqlite` (synchronous API)                              |
+| Camera         | `expo-camera` (`CameraView` + `useCameraPermissions`)        |
+| Image handling | `expo-image-manipulator`, `jpeg-js` for pixel access         |
+| File export    | `xlsx` (SheetJS) + `expo-sharing` + `expo-file-system/legacy` |
+| Haptics        | `expo-haptics`                                               |
+| Navigation     | React Navigation 7 native stack                              |
+| Kiosk lock     | App-level locking; native `startLockTask` remains post-MVP   |
+
+`jpeg-js` decodes the small resized JPEGs used for visual fingerprints. No
+native ML module is required in Expo Go.
+
+---
+
+## 2. Project Structure
 
 ```text
-daystaff/
+DayStaff/
+├── App.tsx                     boot + first-run gate + navigation
 ├── src/
-│   ├── assets/              # Icons, logos, sound effects (success beep)
-│   ├── components/          # Reusable UI (Buttons, Cards, Modals)
+│   ├── components/             AppButton, Card, PinInput, TextField,
+│   │                           TimeField, AuthMethodPicker, FeedbackModal, ...
+│   ├── config/
+│   │   └── app.ts              setting keys, defaults, staff-code limits
 │   ├── database/
-│   │   ├── db.ts            # SQLite connection setup
-│   │   └── queries.ts       # Insert/select queries for staff & logs
-│   ├── navigation/          # React Navigation (Admin vs Kiosk routes)
+│   │   ├── db.ts               connection, pragmas, schema v2 migrations
+│   │   ├── queries.ts          typed CRUD, settings, attendance, exports
+│   │   └── seed.ts             first-run defaults (no admin PIN)
+│   ├── navigation/             stack + route types
 │   ├── screens/
-│   │   ├── kiosk/           # KioskTerminalScreen.tsx (Daily Clock In/Out)
-│   │   ├── admin/           # AdminDashboardScreen.tsx, RegisterStaffScreen.tsx
-│   │   └── auth/            # AdminPinModal.tsx
+│   │   ├── kiosk/              KioskTerminalScreen, CodeKeypad,
+│   │   │                       FaceScanPanel, FaceMatchModal
+│   │   ├── admin/              dashboard, staff, register, schedule,
+│   │   │                       export, settings
+│   │   ├── auth/               AdminPinModal
+│   │   └── setup/              AdminSetupScreen wizard
 │   ├── services/
-│   │   ├── biometricService.ts # Native OS fingerprint/FaceID trigger
-│   │   ├── exportService.ts    # XLSX file generation & sharing
-│   │   └── attendanceLogic.ts  # Late/Early departure calculations
-│   └── types/               # TypeScript interfaces (Staff, Log, Schedule)
-├── App.tsx
-└── package.json
-
+│   │   ├── appSettings.ts      company name + auth method accessors
+│   │   ├── attendanceLogic.ts  state engine + late/early calculations
+│   │   ├── biometricService.ts device biometric wrapper
+│   │   ├── faceSignature.ts    dHash visual fingerprints (64-bit)
+│   │   ├── faceRecognitionService.ts  candidate ranking + thresholds
+│   │   ├── exportService.ts    XLSX/CSV generation + sharing
+│   │   ├── photoService.ts     persist captured/profile photos
+│   │   └── pinService.ts       salted SHA-256 admin PIN
+│   ├── theme/                  colour, spacing, type tokens
+│   ├── types/                  domain models
+│   └── utils/                  date/time helpers
+└── docs/
 ```
 
 ---
 
-### 3. Immediate Step-by-Step Build Plan for Your Agent
+## 3. Database & Settings
 
-Give your agent these tasks in order:
+### Schema version 2
 
-#### **Step 1: Database Setup & Local Tables**
+- `staff`
+  - `id`, `full_name`, `staff_code`, `phone_number`, `photo_uri`,
+    `face_signature`, `is_active`, `created_at`
+  - unique partial index on `staff_code`
+- `schedules`
+  - single row: `start_time`, `late_threshold_minutes`, `end_time`,
+    `updated_at`
+- `attendance_logs`
+  - one row per staff/date, with clock-in/out timestamps, statuses and minutes
+  - unique `(staff_id, date)`
+- `app_settings` (key/value)
+  - `admin_pin_hash`
+  - `company_name` (falls back to legacy `school_name`)
+  - `auth_method` — `PIN_BIOMETRIC` or `FACE_RECOGNITION`
+  - `setup_completed_at`
 
-Implement the SQLite database initialization script in `src/database/db.ts`:
+Migration adds the new `staff` columns in place and backfills existing rows
+with a deterministic code (`initial + id`). `PRAGMA user_version` prevents
+re-running the migration.
 
-* Create `staff` table (`id`, `full_name`, `phone_number`, `photo_uri`).
-* Create `schedules` table (`start_time`, `late_threshold`, `end_time`).
-* Create `attendance_logs` table (`id`, `staff_id`, `date`, `clock_in_time`, `clock_in_status`, `minutes_late`, `clock_out_time`, `clock_out_status`, `minutes_early`).
+### First-run gate
 
-#### **Step 2: Biometric Authentication Integration**
+`App.tsx` runs `seedDatabase()` (schedule + company default only), then calls
+`needsAdminSetup()`. A missing PIN always renders `AdminSetupScreen`; otherwise
+the navigation stack mounts. If an older build still has the untouched seeded
+`1234` hash and no `setup_completed_at` marker, the wizard is shown so a real
+PIN is created. `verifyAdminPin()` returns false when no hash exists — there is
+no `1234` fallback.
 
-* Implement `biometricService.ts` using `expo-local-authentication`.
-* Trigger device hardware check (`authenticateAsync`) to prompt fingerprint/Face ID verification.
+The setup wizard saves company, schedule and auth method first, then writes the
+PIN hash last, so an interrupted setup is retried on the next boot. In face
+mode the kiosk also backfills visual signatures for existing staff photos that
+were saved before the feature existed.
 
-#### **Step 3: Core Clock-In / Clock-Out State Engine**
+---
 
-Implement `attendanceLogic.ts` to handle daily scans:
+## 4. Core Services
 
-1. Identify if teacher has an existing record for `today`.
-2. **If NO record exists:** Execute **Clock-In Flow**. Calculate if arrival is *On Time* or *Late* (minutes late). Record `clock_in_time`.
-3. **If Clock-In exists & NO Clock-Out:** Execute **Clock-Out Flow**. Calculate if departure is *On Time* or *Early* (minutes early). Record `clock_out_time`.
-4. **If both exist:** Trigger pop-up: *"Already Clocked Out for Today at [Time]"*.
+### Attendance engine
 
-#### **Step 4: Kiosk Terminal UI (`KioskTerminalScreen.tsx`)**
+`attendanceLogic.ts` decides the daily action from existing logs:
 
-* High-contrast screen showing current digital time.
-* Prominent central button: *"Tap Fingerprint Sensor to Scan"*.
-* Modal pop-up showing Teacher's **Name, Photo**, and **Status Badge** (Green for On-Time, Red/Amber for Late or Early Departure).
-* Pin-protected Lock Icon at the top corner to exit to Admin settings.
+1. No record today → clock-in flow, evaluate against `startTime + grace`.
+2. Clock-in exists, no clock-out → clock-out flow, evaluate against `endTime`.
+3. Both exist → already completed for today.
 
-#### **Step 5: Admin Dashboard & Excel Sharing**
+It returns a typed `AttendanceResult` used by the feedback modal.
 
-* Real-time list of today's attendance (Present, Late, Absent, Clocked Out).
-* Staff registration screen with camera capture for profile pictures.
-* **"Export Report"** button that compiles monthly logs into `.xlsx` and triggers the phone's native share sheet (WhatsApp / Email).
+### Biometric service
+
+`biometricService.ts` wraps `expo-local-authentication`. Device biometrics
+authenticate the shared device, not an individual staff member; the staff code
+(or confirmed face match) supplies identity attribution. In development, a
+missing sensor can be simulated so emulators remain usable.
+
+### Face mode
+
+- `faceSignature.ts`
+  - resizes a photo to 96 px wide with `expo-image-manipulator`;
+  - decodes it with `jpeg-js`;
+  - samples a centred 9×8 grayscale grid;
+  - stores a 64-bit difference hash (plus a mirrored variant for front-camera
+    captures).
+- `faceRecognitionService.ts`
+  - compares a capture against all active staff signatures using Hamming
+    distance;
+  - auto-confirms only very close, clearly separated matches;
+  - otherwise returns the best candidate for a confirmation modal;
+  - returns no suggestion beyond a threshold and directs the user to the code
+    keypad.
+
+This is intentionally a heuristic, not certified biometrics. The interface is
+isolated so a native embedding model can replace it.
+
+### Admin PIN
+
+`pinService.ts` hashes a salted PIN with SHA-256 via `expo-crypto`.
+`createAdminPin` enforces exactly four digits for setup; unlock/change accepts
+4–8 digits for flexibility. There is no seeded PIN.
+
+---
+
+## 5. Kiosk UI
+
+`KioskTerminalScreen.tsx` loads `getCompanyName()`, `getAuthMethod()` and
+active staff on focus.
+
+- **Code mode**
+  - `CodeKeypad` renders a 6-column A–Z/0–9 grid, delete/clear/verify actions.
+  - The screen auto-submits when the code uniquely resolves, unless a longer
+    staff code shares the prefix; the Verify key handles that case.
+  - `authenticateBiometric()` runs next, then `recordAttendance()`.
+- **Face mode**
+  - `FaceScanPanel` requests camera permission, shows a front-camera preview
+    with an oval guide and a scan action.
+  - `matchFaceToStaff()` returns a ranked result.
+  - Strong matches record immediately; uncertain matches open
+    `FaceMatchModal`; failures offer retry or code fallback.
+- **Shared**
+  - `FeedbackModal` shows name, photo, status badge and minutes late/early.
+  - `AdminPinModal` gates the admin dashboard.
+  - The kiosk always returns after admin screens are dismissed.
+
+---
+
+## 6. Admin & Reporting
+
+- Dashboard: live daily summary and colour-coded staff rows.
+- Staff: registration/edit with unique kiosk code, photo, phone, active flag.
+- Schedule: start, grace, end.
+- Settings: company name, auth-mode switch, PIN change, biometric readiness.
+- Export: XLSX/CSV with staff code, name, phone, date, in/out, statuses and
+  minutes; shared through the OS share sheet.
+
+---
+
+## 7. Verification Checklist
+
+1. `npx tsc --noEmit` passes.
+2. `npx expo export --platform android` completes (Metro bundle).
+3. Fresh install (no PIN) opens the setup wizard; kiosk is not reachable.
+4. Completing setup writes settings + PIN and opens the locked kiosk.
+5. A unique staff code opens the biometric prompt and records attendance.
+6. Face mode scans, suggests/confirms a profile, and falls back to code.
+7. Admin PIN unlocks the dashboard; auth-mode changes apply on return.
+8. XLSX/CSV exports include the staff-code column.

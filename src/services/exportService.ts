@@ -13,7 +13,6 @@ import {
   getActiveStaff,
   getExportLogs,
   getSchedule,
-  getSetting,
   type ExportLogRow,
 } from '../database/queries';
 import type { ExportRange } from '../types';
@@ -24,8 +23,8 @@ import {
   getMonthBounds,
   todayKey,
 } from '../utils/date';
+import { getCompanyName } from './appSettings';
 import { deriveDayStatus } from './attendanceLogic';
-import { SCHOOL_NAME_SETTING, DEFAULT_SCHOOL_NAME } from '../database/seed';
 
 export interface ExportOptions {
   range: ExportRange;
@@ -102,6 +101,7 @@ function buildRows(rows: ExportLogRow[]): (string | number)[][] {
     return [
       log.date,
       row.staffName,
+      row.staffCode,
       row.phoneNumber,
       formatTime12h(log.clockInTime),
       log.clockInStatus === 'late' ? 'Late' : 'On time',
@@ -122,6 +122,7 @@ function buildRows(rows: ExportLogRow[]): (string | number)[][] {
 const HEADERS = [
   'Date',
   'Staff name',
+  'Staff code',
   'Phone',
   'Clock in',
   'Clock-in status',
@@ -168,14 +169,13 @@ function buildWorkbook(
   rows: ExportLogRow[],
   label: string,
 ): XLSX.WorkBook {
-  const schoolName =
-    getSetting(SCHOOL_NAME_SETTING) ?? DEFAULT_SCHOOL_NAME;
+  const companyName = getCompanyName();
   const schedule = getSchedule();
   const staff = getActiveStaff();
 
   const meta = [
     ['DayStaff Attendance Report'],
-    ['School', schoolName],
+    ['Company', companyName],
     ['Range', label],
     ['Generated', new Date().toLocaleString()],
     ['Registered staff', staff.length],
@@ -194,6 +194,7 @@ function buildWorkbook(
   attendanceSheet['!cols'] = [
     { wch: 12 },
     { wch: 24 },
+    { wch: 12 },
     { wch: 16 },
     { wch: 12 },
     { wch: 16 },

@@ -10,7 +10,7 @@ import {
 
 import { AppButton } from '../../components/AppButton';
 import { PinInput } from '../../components/PinInput';
-import { DEFAULT_ADMIN_PIN, verifyAdminPin } from '../../services/pinService';
+import { verifyAdminPin } from '../../services/pinService';
 import { colors, fontSize, radius, shadow, spacing } from '../../theme';
 
 interface AdminPinModalProps {
@@ -27,7 +27,6 @@ export function AdminPinModal({
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [checking, setChecking] = useState(false);
-  const [showDefaultHint, setShowDefaultHint] = useState(false);
 
   useEffect(() => {
     if (!visible) {
@@ -36,23 +35,6 @@ export function AdminPinModal({
     setPin('');
     setError(undefined);
     setChecking(false);
-
-    let mounted = true;
-    verifyAdminPin(DEFAULT_ADMIN_PIN)
-      .then((isDefault) => {
-        if (mounted) {
-          setShowDefaultHint(isDefault);
-        }
-      })
-      .catch(() => {
-        if (mounted) {
-          setShowDefaultHint(false);
-        }
-      });
-
-    return () => {
-      mounted = false;
-    };
   }, [visible]);
 
   const handleUnlock = async () => {
@@ -93,7 +75,8 @@ export function AdminPinModal({
 
           <Text style={styles.title}>Administrator access</Text>
           <Text style={styles.subtitle}>
-            Enter the master PIN to manage staff, schedules and reports.
+            Enter the master PIN you created during setup to manage staff,
+            schedules and reports.
           </Text>
 
           <PinInput
@@ -124,10 +107,6 @@ export function AdminPinModal({
               style={styles.flex}
             />
           </View>
-
-          {showDefaultHint ? (
-            <Text style={styles.hint}>First run? The default PIN is 1234.</Text>
-          ) : null}
         </View>
       </View>
     </Modal>
@@ -181,11 +160,5 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
-  },
-  hint: {
-    marginTop: spacing.lg,
-    fontSize: fontSize.xs,
-    color: colors.slate400,
-    textAlign: 'center',
   },
 });

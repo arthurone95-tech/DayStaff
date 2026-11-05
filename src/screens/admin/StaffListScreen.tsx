@@ -56,7 +56,7 @@ export function StaffListScreen() {
           <EmptyState
             icon="people-outline"
             title="No staff registered"
-            message="Add teachers so they can clock in and out at this terminal."
+            message="Add staff so they can clock in and out at this terminal."
             actionLabel="Add staff"
             onAction={() => navigation.navigate('RegisterStaff')}
           />
@@ -64,7 +64,11 @@ export function StaffListScreen() {
         renderItem={({ item }) => (
           <StaffRow
             staff={item}
-            caption={item.phoneNumber || 'No phone number'}
+            caption={
+              item.staffCode
+                ? `#${item.staffCode}${item.phoneNumber ? ` · ${item.phoneNumber}` : ''}`
+                : item.phoneNumber || 'No phone number'
+            }
             badge={
               <Badge
                 label={item.isActive ? 'Active' : 'Inactive'}

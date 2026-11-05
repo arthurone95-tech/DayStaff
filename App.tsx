@@ -13,9 +13,11 @@ import { AppButton } from './src/components/AppButton';
 import { getDb } from './src/database/db';
 import { seedDatabase } from './src/database/seed';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { AdminSetupScreen } from './src/screens/setup/AdminSetupScreen';
+import { needsAdminSetup } from './src/services/pinService';
 import { colors, fontSize, radius, spacing } from './src/theme';
 
-type BootState = 'loading' | 'ready' | 'error';
+type BootState = 'loading' | 'setup' | 'ready' | 'error';
 
 export default function App() {
   const [state, setState] = useState<BootState>('loading');
@@ -27,7 +29,7 @@ export default function App() {
     try {
       getDb();
       await seedDatabase();
-      setState('ready');
+      setState((await needsAdminSetup()) ? 'setup' : 'ready');
     } catch (bootError) {
       setError(
         bootError instanceof Error
@@ -41,6 +43,15 @@ export default function App() {
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+
+  if (state === 'setup') {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="dark" />
+        <AdminSetupScreen onComplete={() => setState('ready')} />
+      </SafeAreaProvider>
+    );
+  }
 
   if (state === 'ready') {
     return (

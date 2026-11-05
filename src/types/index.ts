@@ -13,19 +13,28 @@ export type DayStatus =
 
 export type AttendanceAction = 'clock_in' | 'clock_out' | 'already_completed';
 
+/** How the kiosk authenticates a staff member. */
+export type AuthMethod = 'PIN_BIOMETRIC' | 'FACE_RECOGNITION';
+
 export interface Staff {
   id: number;
   fullName: string;
+  /** Short alphanumeric code entered on the kiosk keypad. */
+  staffCode: string;
   phoneNumber: string;
   photoUri: string | null;
+  /** Visual fingerprint of the profile photo, used by face mode. */
+  faceSignature: string | null;
   isActive: number;
   createdAt: string;
 }
 
 export interface NewStaff {
   fullName: string;
+  staffCode: string;
   phoneNumber: string;
   photoUri: string | null;
+  faceSignature: string | null;
 }
 
 export interface Schedule {

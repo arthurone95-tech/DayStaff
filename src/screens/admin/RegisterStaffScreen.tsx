@@ -16,12 +16,19 @@ import { Card } from '../../components/Card';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import {
+  STAFF_CODE_MAX_LENGTH,
+  STAFF_CODE_MIN_LENGTH,
+  STAFF_CODE_PATTERN,
+} from '../../config/app';
+import {
   createStaff,
   getStaffById,
+  isStaffCodeTaken,
   setStaffActive,
   updateStaff,
 } from '../../database/queries';
 import type { RootStackParamList } from '../../navigation/types';
+import { createFaceSignature } from '../../services/faceSignature';
 import {
   captureStaffPhoto,
   chooseStaffPhoto,
@@ -33,16 +40,29 @@ type Props = NativeStackScreenProps<RootStackParamList, 'RegisterStaff'>;
 
 const PHONE_PATTERN = /^[+()\d\s-]{6,20}$/;
 
+function normalizeCode(value: string): string {
+  return value
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, STAFF_CODE_MAX_LENGTH);
+}
+
 export function RegisterStaffScreen({ route, navigation }: Props) {
   const staffId = route.params?.staffId;
   const isEditing = typeof staffId === 'number';
 
   const [fullName, setFullName] = useState('');
+  const [staffCode, setStaffCode] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [initialPhoto, setInitialPhoto] = useState<string | null>(null);
+  const [faceSignature, setFaceSignature] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(true);
-  const [errors, setErrors] = useState<{ name?: string; phone?: string }>({});
+  const [errors, setErrors] = useState<{
+    name?: string;
+    code?: string;
+    phone?: string;
+  }>({});
   const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
 
@@ -55,9 +75,11 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       const existing = getStaffById(staffId);
       if (existing) {
         setFullName(existing.fullName);
+        setStaffCode(existing.staffCode);
         setPhoneNumber(existing.phoneNumber);
         setPhotoUri(existing.photoUri);
         setInitialPhoto(existing.photoUri);
+        setFaceSignature(existing.faceSignature);
         setIsActive(existing.isActive === 1);
       }
       setLoading(false);
@@ -65,10 +87,24 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   }, [isEditing, staffId, navigation]);
 
   const validate = (): boolean => {
-    const next: { name?: string; phone?: string } = {};
+    const next: { name?: string; code?: string; phone?: string } = {};
     if (!fullName.trim()) {
       next.name = 'Full name is required.';
     }
+
+    const normalizedCode = normalizeCode(staffCode);
+    if (!normalizedCode) {
+      next.code = 'A kiosk staff code is required.';
+    } else if (
+      !STAFF_CODE_PATTERN.test(normalizedCode) ||
+      normalizedCode.length < STAFF_CODE_MIN_LENGTH ||
+      normalizedCode.length > STAFF_CODE_MAX_LENGTH
+    ) {
+      next.code = `Use ${STAFF_CODE_MIN_LENGTH}–${STAFF_CODE_MAX_LENGTH} letters or numbers.`;
+    } else if (isStaffCodeTaken(normalizedCode, staffId)) {
+      next.code = 'That code is already assigned to another staff member.';
+    }
+
     if (phoneNumber.trim() && !PHONE_PATTERN.test(phoneNumber.trim())) {
       next.phone = 'Enter a valid phone number (6–20 digits).';
     }
@@ -93,23 +129,44 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!validate()) {
       return;
     }
     setSaving(true);
     try {
+      const normalizedCode = normalizeCode(staffCode);
+      let nextSignature = faceSignature;
+
+      if (!photoUri) {
+        nextSignature = null;
+      } else if (photoUri !== initialPhoto || !nextSignature) {
+        try {
+          nextSignature = await createFaceSignature(photoUri);
+        } catch {
+          nextSignature = null;
+        }
+      }
+
       if (isEditing && staffId) {
         updateStaff(staffId, {
           fullName,
+          staffCode: normalizedCode,
           phoneNumber,
           photoUri,
+          faceSignature: nextSignature,
         });
         if (initialPhoto && initialPhoto !== photoUri) {
           void deleteStaffPhoto(initialPhoto);
         }
       } else {
-        createStaff({ fullName, phoneNumber, photoUri });
+        createStaff({
+          fullName,
+          staffCode: normalizedCode,
+          phoneNumber,
+          photoUri,
+          faceSignature: nextSignature,
+        });
       }
       navigation.goBack();
     } catch (error) {
@@ -225,6 +282,19 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
             maxLength={80}
           />
           <TextField
+            label="Kiosk staff code"
+            value={staffCode}
+            onChangeText={(value) => {
+              setStaffCode(normalizeCode(value));
+              setErrors((prev) => ({ ...prev, code: undefined }));
+            }}
+            placeholder="e.g. G2"
+            autoCapitalize="characters"
+            error={errors.code}
+            hint={`${STAFF_CODE_MIN_LENGTH}–${STAFF_CODE_MAX_LENGTH} letters or numbers. Staff type this on the kiosk keypad, so it must be unique.`}
+            maxLength={STAFF_CODE_MAX_LENGTH}
+          />
+          <TextField
             label="Phone number"
             value={phoneNumber}
             onChangeText={(value) => {
@@ -278,9 +348,9 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
             color={colors.slate500}
           />
           <Text style={styles.noteText}>
-            The kiosk verifies the device's enrolled fingerprint or Face ID,
-            then records attendance against the selected staff profile. Make
-            sure biometrics are set up on this terminal device.
+            Code mode verifies the fingerprint or Face ID enrolled on this
+            terminal. Face mode uses this profile photo for an on-device visual
+            match, so use a clear, front-facing portrait when possible.
           </Text>
         </View>
       </ScrollView>

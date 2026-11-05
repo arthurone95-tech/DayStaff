@@ -1,6 +1,6 @@
 # DayStaff — Build Phases
 
-> Mobile Staff Attendance & Biometric Verification App
+> Mobile Staff Attendance & Verification App
 > React Native (Expo) + TypeScript + offline SQLite
 
 This document tracks the implementation phases derived from the
@@ -38,7 +38,7 @@ This document tracks the implementation phases derived from the
 - [x] SQLite connection + pragmas
 - [x] Schema: `staff`, `schedules`, `attendance_logs`, `app_settings`
 - [x] Migration/versioning guard
-- [x] Seed default schedule and default admin PIN
+- [x] Seed default schedule and company name (no admin PIN)
 - [x] Typed query layer (`queries.ts`)
 
 ## Phase 3 — Business Logic & Services ✅
@@ -46,83 +46,116 @@ This document tracks the implementation phases derived from the
 - [x] Attendance state engine (clock-in / clock-out / completed)
 - [x] Late + early-departure calculations with grace period
 - [x] Biometric authentication service
-- [x] Admin PIN service (salted SHA-256)
+- [x] Admin PIN service (salted SHA-256, no default PIN)
 - [x] Photo persistence helper
+- [x] App settings accessors (company name, auth method)
+- [x] Visual face-signature service (beta)
 
 ## Phase 4 — Kiosk Experience ✅
 
 - [x] Locked kiosk as the always-on launch screen
 - [x] Live digital clock and date
-- [x] Staff photo grid (queue-friendly touch targets)
+- [x] Custom staff-code keypad (A–Z/0–9, no QWERTY)
 - [x] Biometric prompt → auto clock-in / clock-out
+- [x] Optional front-camera face mode with confirmation
 - [x] Feedback modal: name, photo, status badge, message
 - [x] Duplicate / invalid-session prevention messages
 - [x] PIN-protected admin entry button
 
 ## Phase 5 — Admin Suite ✅
 
+- [x] First-run setup wizard (company, schedule, PIN, auth mode)
 - [x] Master PIN gate
 - [x] Daily dashboard with real-time statuses
 - [x] Visual cues for late/early/absent
-- [x] Staff registration (name, phone, photo capture/upload)
+- [x] Staff registration (name, code, phone, photo)
 - [x] Staff list + edit + deactivate
 - [x] Schedule configuration (start, grace, closing)
 - [x] Admin PIN change
+- [x] Auth-method switch and company-name editing
 
 ## Phase 6 — Reporting & Export ✅
 
 - [x] XLSX workbook generation (`xlsx` / SheetJS)
 - [x] CSV generation
 - [x] Today / month / all-time ranges
+- [x] Staff-code column and company metadata
 - [x] Native share sheet (`expo-sharing`)
 - [x] Graceful fallback when sharing is unavailable
 
 ## Phase 7 — Polish & Verification ✅
 
 - [x] App configuration (permissions, plugin entries)
-- [x] README with setup + usage + default PIN
+- [x] README with setup + usage + auth modes
 - [x] TypeScript strict typecheck
 - [x] Git history with one commit per phase
+
+## Phase 8 — Staff Terminology & Dual-Mode Update ✅
+
+- [x] Rename legacy role-based copy to staff throughout the app and docs
+- [x] Rename `school_name` to `company_name` with legacy fallback
+- [x] Remove default PIN seeding and the `1234` verification fallback
+- [x] Gate the kiosk on `hasAdminPin()` and show `AdminSetupScreen`
+- [x] Force company name, shift hours, 4-digit PIN and auth method in setup
+- [x] Add `auth_method` setting and admin switch
+- [x] Add required unique `staff_code` (schema v2 + migration backfill)
+- [x] Build the custom A–Z/0–9 keypad and auto biometric trigger
+- [x] Add camera preview, capture and visual profile matching
+- [x] Add uncertain-match confirmation and code fallback
+- [x] Update exports, dashboard and staff list with staff codes
 
 ---
 
 ## Architecture Summary
 
 ```text
-App.tsx                        app bootstrap + navigation
+App.tsx                        boot + first-run setup gate + navigation
 src/
   components/                  reusable native-feel UI
+  config/                      setting keys, defaults, staff-code rules
   database/
-    db.ts                      connection, pragmas, schema, migrations
+    db.ts                      connection, pragmas, schema v2 migrations
     queries.ts                 typed CRUD + reporting queries
-    seed.ts                    first-run defaults
+    seed.ts                    first-run defaults (schedule + company)
   navigation/                  root native stack
   screens/
-    kiosk/                     KioskTerminalScreen
-    admin/                     dashboard, staff, schedule, export
+    kiosk/                     terminal, CodeKeypad, FaceScanPanel,
+                               FaceMatchModal
+    admin/                     dashboard, staff, register, schedule, export,
+                               settings
     auth/                      AdminPinModal
+    setup/                     AdminSetupScreen wizard
   services/
+    appSettings.ts             company name + auth method
     attendanceLogic.ts         state engine + calculations
     biometricService.ts        expo-local-authentication wrapper
+    faceSignature.ts           dHash visual fingerprints
+    faceRecognitionService.ts  candidate ranking + thresholds
     exportService.ts           XLSX/CSV + sharing
     pinService.ts              salted PIN hashing/verification
     photoService.ts            persist captured photos
   theme/                       design tokens
-  types/                       domains models
+  types/                       domain models
   utils/                       date/time helpers
 ```
 
 ## Key Product Decisions
 
 1. **Local-first**: all data lives on-device in SQLite. No network, no server.
-2. **Always-locked kiosk**: the app's initial and fallback route is always the
-   kiosk; admin screens are only reachable after a correct master PIN.
-3. **Staff attribution**: native device biometrics authenticate the *device
-   owner*, not arbitrary staff. The kiosk therefore asks the teacher to tap
-   their own photo card, then verifies the device biometric before recording.
-   This preserves the biometric+photo confirmation experience while remaining
-   technically accurate on shared devices.
-4. **Default admin PIN**: `1234` — change it from Admin → Settings on first run.
+2. **First-run setup, no default PIN**: the kiosk is gated by `hasAdminPin()`.
+   The setup wizard creates the company name, schedule, 4-digit PIN and auth
+   method. Until the PIN exists, the kiosk cannot be reached.
+3. **Staff attribution**: device biometrics authenticate the shared terminal,
+   not an individual. Code mode binds the code to a staff profile before the
+   biometric prompt, preserving the biometric+photo confirmation experience.
+4. **Dual-mode kiosk**: admins choose staff code + biometrics (recommended), or
+   face recognition. Both modes are switchable at any time from Settings.
+5. **Face mode is beta**: the Expo Go MVP uses a 64-bit visual fingerprint, not
+   a native ML face-embedding model. It auto-confirms only very close matches,
+   asks for confirmation otherwise, and always offers the code fallback.
+6. **Terminology**: all user-facing copy, schema fields, export headers and
+   documentation use "staff" (with "company / school name" for the
+   organisation).
 
 ## Known Limitations / Post-MVP
 
@@ -131,4 +164,6 @@ src/
   here and the native hook is documented for a future phase.
 - Device biometrics cannot be mapped per staff member with Expo managed APIs;
   see decision #3.
+- Face mode can be replaced with a native face-recognition model in a
+  development build; the matcher is isolated behind `faceRecognitionService`.
 - Wi-Fi sync and automated email/messaging backups remain post-MVP.

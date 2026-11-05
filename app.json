@@ -2,7 +2,7 @@
   "expo": {
     "name": "DayStaff",
     "slug": "daystaff",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -39,6 +39,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow DayStaff to use the front camera for face check-in.",
+          "recordAudioAndroid": false
+        }
+      ],
       [
         "expo-local-authentication",
         {
