@@ -104,6 +104,75 @@ This document tracks the implementation phases derived from the
 - [x] Add uncertain-match confirmation and code fallback
 - [x] Update exports, dashboard and staff list with staff codes
 
+## Phase 9 — On-Device Acceptance Testing 🚧
+
+> **Status: pending manual hardware verification.** These checks require a
+> physical Android/iOS device (or an emulator with camera and biometric
+> hardware). Automated verification is already green — `npx tsc --noEmit` and
+> `npx expo export --platform android` both pass — but runtime behaviour must be
+> confirmed by hand before this phase is marked ✅.
+
+- [ ] Fresh install → setup wizard appears, and the kiosk is unreachable until a
+      PIN exists.
+- [ ] Setup saves company name, shift start/end + grace, 4-digit PIN, and auth
+      method.
+- [ ] Upgrade from a v1 database → staff codes backfill (`initial + id`), and a
+      legacy untouched-`1234` install is routed to setup.
+- [ ] `PIN_BIOMETRIC` mode → custom keypad only (no native QWERTY), a valid code
+      triggers biometrics, and the success card shows name, photo and status.
+- [ ] `FACE_RECOGNITION` mode → camera permission, live preview, correct staff
+      match, confirmation for close matches, and a working code fallback.
+- [ ] Admin PIN change, auth-mode switch, and company-name edit persist across
+      an app restart.
+
+## Phase 10 — Production Native Build & Hardening ⬜
+
+> **Status: planned.** Everything below requires leaving Expo Go and producing a
+> custom development/production binary. The Expo managed workflow is kept for
+> day-to-day UI work; this phase hardens the kiosk for real deployment.
+
+- [ ] **Android Lock Task Mode**
+  - [ ] Enable Android kiosk mode natively (`startLockTask`) from a small
+        Expo config plugin / native module, exposed as
+        `enterKioskMode()` / `exitKioskMode()`.
+  - [ ] Declare a dedicated device-owner/kiosk provisioning path (or document
+        the required `dpm set-device-owner` / screen-pinning setup) so
+        `startLockTask` is not silently downgraded to screen pinning.
+  - [ ] Allow-list the app's own package so the admin PIN gate remains the only
+        way to leave the terminal.
+  - [ ] Restore normal lock-task state on app foreground and block hardware
+        back/recents where the OS permits.
+  - [ ] Add a guarded escape hatch (admin PIN → exit kiosk) for maintenance.
+- [ ] **EAS Build pipeline**
+  - [ ] Add `eas.json` with `development`, `preview` and `production` profiles
+        (development client + internal distribution for QA).
+  - [ ] Configure `app.json` / `app.config.ts` with the Android package,
+        iOS bundle identifier, version/build numbers, and required permissions.
+  - [ ] Store signing credentials in EAS (Android keystore, iOS certificates and
+        provisioning profiles); document the one-time `eas credentials` setup.
+  - [ ] Add build/submit scripts and a documented release checklist (version
+        bump → `eas build` → device smoke test → `eas submit`).
+  - [ ] Verify the exported config (`npx expo config --type public`) contains no
+        secrets and that `expo-camera`, `expo-local-authentication` and
+        `expo-sqlite` config plugins are applied in the native projects.
+- [ ] **Native face-embedding model (C++/TFLite)**
+  - [ ] Replace the 64-bit dHash matcher behind
+        `src/services/faceRecognitionService.ts` with a native module that
+        returns a fixed-length embedding (e.g. FaceNet/MobileFaceNet TFLite).
+  - [ ] Ship the `.tflite` model + C++ inference wrapper via an Expo config
+        plugin, with Android NNAPI and iOS Core ML delegates where available.
+  - [ ] Add face detection/alignment (landmarks, crop, quality checks) before
+        embedding so captures match enrolment conditions.
+  - [ ] Migrate stored `face_signature` values to versioned embeddings; keep
+        dHash as a fallback for un-migrated photos and re-enrol lazily.
+  - [ ] Calibrate similarity thresholds against a labelled staff set, store the
+        threshold in settings, and require confirmation below the auto-match
+        score.
+  - [ ] Add liveness/anti-spoof checks (blink, depth or motion) and document
+        privacy handling for on-device biometric templates.
+  - [ ] Benchmark inference time on low-end kiosk hardware and cap the
+        candidate search (indexed embeddings) as staff counts grow.
+
 ---
 
 ## Architecture Summary
@@ -161,9 +230,12 @@ src/
 
 - True OS-level kiosk lock (`startLockTask`) requires a custom Android native
   module and a development/production build; app-level locking is implemented
-  here and the native hook is documented for a future phase.
+  here and the native hook is scheduled in Phase 10.
 - Device biometrics cannot be mapped per staff member with Expo managed APIs;
   see decision #3.
-- Face mode can be replaced with a native face-recognition model in a
-  development build; the matcher is isolated behind `faceRecognitionService`.
+- Face mode is a beta visual matcher in Expo Go; Phase 10 replaces it with a
+  native TFLite embedding model. The matcher is already isolated behind
+  `faceRecognitionService` for that swap.
+- Release signing, EAS build profiles and store submission are covered by
+  Phase 10.
 - Wi-Fi sync and automated email/messaging backups remain post-MVP.
