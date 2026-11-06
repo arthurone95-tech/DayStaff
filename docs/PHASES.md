@@ -182,6 +182,8 @@ This document tracks the implementation phases derived from the
 ## Phase 11 — Attendance History & Nested Export ✅
 
 - [x] Replace the dashboard **Export** tile with **Attendance**.
+- [x] Turn the dashboard's bottom attendance list into a "Not clocked in yet"
+      view that surfaces staff still awaiting check-in.
 - [x] Add `AttendanceHistoryScreen` with Today/Yesterday quick filters, previous
       and next day navigation, and a month/year calendar picker that highlights
       dates with stored records.

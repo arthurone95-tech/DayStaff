@@ -1,25 +1,23 @@
 import { useCallback, useState } from 'react';
-import { Ionicons } from '@expo/vector-icons';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 import { ActionTile } from '../../components/ActionTile';
-import { Badge, type BadgeTone } from '../../components/Badge';
+import { Badge } from '../../components/Badge';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { Screen } from '../../components/Screen';
-import { StaffRow, type StaffRowHighlight } from '../../components/StaffRow';
+import { StaffRow } from '../../components/StaffRow';
 import { StatTile } from '../../components/StatTile';
 import { getSchedule } from '../../database/queries';
 import type { RootNavigation } from '../../navigation/types';
 import { getCompanyName } from '../../services/appSettings';
 import { buildDailySummary } from '../../services/attendanceLogic';
 import { colors, fontSize, spacing } from '../../theme';
-import type { DailySummary, Schedule, StaffDayRecord } from '../../types';
+import type { DailySummary, Schedule } from '../../types';
 import {
   formatClockTime,
   formatDateLong,
-  formatTime12h,
   todayKey,
 } from '../../utils/date';
 
@@ -34,24 +32,6 @@ const EMPTY_SUMMARY: DailySummary = {
   records: [],
 };
 
-function highlightFor(record: {
-  log: StaffDayRecord['log'];
-}): StaffRowHighlight {
-  if (!record.log) {
-    return 'none';
-  }
-  if (record.log.clockOutStatus === 'early') {
-    return 'danger';
-  }
-  if (record.log.clockInStatus === 'late') {
-    return 'warning';
-  }
-  if (record.log.clockOutTime) {
-    return 'info';
-  }
-  return 'success';
-}
-
 export function AdminDashboardScreen() {
   const navigation = useNavigation<RootNavigation>();
   const [summary, setSummary] = useState<DailySummary>(EMPTY_SUMMARY);
@@ -65,6 +45,8 @@ export function AdminDashboardScreen() {
       setCompanyName(getCompanyName());
     }, []),
   );
+
+  const pendingRecords = summary.records.filter((record) => !record.log);
 
   return (
     <Screen>
@@ -140,34 +122,14 @@ export function AdminDashboardScreen() {
         </View>
 
         <View style={styles.listHeader}>
-          <View style={styles.listHeaderText}>
-            <Text style={styles.listTitle}>Today at a glance</Text>
-            <Text style={styles.listCount}>
-              {summary.totalStaff - summary.absent}/{summary.totalStaff} checked
-              in
-            </Text>
-          </View>
-          <Pressable
-            onPress={() => navigation.navigate('AttendanceHistory')}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="View attendance history"
-            style={({ pressed }) => [
-              styles.historyLink,
-              pressed && styles.historyLinkPressed,
-            ]}
-          >
-            <Text style={styles.historyLinkLabel}>History</Text>
-            <Ionicons
-              name="chevron-forward"
-              size={14}
-              color={colors.primary}
-            />
-          </Pressable>
+          <Text style={styles.listTitle}>Not clocked in yet</Text>
+          <Text style={styles.listCount}>
+            {pendingRecords.length} awaiting
+          </Text>
         </View>
 
         <Card padded={false} style={styles.listCard}>
-          {summary.records.length === 0 ? (
+          {summary.totalStaff === 0 ? (
             <EmptyState
               icon="person-add-outline"
               title="No staff yet"
@@ -175,68 +137,31 @@ export function AdminDashboardScreen() {
               actionLabel="Add staff"
               onAction={() => navigation.navigate('RegisterStaff')}
             />
+          ) : pendingRecords.length === 0 ? (
+            <EmptyState
+              icon="checkmark-circle-outline"
+              title="Everyone is checked in"
+              message="All active staff have clocked in today."
+            />
           ) : (
-            summary.records.map((record) => {
-              const { log } = record;
-              const arrival: { label: string; tone: BadgeTone } = !log
-                ? { label: 'Absent', tone: 'neutral' }
-                : log.clockInStatus === 'late'
-                  ? { label: 'Late', tone: 'warning' }
-                  : { label: 'Present', tone: 'success' };
-
-              const departure: { label: string; tone: BadgeTone } | null =
-                log?.clockOutTime
-                  ? log.clockOutStatus === 'early'
-                    ? { label: 'Early exit', tone: 'danger' }
-                    : { label: 'Clocked out', tone: 'info' }
-                  : null;
-
-              const detailBits: string[] = [];
-              if (log) {
-                detailBits.push(`In ${formatTime12h(log.clockInTime)}`);
-                if (log.clockInStatus === 'late') {
-                  detailBits.push(`${log.minutesLate}m late`);
+            pendingRecords.map((record) => (
+              <StaffRow
+                key={record.staff.id}
+                staff={record.staff}
+                badge={<Badge label="Not clocked in" tone="neutral" />}
+                caption={
+                  record.staff.staffCode
+                    ? `#${record.staff.staffCode}`
+                    : 'No staff code'
                 }
-                if (log.clockOutTime) {
-                  detailBits.push(`Out ${formatTime12h(log.clockOutTime)}`);
+                detail="No clock-in recorded"
+                onPress={() =>
+                  navigation.navigate('RegisterStaff', {
+                    staffId: record.staff.id,
+                  })
                 }
-                if (log.clockOutStatus === 'early') {
-                  detailBits.push(`${log.minutesEarly}m early`);
-                }
-              }
-
-              return (
-                <StaffRow
-                  key={record.staff.id}
-                  staff={record.staff}
-                  highlight={highlightFor(record)}
-                  badge={
-                    <View style={styles.badges}>
-                      <Badge label={arrival.label} tone={arrival.tone} />
-                      {departure ? (
-                        <Badge
-                          label={departure.label}
-                          tone={departure.tone}
-                        />
-                      ) : null}
-                    </View>
-                  }
-                  caption={
-                    record.staff.staffCode
-                      ? `#${record.staff.staffCode}`
-                      : 'No staff code'
-                  }
-                  detail={
-                    log ? detailBits.join(' · ') : 'No clock-in recorded'
-                  }
-                  onPress={() =>
-                    navigation.navigate('RegisterStaff', {
-                      staffId: record.staff.id,
-                    })
-                  }
-                />
-              );
-            })
+              />
+            ))
           )}
         </Card>
 
@@ -295,12 +220,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     marginBottom: spacing.md,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
     gap: spacing.md,
-  },
-  listHeaderText: {
-    flex: 1,
   },
   listTitle: {
     fontSize: fontSize.sm,
@@ -310,34 +232,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   listCount: {
-    marginTop: 2,
     fontSize: fontSize.xs,
     color: colors.slate500,
     fontWeight: '600',
   },
-  historyLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingVertical: spacing.xs,
-    paddingLeft: spacing.sm,
-  },
-  historyLinkPressed: {
-    opacity: 0.55,
-  },
-  historyLinkLabel: {
-    fontSize: fontSize.sm,
-    fontWeight: '700',
-    color: colors.primary,
-  },
   listCard: {
     overflow: 'hidden',
-  },
-  badges: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-    gap: spacing.xs,
   },
   footnote: {
     marginTop: spacing.lg,

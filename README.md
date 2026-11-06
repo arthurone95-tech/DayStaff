@@ -108,7 +108,7 @@ After setup, the kiosk is locked. From there:
 
 - Live daily summary: total staff, present, late, clocked out, early exit,
   absent.
-- Colour-coded staff rows (emerald / amber / coral) for instant visibility.
+- A "Not clocked in yet" list highlighting staff who still need to check in.
 - Staff registration with full name, unique staff ID/code and an optional
   camera or gallery profile photo.
 - Editing, deactivation/reactivation (history preserved).
