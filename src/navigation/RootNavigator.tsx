@@ -5,7 +5,7 @@ import {
   type Theme,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, Platform, StyleSheet } from 'react-native';
 
 import { AdminDashboardScreen } from '../screens/admin/AdminDashboardScreen';
 import { AdminSettingsScreen } from '../screens/admin/AdminSettingsScreen';
@@ -47,7 +47,10 @@ export function RootNavigator() {
           headerBackVisible: false,
           headerBackTitle: '',
           headerBackButtonDisplayMode: 'minimal',
-          headerLeftBackgroundVisible: false,
+          // iOS 26+ renders a native "liquid glass" pill around bar button
+          // items. Keep it on iOS so the app matches platform conventions,
+          // and omit it on Android where that style does not exist.
+          headerLeftBackgroundVisible: Platform.OS === 'ios',
           headerLeft: ({ canGoBack }) =>
             canGoBack ? (
               <Pressable
@@ -81,18 +84,24 @@ export function RootNavigator() {
           component={AdminDashboardScreen}
           options={({ navigation }) => ({
             title: 'Admin dashboard',
-            // On the dashboard, a red padlock (instead of a back chevron)
-            // makes it obvious that tapping it returns to the locked
-            // attendance terminal.
+            // The padlock gets its own red-tinted circular badge on every
+            // platform so it always reads as a tappable button. Disable the
+            // iOS-glass wrapper here to avoid stacking two backgrounds.
+            headerLeftBackgroundVisible: false,
             headerLeft: () => (
               <Pressable
                 onPress={() => navigation.popToTop()}
-                hitSlop={12}
+                hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel="Lock screen and return to staff clock-in terminal"
+                android_ripple={{
+                  color: 'rgba(255,255,255,0.18)',
+                  borderless: true,
+                  radius: 21,
+                }}
                 style={({ pressed }) => [
                   styles.lockIconButton,
-                  pressed && styles.backButtonPressed,
+                  pressed && styles.lockIconButtonPressed,
                 ]}
               >
                 <Ionicons
@@ -137,8 +146,8 @@ export function RootNavigator() {
 const styles = StyleSheet.create({
   backButton: {
     backgroundColor: 'transparent',
-    paddingHorizontal: 4,
-    paddingVertical: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -146,10 +155,17 @@ const styles = StyleSheet.create({
     opacity: 0.55,
   },
   lockIconButton: {
-    backgroundColor: 'transparent',
-    paddingHorizontal: 4,
-    paddingVertical: 2,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255, 77, 79, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 77, 79, 0.6)',
+  },
+  lockIconButtonPressed: {
+    opacity: 0.65,
+    transform: [{ scale: 0.94 }],
   },
 });
