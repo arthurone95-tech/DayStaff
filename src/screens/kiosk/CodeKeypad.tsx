@@ -118,11 +118,7 @@ export function CodeKeypad({
           <Text style={styles.error}>{error}</Text>
         ) : hint ? (
           <Text style={styles.hint}>{hint}</Text>
-        ) : (
-          <Text style={styles.hint}>
-            Your code is printed on your staff card.
-          </Text>
-        )}
+        ) : null}
       </View>
 
       <View style={styles.sectionHeader}>
