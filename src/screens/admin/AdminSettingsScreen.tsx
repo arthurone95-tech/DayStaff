@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -48,6 +49,7 @@ export function AdminSettingsScreen() {
   const [confirmPin, setConfirmPin] = useState('');
   const [pinError, setPinError] = useState<string | undefined>();
   const [savingPin, setSavingPin] = useState(false);
+  const [pinEditorOpen, setPinEditorOpen] = useState(false);
 
   const [authMethod, setAuthMethodState] = useState<AuthMethod>(
     getAuthMethod(),
@@ -103,6 +105,23 @@ export function AdminSettingsScreen() {
     }
   };
 
+  const openPinEditor = () => {
+    setCurrentPin('');
+    setNewPin('');
+    setConfirmPin('');
+    setPinError(undefined);
+    setPinEditorOpen(true);
+  };
+
+  const closePinEditor = () => {
+    Keyboard.dismiss();
+    setCurrentPin('');
+    setNewPin('');
+    setConfirmPin('');
+    setPinError(undefined);
+    setPinEditorOpen(false);
+  };
+
   const handleChangePin = async () => {
     setPinError(undefined);
     if (!isPinFormatValid(currentPin)) {
@@ -121,9 +140,11 @@ export function AdminSettingsScreen() {
     setSavingPin(true);
     try {
       await changeAdminPin(currentPin, newPin);
+      Keyboard.dismiss();
       setCurrentPin('');
       setNewPin('');
       setConfirmPin('');
+      setPinEditorOpen(false);
       Alert.alert(
         'PIN updated',
         'Use the new PIN the next time you unlock the admin area.',
@@ -217,50 +238,75 @@ export function AdminSettingsScreen() {
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>Administrator PIN</Text>
           <Text style={styles.cardHint}>
-            The master PIN unlocks the admin dashboard from the kiosk. There is
-            no default PIN; this is the PIN you created during setup.
+            The master PIN unlocks the admin dashboard from the kiosk. Change it
+            only when necessary — you will need the current PIN to confirm.
           </Text>
 
-          <View style={styles.pinFields}>
-            <Text style={styles.pinLabel}>Current PIN</Text>
-            <PinInput
-              value={currentPin}
-              onChangeText={(value) => {
-                setCurrentPin(value);
-                setPinError(undefined);
-              }}
-              maxLength={8}
-              placeholder="Current PIN"
-            />
-            <Text style={styles.pinLabel}>New PIN</Text>
-            <PinInput
-              value={newPin}
-              onChangeText={(value) => {
-                setNewPin(value);
-                setPinError(undefined);
-              }}
-              maxLength={8}
-              placeholder="New PIN"
-            />
-            <Text style={styles.pinLabel}>Confirm new PIN</Text>
-            <PinInput
-              value={confirmPin}
-              onChangeText={(value) => {
-                setConfirmPin(value);
-                setPinError(undefined);
-              }}
-              maxLength={8}
-              placeholder="Confirm new PIN"
-              error={pinError}
-            />
-          </View>
+          {pinEditorOpen ? (
+            <>
+              <View style={styles.pinFields}>
+                <Text style={styles.pinLabel}>Current PIN</Text>
+                <PinInput
+                  value={currentPin}
+                  onChangeText={(value) => {
+                    setCurrentPin(value);
+                    setPinError(undefined);
+                  }}
+                  maxLength={8}
+                  placeholder="Current PIN"
+                />
+                <Text style={styles.pinLabel}>New PIN</Text>
+                <PinInput
+                  value={newPin}
+                  onChangeText={(value) => {
+                    setNewPin(value);
+                    setPinError(undefined);
+                  }}
+                  maxLength={8}
+                  placeholder="New PIN"
+                />
+                <Text style={styles.pinLabel}>Confirm new PIN</Text>
+                <PinInput
+                  value={confirmPin}
+                  onChangeText={(value) => {
+                    setConfirmPin(value);
+                    setPinError(undefined);
+                  }}
+                  maxLength={8}
+                  placeholder="Confirm new PIN"
+                  error={pinError}
+                />
+              </View>
 
-          <AppButton
-            title="Update PIN"
-            onPress={handleChangePin}
-            loading={savingPin}
-            style={styles.pinButton}
-          />
+              <AppButton
+                title="Update PIN"
+                onPress={handleChangePin}
+                loading={savingPin}
+                style={styles.pinButton}
+              />
+              <AppButton
+                title="Cancel"
+                onPress={closePinEditor}
+                variant="ghost"
+                disabled={savingPin}
+                style={styles.pinCancelButton}
+              />
+            </>
+          ) : (
+            <AppButton
+              title="Change PIN"
+              onPress={openPinEditor}
+              variant="ghost"
+              icon={
+                <Ionicons
+                  name="key-outline"
+                  size={18}
+                  color={colors.primary}
+                />
+              }
+              style={styles.pinButton}
+            />
+          )}
         </Card>
 
         <Card style={styles.card}>
@@ -383,6 +429,9 @@ const styles = StyleSheet.create({
   },
   pinButton: {
     marginTop: spacing.lg,
+  },
+  pinCancelButton: {
+    marginTop: spacing.sm,
   },
   statusList: {
     marginTop: spacing.md,
