@@ -179,6 +179,9 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
           staffCode: normalizedCode,
           photoUri,
           faceSignature: nextSignature,
+          fingerprintSignature: staffId
+            ? getStaffById(staffId)?.fingerprintSignature ?? null
+            : null,
         });
         if (initialPhoto && initialPhoto !== photoUri) {
           void deleteStaffPhoto(initialPhoto);
@@ -189,6 +192,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
           staffCode: normalizedCode,
           photoUri,
           faceSignature: nextSignature,
+          fingerprintSignature: null,
         });
       }
       navigation.goBack();

@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 
 import { DEFAULT_AUTH_METHOD, DEFAULT_COMPANY_NAME } from '../../config/app';
+import { AppButton } from '../../components/AppButton';
 import { FeedbackModal } from '../../components/FeedbackModal';
 import { Screen } from '../../components/Screen';
 import { getActiveStaff } from '../../database/queries';
@@ -30,6 +31,12 @@ import {
   type FaceCandidate,
   type FaceProfileSummary,
 } from '../../services/faceRecognitionService';
+import {
+  compareFaceEmbeddings,
+  extractFaceEmbedding,
+  parseFaceEmbedding,
+  prepareFaceEngine,
+} from '../../services/faceEngine';
 import { colors, fontSize, radius, spacing } from '../../theme';
 import type { AttendanceResult, AuthMethod, Staff } from '../../types';
 import { formatDateLong, formatTime24h } from '../../utils/date';
@@ -66,6 +73,8 @@ export function KioskTerminalScreen() {
     useState<FaceProfileSummary | null>(null);
   const [biometricStatus, setBiometricStatus] =
     useState<BiometricStatus | null>(null);
+  const [codeFaceMember, setCodeFaceMember] = useState<Staff | null>(null);
+  const [codeFaceBusy, setCodeFaceBusy] = useState(false);
 
   const [feedback, setFeedback] = useState<AttendanceResult | null>(null);
   const [feedbackVisible, setFeedbackVisible] = useState(false);
@@ -162,9 +171,19 @@ export function KioskTerminalScreen() {
       if (operationRef.current || processingId !== null || faceBusy) {
         return;
       }
+      setCodeError(undefined);
+
+      // Prefer a 1-to-1 face check against the enrolled profile for this code.
+      const engineReady = await prepareFaceEngine();
+      const memberEmbedding = parseFaceEmbedding(member.faceSignature);
+      if (engineReady && memberEmbedding) {
+        setCodeFaceMember(member);
+        return;
+      }
+
+      // Fallback when no face profile is available: device-level biometric.
       operationRef.current = true;
       setProcessingId(member.id);
-      setCodeError(undefined);
       try {
         const biometric = await authenticateBiometric(
           `Verify ${member.fullName} to record attendance`,
@@ -197,6 +216,64 @@ export function KioskTerminalScreen() {
     },
     [faceBusy, processingId],
   );
+
+  const handleCodeFaceCapture = useCallback(
+    async (uri: string) => {
+      const member = codeFaceMember;
+      if (!member || codeFaceBusy) {
+        return;
+      }
+      const memberEmbedding = parseFaceEmbedding(member.faceSignature);
+      if (!memberEmbedding) {
+        setCodeFaceMember(null);
+        return;
+      }
+
+      setCodeFaceBusy(true);
+      try {
+        const captureEmbedding = await extractFaceEmbedding(uri);
+        const similarity = compareFaceEmbeddings(
+          captureEmbedding,
+          memberEmbedding,
+        );
+
+        if (similarity >= 0.6) {
+          const result = recordAttendance(member);
+          setFeedback(result);
+          setSimulated(false);
+          setFeedbackVisible(true);
+          setCode('');
+          submittedCodeRef.current = null;
+          setCodeFaceMember(null);
+        } else {
+          setCodeError('Biometric identity does not match staff code.');
+          setCode('');
+          submittedCodeRef.current = null;
+          setCodeFaceMember(null);
+          Alert.alert(
+            'Identity mismatch',
+            'Biometric identity does not match staff code.',
+          );
+        }
+      } catch (error) {
+        setCodeError(
+          error instanceof Error
+            ? error.message
+            : 'Face verification failed.',
+        );
+        setCodeFaceMember(null);
+      } finally {
+        setCodeFaceBusy(false);
+      }
+    },
+    [codeFaceBusy, codeFaceMember],
+  );
+
+  const handleCodeFaceCancel = useCallback(() => {
+    setCodeFaceMember(null);
+    setCode('');
+    submittedCodeRef.current = null;
+  }, []);
 
   const handleManualSignOut = useCallback(() => {
     if (
@@ -514,7 +591,30 @@ export function KioskTerminalScreen() {
             mode === 'CODE' ? styles.bodyBottom : styles.bodyTop,
           ]}
         >
-          {mode === 'CODE' ? (
+          {mode === 'CODE' && codeFaceMember ? (
+            <View style={styles.codeFaceWrap}>
+              <Text style={styles.codeFaceTitle}>
+                Verify {codeFaceMember.fullName}
+              </Text>
+              <Text style={styles.codeFaceHint}>
+                Scan your face to confirm this code.
+              </Text>
+              <FaceScanPanel
+                busy={codeFaceBusy}
+                profileCount={1}
+                engineAvailable={faceProfileSummary?.engineAvailable ?? true}
+                engineMessage={faceProfileSummary?.message}
+                onCapture={(uri) => void handleCodeFaceCapture(uri)}
+                onUseCode={handleCodeFaceCancel}
+              />
+              <AppButton
+                title="Cancel"
+                onPress={handleCodeFaceCancel}
+                variant="ghost"
+                size="sm"
+              />
+            </View>
+          ) : mode === 'CODE' ? (
             <>
               <CodeKeypad
                 code={code}
@@ -524,7 +624,7 @@ export function KioskTerminalScreen() {
                     : undefined
                 }
                 error={codeError}
-                disabled={processingId !== null || faceBusy}
+                disabled={processingId !== null || faceBusy || codeFaceBusy}
                 onChange={handleCodeChange}
                 onSubmit={handleCodeVerify}
               />
@@ -635,6 +735,21 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
+  },
+  codeFaceWrap: {
+    width: '100%',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  codeFaceTitle: {
+    color: colors.kioskText,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+  },
+  codeFaceHint: {
+    color: colors.kioskMuted,
+    fontSize: fontSize.sm,
+    marginBottom: spacing.sm,
   },
   emptyScreen: {
     flex: 1,
