@@ -112,7 +112,7 @@ export function CodeKeypad({
           numberOfLines={1}
           adjustsFontSizeToFit
         >
-          {code || 'Enter your code'}
+          {code || '_ _ _ _ _ _'}
         </Text>
         {error ? (
           <Text style={styles.error}>{error}</Text>
