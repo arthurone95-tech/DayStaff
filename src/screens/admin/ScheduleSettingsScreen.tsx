@@ -45,7 +45,6 @@ export function ScheduleSettingsScreen() {
         lateThresholdMinutes: grace,
       });
       Alert.alert('Schedule saved', 'The new official hours are now active.');
-      navigation.goBack();
     } catch (error) {
       Alert.alert(
         'Could not save schedule',
@@ -60,6 +59,10 @@ export function ScheduleSettingsScreen() {
     setStartTime(DEFAULT_SCHEDULE.startTime);
     setEndTime(DEFAULT_SCHEDULE.endTime);
     setGrace(DEFAULT_SCHEDULE.lateThresholdMinutes);
+    Alert.alert(
+      'Fields reset',
+      'The form has been reset to the default hours. Tap Save schedule to apply them.',
+    );
   };
 
   return (
@@ -157,7 +160,7 @@ export function ScheduleSettingsScreen() {
           style={styles.saveButton}
         />
         <AppButton
-          title="Reset to defaults"
+          title="Reset fields to defaults"
           onPress={handleReset}
           variant="ghost"
         />
