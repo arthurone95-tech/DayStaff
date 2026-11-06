@@ -93,6 +93,7 @@ export function RootNavigator() {
           component={AdminDashboardScreen}
           options={({ navigation }) => ({
             title: 'Admin dashboard',
+            animation: 'none',
             // The padlock gets its own red-tinted circular badge on every
             // platform so it always reads as a tappable button. Disable the
             // iOS-glass wrapper here to avoid stacking two backgrounds.
@@ -125,7 +126,7 @@ export function RootNavigator() {
         <Stack.Screen
           name="StaffList"
           component={StaffListScreen}
-          options={{ title: 'Staff', headerLeft: () => null }}
+          options={{ title: 'Staff', animation: 'none', headerLeft: () => null }}
         />
         <Stack.Screen
           name="RegisterStaff"
@@ -135,12 +136,12 @@ export function RootNavigator() {
         <Stack.Screen
           name="ScheduleSettings"
           component={ScheduleSettingsScreen}
-          options={{ title: 'Schedule', headerLeft: () => null }}
+          options={{ title: 'Schedule', animation: 'none', headerLeft: () => null }}
         />
         <Stack.Screen
           name="AttendanceHistory"
           component={AttendanceHistoryScreen}
-          options={{ title: 'Attendance', headerLeft: () => null }}
+          options={{ title: 'Attendance', animation: 'none', headerLeft: () => null }}
         />
         <Stack.Screen
           name="ExportReports"
@@ -150,7 +151,7 @@ export function RootNavigator() {
         <Stack.Screen
           name="AdminSettings"
           component={AdminSettingsScreen}
-          options={{ title: 'Settings', headerLeft: () => null }}
+          options={{ title: 'Settings', animation: 'none', headerLeft: () => null }}
         />
       </Stack.Navigator>
     </NavigationContainer>
