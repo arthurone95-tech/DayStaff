@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 
+import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
 import { AppButton } from '../../components/AppButton';
 import { Badge } from '../../components/Badge';
 import { EmptyState } from '../../components/EmptyState';
@@ -30,6 +31,7 @@ export function StaffListScreen() {
       <FlatList
         data={staff}
         keyExtractor={(item) => String(item.id)}
+        style={styles.list}
         contentContainerStyle={styles.content}
         ListHeaderComponent={
           <View style={styles.header}>
@@ -80,11 +82,15 @@ export function StaffListScreen() {
           />
         )}
       />
+      <AdminBottomTabBar navigation={navigation} active="StaffList" />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  list: {
+    flex: 1,
+  },
   content: {
     paddingBottom: spacing.xxl,
   },

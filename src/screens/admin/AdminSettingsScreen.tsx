@@ -16,6 +16,7 @@ import { AppButton } from '../../components/AppButton';
 import { AuthMethodPicker } from '../../components/AuthMethodPicker';
 import { Card } from '../../components/Card';
 import { PinInput } from '../../components/PinInput';
+import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import type { RootNavigation } from '../../navigation/types';
@@ -190,6 +191,7 @@ export function AdminSettingsScreen() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
         <ScrollView
+          style={styles.scroll}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
@@ -378,6 +380,7 @@ export function AdminSettingsScreen() {
 
           <Text style={styles.version}>DayStaff · v1.1.0 · Offline MVP</Text>
         </ScrollView>
+        <AdminBottomTabBar navigation={navigation} active="AdminSettings" />
       </KeyboardAvoidingView>
     </Screen>
   );
@@ -385,6 +388,9 @@ export function AdminSettingsScreen() {
 
 const styles = StyleSheet.create({
   keyboardWrap: {
+    flex: 1,
+  },
+  scroll: {
     flex: 1,
   },
   content: {

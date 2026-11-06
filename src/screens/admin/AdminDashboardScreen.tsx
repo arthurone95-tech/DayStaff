@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
-import { ActionTile } from '../../components/ActionTile';
+import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
 import { Badge } from '../../components/Badge';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
@@ -51,6 +51,7 @@ export function AdminDashboardScreen() {
   return (
     <Screen>
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
@@ -87,38 +88,6 @@ export function AdminDashboardScreen() {
             tone="danger"
           />
           <StatTile label="Absent" value={summary.absent} tone="neutral" />
-        </View>
-
-        <Text style={styles.sectionTitle}>Manage</Text>
-        <View style={styles.actionsGrid}>
-          <ActionTile
-            icon="person-add-outline"
-            label="Add staff"
-            onPress={() => navigation.navigate('RegisterStaff')}
-          />
-          <ActionTile
-            icon="people-outline"
-            label="Staff list"
-            tone="info"
-            onPress={() => navigation.navigate('StaffList')}
-          />
-          <ActionTile
-            icon="time-outline"
-            label="Schedule"
-            tone="warning"
-            onPress={() => navigation.navigate('ScheduleSettings')}
-          />
-          <ActionTile
-            icon="calendar-outline"
-            label="Attendance"
-            tone="success"
-            onPress={() => navigation.navigate('AttendanceHistory')}
-          />
-          <ActionTile
-            icon="settings-outline"
-            label="Settings"
-            onPress={() => navigation.navigate('AdminSettings')}
-          />
         </View>
 
         <View style={styles.listHeader}>
@@ -169,11 +138,15 @@ export function AdminDashboardScreen() {
           Tap a staff member to edit their profile.
         </Text>
       </ScrollView>
+      <AdminBottomTabBar navigation={navigation} active="AdminDashboard" />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+  },
   content: {
     padding: spacing.lg,
     paddingBottom: spacing.xxl,

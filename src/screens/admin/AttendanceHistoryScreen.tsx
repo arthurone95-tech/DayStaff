@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ComponentProps } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   Alert,
   FlatList,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
 import { AppButton } from '../../components/AppButton';
 import { Avatar } from '../../components/Avatar';
 import { Badge, type BadgeTone } from '../../components/Badge';
@@ -23,6 +24,7 @@ import {
   type AttendanceWithStaffRow,
 } from '../../database/queries';
 import { exportAttendanceReportForDate } from '../../services/exportService';
+import type { RootNavigation } from '../../navigation/types';
 import { colors, fontSize, radius, spacing } from '../../theme';
 import {
   addDaysToKey,
@@ -183,6 +185,7 @@ function AttendanceRecordRow({ record }: { record: AttendanceWithStaffRow }) {
 }
 
 export function AttendanceHistoryScreen() {
+  const navigation = useNavigation<RootNavigation>();
   const today = todayKey();
   const yesterday = yesterdayKey();
 
@@ -755,6 +758,7 @@ export function AttendanceHistoryScreen() {
           </Card>
         </View>
       </Modal>
+      <AdminBottomTabBar navigation={navigation} active="AttendanceHistory" />
     </Screen>
   );
 }

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
+import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
 import { Card } from '../../components/Card';
 import { Screen } from '../../components/Screen';
 import { TimeField } from '../../components/TimeField';
@@ -64,6 +65,7 @@ export function ScheduleSettingsScreen() {
   return (
     <Screen>
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
@@ -160,11 +162,15 @@ export function ScheduleSettingsScreen() {
           variant="ghost"
         />
       </ScrollView>
+      <AdminBottomTabBar navigation={navigation} active="ScheduleSettings" />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+  },
   content: {
     padding: spacing.lg,
     paddingBottom: spacing.xxl,

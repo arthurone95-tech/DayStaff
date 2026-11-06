@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   Alert,
   Pressable,
@@ -11,10 +11,12 @@ import {
 } from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
+import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
 import { Card } from '../../components/Card';
 import { Screen } from '../../components/Screen';
 import { getExportLogs } from '../../database/queries';
 import { exportAttendanceReport } from '../../services/exportService';
+import type { RootNavigation } from '../../navigation/types';
 import { colors, fontSize, radius, spacing } from '../../theme';
 import type { ExportRange } from '../../types';
 import { getMonthBounds, monthLabel, todayKey } from '../../utils/date';
@@ -56,6 +58,7 @@ function Segmented({
 }
 
 export function ExportReportsScreen() {
+  const navigation = useNavigation<RootNavigation>();
   const now = new Date();
   const [range, setRange] = useState<ExportRange>('today');
   const [format, setFormat] = useState<'xlsx' | 'csv'>('xlsx');
@@ -123,6 +126,7 @@ export function ExportReportsScreen() {
   return (
     <Screen>
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
@@ -244,11 +248,15 @@ export function ExportReportsScreen() {
           </Text>
         </View>
       </ScrollView>
+      <AdminBottomTabBar navigation={navigation} active="ExportReports" />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+  },
   content: {
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
