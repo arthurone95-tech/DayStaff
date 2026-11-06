@@ -1,9 +1,11 @@
+import { Ionicons } from '@expo/vector-icons';
 import {
   DefaultTheme,
   NavigationContainer,
   type Theme,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Pressable, StyleSheet } from 'react-native';
 
 import { AdminDashboardScreen } from '../screens/admin/AdminDashboardScreen';
 import { AdminSettingsScreen } from '../screens/admin/AdminSettingsScreen';
@@ -35,15 +37,39 @@ export function RootNavigator() {
     <NavigationContainer theme={navigationTheme}>
       <Stack.Navigator
         initialRouteName="Kiosk"
-        screenOptions={{
+        screenOptions={({ navigation }) => ({
           headerStyle: { backgroundColor: colors.primary },
           headerTintColor: colors.white,
           headerTitleStyle: { fontWeight: '700' },
           headerShadowVisible: false,
-          headerBackTitle: ' ',
+          // Replace the native back button with a bare white chevron so no
+          // destination label or iOS 26 "liquid glass" pill is rendered.
+          headerBackVisible: false,
+          headerBackTitle: '',
+          headerBackButtonDisplayMode: 'minimal',
+          headerLeftBackgroundVisible: false,
+          headerLeft: ({ canGoBack }) =>
+            canGoBack ? (
+              <Pressable
+                onPress={() => navigation.goBack()}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+                style={({ pressed }) => [
+                  styles.backButton,
+                  pressed && styles.backButtonPressed,
+                ]}
+              >
+                <Ionicons
+                  name="chevron-back"
+                  size={26}
+                  color={colors.white}
+                />
+              </Pressable>
+            ) : null,
           contentStyle: { backgroundColor: colors.background },
           animation: 'slide_from_right',
-        }}
+        })}
       >
         <Stack.Screen
           name="Kiosk"
@@ -53,7 +79,30 @@ export function RootNavigator() {
         <Stack.Screen
           name="AdminDashboard"
           component={AdminDashboardScreen}
-          options={{ title: 'Admin dashboard' }}
+          options={({ navigation }) => ({
+            title: 'Admin dashboard',
+            // On the dashboard, a red padlock (instead of a back chevron)
+            // makes it obvious that tapping it returns to the locked
+            // attendance terminal.
+            headerLeft: () => (
+              <Pressable
+                onPress={() => navigation.popToTop()}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Lock screen and return to staff clock-in terminal"
+                style={({ pressed }) => [
+                  styles.lockIconButton,
+                  pressed && styles.backButtonPressed,
+                ]}
+              >
+                <Ionicons
+                  name="lock-closed"
+                  size={30}
+                  color={colors.danger}
+                />
+              </Pressable>
+            ),
+          })}
         />
         <Stack.Screen
           name="StaffList"
@@ -84,3 +133,23 @@ export function RootNavigator() {
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  backButton: {
+    backgroundColor: 'transparent',
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backButtonPressed: {
+    opacity: 0.55,
+  },
+  lockIconButton: {
+    backgroundColor: 'transparent',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
