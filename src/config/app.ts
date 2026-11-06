@@ -13,7 +13,7 @@ export const ADMIN_PIN_SETTING = 'admin_pin_hash';
 export const SETUP_COMPLETED_SETTING = 'setup_completed_at';
 
 export const STAFF_CODE_MIN_LENGTH = 2;
-export const STAFF_CODE_MAX_LENGTH = 6;
+export const STAFF_CODE_MAX_LENGTH = 2;
 export const STAFF_CODE_PATTERN = /^[A-Z0-9]+$/;
 
 /** Camera mode profiles are matched against a 64-bit visual fingerprint. */
