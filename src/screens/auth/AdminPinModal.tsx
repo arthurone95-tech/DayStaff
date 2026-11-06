@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -67,7 +70,17 @@ export function AdminPinModal({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <View style={styles.overlay}>
+      {/* Lifts the card above the keyboard so Cancel / Unlock stay visible. */}
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
         <View style={styles.card}>
           <View style={styles.iconWrap}>
             <Ionicons name="lock-closed" size={28} color={colors.primary} />
@@ -108,7 +121,8 @@ export function AdminPinModal({
             />
           </View>
         </View>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -117,10 +131,14 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: colors.overlay,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
   },
+scrollContent: {
+  flexGrow: 1,
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  padding: spacing.xl,
+  paddingBottom: 24,
+},
   card: {
     width: '100%',
     maxWidth: 420,

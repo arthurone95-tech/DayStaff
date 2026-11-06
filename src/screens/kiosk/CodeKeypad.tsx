@@ -3,15 +3,27 @@ import * as Haptics from 'expo-haptics';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { STAFF_CODE_MAX_LENGTH } from '../../config/app';
-import { colors, fontSize, radius, spacing } from '../../theme';
 
 /**
- * Balanced rows keep every key the same height while filling the full width.
- * Letters use 9 columns (9 / 9 / 8) and numbers use 5 columns (5 / 5), which
- * removes the unused space on the right and keeps the keypad shorter than the
- * previous 6 × 6 grid.
+ * Local palette for the kiosk keypad. Change a value here and every key,
+ * panel and button that uses it updates together.
  */
-const LETTER_ROWS = ['ABCDEFGHI', 'JKLMNOPQR', 'STUVWXYZ'].map((row) =>
+const UI = {
+  panelBg: 'rgba(12, 36, 74, 0.72)',
+  panelBorder: 'rgba(59, 130, 246, 0.5)',
+  keyBg: '#0F2D57',
+  keyBorder: 'rgba(96, 165, 250, 0.4)',
+  fieldBorder: '#2F7BFF',
+  text: '#FFFFFF',
+  muted: '#A9BCE0',
+  line: 'rgba(59, 130, 246, 0.45)',
+  verifyBg: '#1E6BFF',
+  verifyBorder: '#5AA2FF',
+  error: '#FCA5A5',
+} as const;
+
+/** 7 letters per row; the last row (V-Z) is centered. Digits: 5 per row. */
+const LETTER_ROWS = ['ABCDEFG', 'HIJKLMN', 'OPQRSTU', 'VWXYZ'].map((row) =>
   row.split(''),
 );
 const DIGIT_ROWS = ['01234', '56789'].map((row) => row.split(''));
@@ -54,6 +66,16 @@ function KeyButton({ value, digit = false, disabled, onPress }: KeyButtonProps) 
   );
 }
 
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionLine} />
+      <Text style={styles.sectionLabel}>{label}</Text>
+      <View style={styles.sectionLine} />
+    </View>
+  );
+}
+
 export function CodeKeypad({
   code,
   hint,
@@ -74,14 +96,6 @@ export function CodeKeypad({
     onChange(code + key);
   };
 
-  const backspace = () => {
-    if (disabled || code.length === 0) {
-      return;
-    }
-    tap();
-    onChange(code.slice(0, -1));
-  };
-
   const clear = () => {
     if (disabled || code.length === 0) {
       return;
@@ -98,121 +112,99 @@ export function CodeKeypad({
     onSubmit();
   };
 
+  const clearDisabled = disabled || code.length === 0;
+  const verifyDisabled = disabled || code.length < 2;
+
   return (
     <View style={styles.wrap}>
+      {/* Staff code card */}
       <View style={styles.display}>
-        <View style={styles.displayHeader}>
+        <View style={styles.displayBody}>
           <Text style={styles.displayLabel}>Staff code</Text>
-          <Text style={styles.displayCount}>
-            {code.length}/{MAX_CODE_LENGTH}
-          </Text>
-        </View>
-        <Text
-          style={[styles.code, !code && styles.codePlaceholder]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-        >
-          {code || '_ _ _ _ _ _'}
-        </Text>
-        {error ? (
-          <Text style={styles.error}>{error}</Text>
-        ) : hint ? (
-          <Text style={styles.hint}>{hint}</Text>
-        ) : null}
-      </View>
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionLabel}>Letters A–Z</Text>
-        <View style={styles.sectionLine} />
-      </View>
-
-      {LETTER_ROWS.map((row) => (
-        <View key={row.join('')} style={styles.gridRow}>
-          {row.map((key) => (
-            <View
-              key={key}
-              style={[styles.cell, { width: `${100 / row.length}%` }]}
+          <View style={styles.field}>
+            <Text
+              style={[styles.code, !code && styles.codePlaceholder]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
             >
-              <KeyButton
-                value={key}
-                disabled={disabled}
-                onPress={() => append(key)}
-              />
-            </View>
-          ))}
+              {code || 'Enter your code'}
+            </Text>
+            <Text style={styles.displayCount}>
+              {code.length}/{MAX_CODE_LENGTH}
+            </Text>
+          </View>
+          {error ? (
+            <Text style={styles.error}>{error}</Text>
+          ) : hint ? (
+            <Text style={styles.hint}>{hint}</Text>
+          ) : null}
         </View>
-      ))}
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionLabel}>Numbers 0–9</Text>
-        <View style={styles.sectionLine} />
       </View>
 
-      {DIGIT_ROWS.map((row) => (
-        <View key={row.join('')} style={styles.gridRow}>
-          {row.map((key) => (
-            <View
-              key={key}
-              style={[styles.cell, { width: `${100 / row.length}%` }]}
-            >
-              <KeyButton
-                value={key}
-                digit
-                disabled={disabled}
-                onPress={() => append(key)}
-              />
-            </View>
-          ))}
-        </View>
-      ))}
+      {/* Letters + numbers panel */}
+      <View style={styles.panel}>
+        <SectionHeader label="Letters A–Z" />
+        {LETTER_ROWS.map((row) => (
+          <View key={row.join('')} style={styles.gridRow}>
+            {row.map((key) => (
+              <View key={key} style={styles.letterCell}>
+                <KeyButton
+                  value={key}
+                  disabled={disabled}
+                  onPress={() => append(key)}
+                />
+              </View>
+            ))}
+          </View>
+        ))}
 
+        <SectionHeader label="Numbers 0–9" />
+        {DIGIT_ROWS.map((row) => (
+          <View key={row.join('')} style={styles.gridRow}>
+            {row.map((key) => (
+              <View key={key} style={styles.digitCell}>
+                <KeyButton
+                  value={key}
+                  digit
+                  disabled={disabled}
+                  onPress={() => append(key)}
+                />
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
+
+      {/* Actions */}
       <View style={styles.actions}>
         <Pressable
-          onPress={backspace}
-          disabled={disabled || code.length === 0}
-          accessibilityRole="button"
-          accessibilityLabel="Delete last character"
-          style={({ pressed }) => [
-            styles.action,
-            pressed && styles.keyPressed,
-            (disabled || code.length === 0) && styles.actionDisabled,
-          ]}
-        >
-          <Ionicons
-            name="backspace-outline"
-            size={20}
-            color={colors.kioskText}
-          />
-          <Text style={styles.actionLabel}>Delete</Text>
-        </Pressable>
-
-        <Pressable
           onPress={clear}
-          disabled={disabled || code.length === 0}
+          disabled={clearDisabled}
           accessibilityRole="button"
           accessibilityLabel="Clear code"
           style={({ pressed }) => [
             styles.action,
             pressed && styles.keyPressed,
-            (disabled || code.length === 0) && styles.actionDisabled,
+            clearDisabled && styles.actionDisabled,
           ]}
         >
+          <Ionicons name="trash-outline" size={24} color={UI.text} />
           <Text style={styles.actionLabel}>Clear</Text>
         </Pressable>
 
         <Pressable
           onPress={verify}
-          disabled={disabled || code.length < 2}
+          disabled={verifyDisabled}
           accessibilityRole="button"
           accessibilityLabel="Verify code with biometrics"
           style={({ pressed }) => [
             styles.verify,
             pressed && styles.keyPressed,
-            (disabled || code.length < 2) && styles.actionDisabled,
+            verifyDisabled && styles.actionDisabled,
           ]}
         >
-          <Ionicons name="finger-print" size={22} color={colors.white} />
-          <Text style={styles.verifyLabel}>Verify</Text>
+          <Ionicons name="finger-print" size={28} color={UI.text} />
+          <Text style={styles.actionLabel}>Verify</Text>
         </Pressable>
       </View>
     </View>
@@ -222,97 +214,142 @@ export function CodeKeypad({
 const styles = StyleSheet.create({
   wrap: {
     width: '100%',
-    alignSelf: 'stretch',
+    maxWidth: 560,
+    alignSelf: 'center',
   },
+
+  // ---- Staff code card ----
   display: {
-    backgroundColor: colors.kioskSurface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.kioskSurfaceRaised,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  displayHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    backgroundColor: UI.panelBg,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: UI.panelBorder,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+  displayBody: {
+    flex: 1,
   },
   displayLabel: {
-    color: colors.kioskMuted,
-    fontSize: fontSize.xs,
-    fontWeight: '700',
+    color: UI.muted,
+    fontSize: 13,
+    fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 1,
+    marginBottom: 4,
+    marginLeft: 4,
   },
-  displayCount: {
-    color: colors.kioskMuted,
-    fontSize: fontSize.xs,
-    fontVariant: ['tabular-nums'],
+  field: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 46,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: UI.fieldBorder,
+    backgroundColor: 'rgba(5, 18, 42, 0.6)',
+    paddingHorizontal: 16,
+    shadowColor: UI.fieldBorder,
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
   },
   code: {
-    marginTop: spacing.xs,
-    color: colors.kioskText,
-    fontSize: 28,
+    flex: 1,
+    color: UI.text,
+    fontSize: 24,
     fontWeight: '800',
-    letterSpacing: 7,
+    letterSpacing: 6,
     fontVariant: ['tabular-nums'],
   },
   codePlaceholder: {
-    color: colors.kioskMuted,
-    fontSize: fontSize.lg,
+    color: UI.muted,
+    fontSize: 20,
     fontWeight: '500',
     letterSpacing: 0,
   },
+  displayCount: {
+    marginLeft: 8,
+    color: UI.muted,
+    fontSize: 15,
+    fontVariant: ['tabular-nums'],
+  },
   hint: {
-    marginTop: spacing.xs,
-    color: colors.kioskMuted,
-    fontSize: fontSize.xs,
+    marginTop: 4,
+    marginLeft: 4,
+    color: UI.muted,
+    fontSize: 12,
   },
   error: {
-    marginTop: spacing.xs,
-    color: '#FCA5A5',
-    fontSize: fontSize.xs,
+    marginTop: 4,
+    marginLeft: 4,
+    color: UI.error,
+    fontSize: 12,
     fontWeight: '600',
+  },
+
+  // ---- Letters + numbers panel ----
+  panel: {
+    backgroundColor: UI.panelBg,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: UI.panelBorder,
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.xs,
-    marginBottom: 2,
-    paddingHorizontal: 3,
+    gap: 12,
+    marginVertical: 3,
+    paddingHorizontal: 12,
   },
   sectionLabel: {
-    color: colors.kioskMuted,
-    fontSize: 10,
+    color: UI.muted,
+    fontSize: 13,
     fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   sectionLine: {
     flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.kioskSurfaceRaised,
+    height: 1,
+    backgroundColor: UI.line,
   },
   gridRow: {
     flexDirection: 'row',
+    justifyContent: 'center', // centers the short last letter row (V-Z)
   },
-  cell: {
+  letterCell: {
+    width: `${100 / 7}%`,
     padding: 3,
   },
+  digitCell: {
+    width: '20%',
+    padding: 4,
+  },
+
+  // ---- Keys ----
   key: {
-    height: 50,
-    borderRadius: radius.sm,
-    backgroundColor: colors.kioskSurface,
+    width: '100%',
+    aspectRatio: 1.05, // letters: almost square
+    borderRadius: 14,
+    backgroundColor: UI.keyBg,
     borderWidth: 1,
-    borderColor: colors.kioskSurfaceRaised,
+    borderColor: UI.keyBorder,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#3B82F6',
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
   },
   keyDigit: {
-    backgroundColor: 'rgba(59, 130, 246, 0.16)',
-    borderColor: 'rgba(59, 130, 246, 0.55)',
+    aspectRatio: 1.55, // numbers: wider and larger
+    borderRadius: 16,
   },
   keyPressed: {
     opacity: 0.7,
@@ -322,54 +359,54 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   keyLabel: {
-    color: colors.kioskText,
-    fontSize: fontSize.lg,
-    fontWeight: '700',
-  },
-  keyLabelDigit: {
-    color: '#DBEAFE',
+    color: UI.text,
+    fontSize: 26,
     fontWeight: '800',
   },
+  keyLabelDigit: {
+    fontSize: 30,
+  },
+
+  // ---- Clear / Verify ----
   actions: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.md,
+    gap: 12,
+    marginTop: 10,
   },
   action: {
     flex: 1,
-    height: 50,
-    borderRadius: radius.md,
-    backgroundColor: colors.kioskSurface,
-    borderWidth: 1,
-    borderColor: colors.kioskSurfaceRaised,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(12, 36, 74, 0.85)',
+    borderWidth: 1.5,
+    borderColor: UI.panelBorder,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
+    gap: 10,
   },
   actionLabel: {
-    color: colors.kioskText,
-    fontSize: fontSize.sm,
+    color: UI.text,
+    fontSize: 20,
     fontWeight: '700',
   },
   actionDisabled: {
-    opacity: 0.4,
+    opacity: 0.45,
   },
   verify: {
-    flex: 1.3,
-    height: 50,
-    borderRadius: radius.md,
-    backgroundColor: colors.primaryLight,
-    borderWidth: 1,
-    borderColor: colors.accent,
+    flex: 1.1,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: UI.verifyBg,
+    borderWidth: 1.5,
+    borderColor: UI.verifyBorder,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
-  },
-  verifyLabel: {
-    color: colors.white,
-    fontSize: fontSize.sm,
-    fontWeight: '800',
+    gap: 10,
+    shadowColor: UI.verifyBg,
+    shadowOpacity: 0.55,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
   },
 });

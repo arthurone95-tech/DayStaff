@@ -13,6 +13,9 @@ import {
 import { AppButton } from '../../components/AppButton';
 import { colors, fontSize, radius, spacing } from '../../theme';
 
+/** Light blue (same family as the Verify button) for tappable text links. */
+const LINK_BLUE = '#5AA2FF';
+
 interface FaceScanPanelProps {
   busy: boolean;
   profileCount: number;
@@ -176,17 +179,6 @@ export function FaceScanPanel({
       <Text style={styles.instruction}>
         Look straight at the camera and keep your face inside the oval.
       </Text>
-      <Text style={styles.subInstruction}>
-        {profileCount} face {profileCount === 1 ? 'profile' : 'profiles'} ready
-        · matching happens on this device
-      </Text>
-
-      {engineAvailable === false ? (
-        <Text style={styles.warning}>
-          This build is using a basic fallback matcher. Install the latest app
-          build for full face recognition.
-        </Text>
-      ) : null}
 
       {cameraError ? <Text style={styles.error}>{cameraError}</Text> : null}
 
@@ -215,14 +207,15 @@ export function FaceScanPanel({
         <Ionicons
           name="keypad-outline"
           size={16}
-          color={colors.kioskMuted}
+          color={LINK_BLUE}
         />
-        <Text style={styles.linkLabel}>Use staff code instead</Text>
+        <Text style={[styles.linkLabel, styles.linkLabelDark]}>
+          Use staff code instead
+        </Text>
       </Pressable>
 
       <Text style={styles.disclaimer}>
-        Face matching runs entirely on this device. If the match is close but
-        not certain, you will be asked to confirm before attendance is recorded.
+        Face matching runs entirely on this device.
       </Text>
     </View>
   );
@@ -325,19 +318,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-  subInstruction: {
-    marginTop: spacing.xs,
-    color: colors.kioskMuted,
-    fontSize: fontSize.xs,
-    textAlign: 'center',
-  },
-  warning: {
-    marginTop: spacing.sm,
-    color: '#FCD34D',
-    fontSize: fontSize.xs,
-    lineHeight: 17,
-    textAlign: 'center',
-  },
   error: {
     marginTop: spacing.sm,
     color: '#FCA5A5',
@@ -356,10 +336,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   linkLabel: {
-    color: colors.kioskMuted,
+    color: colors.info, // darker blue: readable on the white cards
     fontSize: fontSize.sm,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  linkLabelDark: {
+    color: LINK_BLUE, // light blue: readable on the dark kiosk background
   },
   pressed: {
     opacity: 0.7,

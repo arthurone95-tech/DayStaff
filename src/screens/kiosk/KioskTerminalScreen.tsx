@@ -40,6 +40,8 @@ import { FaceMatchModal } from './FaceMatchModal';
 import { FaceScanPanel } from './FaceScanPanel';
 
 const FEEDBACK_TIMEOUT_MS = 8000;
+/** Deep navy background used behind the whole kiosk screen. */
+const KIOSK_BG = '#06142B';
 
 export function KioskTerminalScreen() {
   const navigation = useNavigation<RootNavigation>();
@@ -375,7 +377,7 @@ export function KioskTerminalScreen() {
     return (
       <Screen
         edges={['top', 'left', 'right', 'bottom']}
-        backgroundColor={colors.kioskBackground}
+        backgroundColor={KIOSK_BG}
       >
         <View style={styles.emptyScreen}>
           <View style={styles.topBar}>
@@ -398,7 +400,7 @@ export function KioskTerminalScreen() {
             >
               <Ionicons
                 name="lock-closed-outline"
-                size={16}
+                size={22}
                 color={colors.kioskText}
               />
               <Text style={styles.lockLabel}>Admin</Text>
@@ -445,11 +447,17 @@ export function KioskTerminalScreen() {
   return (
     <Screen
       edges={['top', 'left', 'right', 'bottom']}
-      backgroundColor={colors.kioskBackground}
+      backgroundColor={KIOSK_BG}
     >
+      <View pointerEvents="none" style={styles.waves}>
+        <View style={styles.waveLeft} />
+        <View style={styles.waveRight} />
+      </View>
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        bounces={false}
+        overScrollMode="never"
       >
         <View style={styles.topBar}>
           <View style={styles.brandRow}>
@@ -472,7 +480,7 @@ export function KioskTerminalScreen() {
           >
             <Ionicons
               name="lock-closed-outline"
-              size={16}
+              size={22}
               color={colors.kioskText}
             />
             <Text style={styles.lockLabel}>Admin</Text>
@@ -480,7 +488,9 @@ export function KioskTerminalScreen() {
         </View>
 
         <View style={styles.clockBlock}>
-          <Text style={styles.clock}>{formatTime24h(now)}</Text>
+          <Text style={styles.clock} numberOfLines={1} adjustsFontSizeToFit>
+            {formatTime24h(now)}
+          </Text>
           <Text style={styles.date}>{formatDateLong(now)}</Text>
         </View>
 
@@ -491,11 +501,11 @@ export function KioskTerminalScreen() {
               {mode === 'FACE' ? 'Face recognition' : 'Code + biometrics'}
             </Text>
           </View>
-          <Text style={styles.instruction}>
-            {mode === 'FACE'
-              ? 'Look at the camera and tap scan'
-              : 'Enter your staff code to clock in or out'}
-          </Text>
+          {mode === 'FACE' ? (
+            <Text style={styles.instruction}>
+              Look at the camera and tap scan
+            </Text>
+          ) : null}
         </View>
 
         <View
@@ -575,14 +585,16 @@ export function KioskTerminalScreen() {
         </View>
 
         <View style={styles.footer}>
+          <View style={styles.footerLine} />
           <Ionicons
             name="shield-checkmark-outline"
-            size={16}
+            size={20}
             color={colors.kioskMuted}
           />
           <Text style={styles.footerText}>
             Attendance is stored securely on this device
           </Text>
+          <View style={styles.footerLine} />
         </View>
       </ScrollView>
 
@@ -622,7 +634,7 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.sm,
   },
   emptyScreen: {
     flex: 1,
@@ -643,74 +655,76 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   brand: {
-    color: colors.kioskText,
-    fontSize: fontSize.md,
+    color: colors.white,
+    fontSize: 22,
     fontWeight: '800',
   },
   brandSub: {
-    color: colors.kioskMuted,
-    fontSize: fontSize.xs,
+    color: '#C7D6F5',
+    fontSize: 13,
   },
   lockButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
-    borderWidth: 1,
-    borderColor: colors.kioskSurfaceRaised,
-    backgroundColor: colors.kioskSurface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: 'rgba(96, 165, 250, 0.5)',
+    backgroundColor: 'rgba(12, 36, 74, 0.85)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: radius.pill,
   },
   lockButtonPressed: {
     opacity: 0.7,
   },
   lockLabel: {
-    color: colors.kioskText,
-    fontSize: fontSize.sm,
+    color: colors.white,
+    fontSize: 16,
     fontWeight: '600',
   },
   clockBlock: {
     alignItems: 'center',
-    marginTop: spacing.lg,
+    marginTop: 4,
     marginBottom: spacing.sm,
   },
   clock: {
-    color: colors.kioskText,
-    fontSize: 48,
+    color: colors.white,
+    fontSize: 54,
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
     letterSpacing: 1,
   },
   date: {
     marginTop: 2,
-    color: colors.kioskMuted,
-    fontSize: fontSize.sm,
+    color: '#C7D6F5',
+    fontSize: 17,
     fontWeight: '500',
   },
   instructionRow: {
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   livePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(5, 150, 105, 0.15)',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    backgroundColor: 'rgba(16, 229, 160, 0.12)',
+    borderWidth: 1.5,
+    borderColor: '#10E5A0',
+    paddingHorizontal: 18,
+    paddingVertical: 5,
     borderRadius: radius.pill,
-    marginBottom: spacing.xs,
+    marginBottom: 0,
   },
   liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.success,
-    marginRight: spacing.xs,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#10E5A0',
+    marginRight: 8,
   },
   liveLabel: {
-    color: '#6EE7B7',
-    fontSize: fontSize.xs,
+    color: '#34F5B5',
+    fontSize: 14,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
@@ -772,12 +786,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
-    paddingTop: spacing.sm,
+    gap: spacing.sm,
+    paddingTop: spacing.md,
+  },
+  footerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(59, 130, 246, 0.45)',
   },
   footerText: {
-    color: colors.kioskMuted,
-    fontSize: fontSize.xs,
+    color: '#A9BCE0',
+    fontSize: 13,
+  },
+  waves: {
+    ...StyleSheet.absoluteFill,
+    overflow: 'hidden',
+  },
+  waveLeft: {
+    position: 'absolute',
+    left: -320,
+    top: 110,
+    width: 620,
+    height: 620,
+    borderRadius: 310,
+    backgroundColor: 'rgba(37, 99, 235, 0.22)',
+  },
+  waveRight: {
+    position: 'absolute',
+    right: -340,
+    top: 190,
+    width: 620,
+    height: 620,
+    borderRadius: 310,
+    backgroundColor: 'rgba(37, 99, 235, 0.16)',
   },
   empty: {
     flex: 1,
