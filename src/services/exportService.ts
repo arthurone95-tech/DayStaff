@@ -240,13 +240,15 @@ async function shareFile(
   return true;
 }
 
-export async function exportAttendanceReport(
-  options: ExportOptions,
+async function writeReport(
+  bounds: { startDate: string; endDate: string; label: string },
+  format: 'xlsx' | 'csv',
 ): Promise<ExportResult> {
-  const { startDate, endDate, label } = resolveBounds(options);
-  const rows = getExportLogs(startDate, endDate);
-  const safeLabel = label.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
-  const fileName = `DayStaff-${safeLabel}.${options.format}`;
+  const rows = getExportLogs(bounds.startDate, bounds.endDate);
+  const safeLabel = bounds.label
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-|-$/g, '');
+  const fileName = `DayStaff-${safeLabel}.${format}`;
   const baseDirectory =
     FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
   if (!baseDirectory) {
@@ -254,7 +256,7 @@ export async function exportAttendanceReport(
   }
   const uri = `${baseDirectory}${fileName}`;
 
-  if (options.format === 'csv') {
+  if (format === 'csv') {
     const table = [HEADERS, ...buildRows(rows)];
     const sheet = XLSX.utils.aoa_to_sheet(table);
     const csv = XLSX.utils.sheet_to_csv(sheet);
@@ -262,7 +264,7 @@ export async function exportAttendanceReport(
       encoding: FileSystem.EncodingType.UTF8,
     });
   } else {
-    const workbook = buildWorkbook(rows, label);
+    const workbook = buildWorkbook(rows, bounds.label);
     const base64 = XLSX.write(workbook, {
       type: 'base64',
       bookType: 'xlsx',
@@ -272,8 +274,34 @@ export async function exportAttendanceReport(
     });
   }
 
-  const shared = await shareFile(uri, options.format);
+  const shared = await shareFile(uri, format);
   return { uri, fileName, rowCount: rows.length, shared };
+}
+
+export async function exportAttendanceReport(
+  options: ExportOptions,
+): Promise<ExportResult> {
+  return writeReport(resolveBounds(options), options.format);
+}
+
+export interface ExportDateOptions {
+  /** Local date key `YYYY-MM-DD`. */
+  dateKey: string;
+  format: 'xlsx' | 'csv';
+}
+
+/** Export exactly one local date, used by the attendance history viewer. */
+export async function exportAttendanceReportForDate(
+  options: ExportDateOptions,
+): Promise<ExportResult> {
+  return writeReport(
+    {
+      startDate: options.dateKey,
+      endDate: options.dateKey,
+      label: `Attendance ${formatDateMedium(options.dateKey)}`,
+    },
+    options.format,
+  );
 }
 
 export function describeRangeLabel(

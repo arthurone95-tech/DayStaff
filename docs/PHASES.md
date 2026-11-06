@@ -179,6 +179,22 @@ This document tracks the implementation phases derived from the
   - [ ] Benchmark inference time on low-end kiosk hardware and cap the
         candidate search (indexed embeddings) as staff counts grow.
 
+## Phase 11 — Attendance History & Nested Export ✅
+
+- [x] Replace the dashboard **Export** tile with **Attendance**.
+- [x] Add `AttendanceHistoryScreen` with Today/Yesterday quick filters, previous
+      and next day navigation, and a month/year calendar picker that highlights
+      dates with stored records.
+- [x] Show every attendance record for the selected local date with staff photo,
+      name, code, exact clock-in/clock-out times, and green/red status badges
+      for on-time arrival, late arrival, correct departure, and early exit.
+- [x] Add an empty state for dates without records.
+- [x] Move export into the attendance screen: a header-level Export button opens
+      an XLSX/CSV modal scoped to the selected date and hands the file to the
+      native share sheet.
+- [x] Add indexed SQLite date filtering (`attendance_logs.date`) and a distinct
+      recorded-date query for the calendar picker.
+
 ---
 
 ## Architecture Summary
@@ -196,8 +212,8 @@ src/
   screens/
     kiosk/                     terminal, CodeKeypad, FaceScanPanel,
                                FaceMatchModal
-    admin/                     dashboard, staff, register, schedule, export,
-                               settings
+    admin/                     dashboard, staff, register, schedule, attendance,
+                               export, settings
     auth/                      AdminPinModal
     setup/                     AdminSetupScreen wizard
   services/

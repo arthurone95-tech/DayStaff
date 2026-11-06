@@ -6,6 +6,7 @@ export type RootStackParamList = {
   StaffList: undefined;
   RegisterStaff: { staffId?: number } | undefined;
   ScheduleSettings: undefined;
+  AttendanceHistory: undefined;
   ExportReports: undefined;
   AdminSettings: undefined;
 };

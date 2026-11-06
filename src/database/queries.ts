@@ -318,6 +318,96 @@ export function updateClockOut(params: {
   return mapLog(log);
 }
 
+export interface AttendanceWithStaffRow {
+  staff: Staff;
+  log: AttendanceLog;
+}
+
+interface AttendanceWithStaffSqlRow {
+  log_id: number;
+  staff_id: number;
+  date: string;
+  clock_in_time: string;
+  clock_in_status: ClockInStatus;
+  minutes_late: number;
+  clock_out_time: string | null;
+  clock_out_status: ClockOutStatus | null;
+  minutes_early: number;
+  staff_pk: number;
+  full_name: string;
+  staff_code: string | null;
+  photo_uri: string | null;
+  face_signature: string | null;
+  is_active: number;
+  created_at: string;
+}
+
+/**
+ * All attendance records for one local date, joined with the staff profile.
+ * Inactive staff remain visible in history if they have a record for the day.
+ */
+export function getAttendanceWithStaffForDate(
+  date: string,
+): AttendanceWithStaffRow[] {
+  const rows = getDb().getAllSync<AttendanceWithStaffSqlRow>(
+    `SELECT
+       l.id AS log_id,
+       l.staff_id,
+       l.date,
+       l.clock_in_time,
+       l.clock_in_status,
+       l.minutes_late,
+       l.clock_out_time,
+       l.clock_out_status,
+       l.minutes_early,
+       s.id AS staff_pk,
+       s.full_name,
+       s.staff_code,
+       s.photo_uri,
+       s.face_signature,
+       s.is_active,
+       s.created_at
+     FROM attendance_logs l
+     JOIN staff s ON s.id = l.staff_id
+     WHERE l.date = ?
+     ORDER BY s.full_name COLLATE NOCASE ASC`,
+    [date],
+  );
+
+  return rows.map((row) => ({
+    staff: mapStaff({
+      id: row.staff_pk,
+      full_name: row.full_name,
+      staff_code: row.staff_code,
+      photo_uri: row.photo_uri,
+      face_signature: row.face_signature,
+      is_active: row.is_active,
+      created_at: row.created_at,
+    }),
+    log: mapLog({
+      id: row.log_id,
+      staff_id: row.staff_id,
+      date: row.date,
+      clock_in_time: row.clock_in_time,
+      clock_in_status: row.clock_in_status,
+      minutes_late: row.minutes_late,
+      clock_out_time: row.clock_out_time,
+      clock_out_status: row.clock_out_status,
+      minutes_early: row.minutes_early,
+    }),
+  }));
+}
+
+/** Distinct dates that have at least one attendance record. */
+export function getAttendanceDateKeys(): string[] {
+  const rows = getDb().getAllSync<{ date: string }>(
+    `SELECT DISTINCT date
+     FROM attendance_logs
+     ORDER BY date DESC`,
+  );
+  return rows.map((row) => row.date);
+}
+
 export interface ExportLogRow {
   log: AttendanceLog;
   staffName: string;

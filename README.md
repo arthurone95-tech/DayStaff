@@ -113,15 +113,19 @@ After setup, the kiosk is locked. From there:
   camera or gallery profile photo.
 - Editing, deactivation/reactivation (history preserved).
 - Schedule configuration: official start, grace period, closing time.
+- Attendance history with Today/Yesterday shortcuts, day-by-day browsing, and a
+  month/year calendar picker that highlights days with stored records.
 - Auth-mode switch, company name, PIN change, biometric readiness check and
   "lock admin area".
 
 ### Reports
 
+- Attendance history shows every staff record for the selected date with photo,
+  name, exact clock-in/clock-out times, and green/red arrival and departure
+  status indicators.
+- Export lives inside the attendance screen and is scoped to the selected date.
 - **Excel (.xlsx)** with an `Attendance` sheet and a `Daily totals` sheet.
 - **CSV** for lightweight sharing.
-- Ranges: today, a chosen month, or all time.
-- Includes staff code column.
 - Handed to the OS share sheet (WhatsApp, email, Files).
 
 ---
@@ -138,7 +142,8 @@ src/
   navigation/     React Navigation native stack + route types
   screens/
     kiosk/        terminal, code keypad, face scan and match confirmation
-    admin/        dashboard, staff, register, schedule, export, settings
+    admin/        dashboard, staff, register, schedule, attendance, export,
+                  settings
     auth/         AdminPinModal
     setup/        first-run administrator setup wizard
   services/       attendance engine, biometrics, app settings, PIN, photos,

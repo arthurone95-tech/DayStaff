@@ -38,6 +38,17 @@ export function todayKey(now: Date = new Date()): string {
   return toDateKey(now);
 }
 
+/** Shift a local date key by whole days (negative values move backwards). */
+export function addDaysToKey(dateKey: string, days: number): string {
+  const date = parseDateKey(dateKey);
+  date.setDate(date.getDate() + days);
+  return toDateKey(date);
+}
+
+export function yesterdayKey(now: Date = new Date()): string {
+  return addDaysToKey(todayKey(now), -1);
+}
+
 export function parseDateKey(dateKey: string): Date {
   const [year, month, day] = dateKey.split('-').map(Number);
   return new Date(year, month - 1, day);

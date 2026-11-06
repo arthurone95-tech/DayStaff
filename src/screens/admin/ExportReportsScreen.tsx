@@ -211,8 +211,8 @@ export function ExportReportsScreen() {
                 {rowCount} {rowCount === 1 ? 'record' : 'records'} ready
               </Text>
               <Text style={styles.previewHint}>
-                Includes date, staff, phone, clock in/out, minutes late or
-                early, and day status.
+                Includes date, staff code, clock in/out, minutes late or early,
+                and day status.
               </Text>
             </View>
           </View>

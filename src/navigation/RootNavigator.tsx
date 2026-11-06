@@ -9,6 +9,7 @@ import { Pressable, Platform, StyleSheet } from 'react-native';
 
 import { AdminDashboardScreen } from '../screens/admin/AdminDashboardScreen';
 import { AdminSettingsScreen } from '../screens/admin/AdminSettingsScreen';
+import { AttendanceHistoryScreen } from '../screens/admin/AttendanceHistoryScreen';
 import { ExportReportsScreen } from '../screens/admin/ExportReportsScreen';
 import { RegisterStaffScreen } from '../screens/admin/RegisterStaffScreen';
 import { ScheduleSettingsScreen } from '../screens/admin/ScheduleSettingsScreen';
@@ -135,6 +136,11 @@ export function RootNavigator() {
           name="ScheduleSettings"
           component={ScheduleSettingsScreen}
           options={{ title: 'Schedule' }}
+        />
+        <Stack.Screen
+          name="AttendanceHistory"
+          component={AttendanceHistoryScreen}
+          options={{ title: 'Attendance' }}
         />
         <Stack.Screen
           name="ExportReports"

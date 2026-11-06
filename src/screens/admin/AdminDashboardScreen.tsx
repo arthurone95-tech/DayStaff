@@ -126,10 +126,10 @@ export function AdminDashboardScreen() {
             onPress={() => navigation.navigate('ScheduleSettings')}
           />
           <ActionTile
-            icon="download-outline"
-            label="Export"
+            icon="calendar-outline"
+            label="Attendance"
             tone="success"
-            onPress={() => navigation.navigate('ExportReports')}
+            onPress={() => navigation.navigate('AttendanceHistory')}
           />
           <ActionTile
             icon="settings-outline"
