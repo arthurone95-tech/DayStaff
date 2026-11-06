@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fontSize, radius, spacing } from '../theme';
+import { getBiometricLabelSync } from '../services/biometricService';
 import type { AuthMethod } from '../types';
 
 interface AuthMethodPickerProps {
@@ -21,7 +22,7 @@ const OPTIONS: Array<{
     value: 'PIN_BIOMETRIC',
     title: 'Staff code + biometrics',
     description:
-      'Staff enter a short code on the on-screen keypad, then confirm with the fingerprint or Face ID enrolled on this device.',
+      `Staff enter a short code on the on-screen keypad, then confirm with the ${getBiometricLabelSync()} enrolled on this device.`,
     icon: 'keypad-outline',
     recommended: true,
   },

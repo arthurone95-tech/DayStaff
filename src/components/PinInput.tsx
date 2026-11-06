@@ -54,7 +54,10 @@ export function PinInput({
           placeholderTextColor={colors.slate400}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          style={styles.input}
+          style={[
+            styles.input,
+            value.length > 0 && styles.inputWithValue,
+          ]}
           accessibilityLabel="Administrator PIN"
         />
       </Pressable>
@@ -82,10 +85,12 @@ const styles = StyleSheet.create({
   input: {
     height: 54,
     fontSize: fontSize.xl,
-    letterSpacing: 10,
     textAlign: 'center',
     color: colors.slate900,
     fontWeight: '600',
+  },
+  inputWithValue: {
+    letterSpacing: 10,
   },
   error: {
     marginTop: spacing.xs,

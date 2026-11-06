@@ -40,6 +40,7 @@ export function RootNavigator() {
           headerTintColor: colors.white,
           headerTitleStyle: { fontWeight: '700' },
           headerShadowVisible: false,
+          headerBackTitle: ' ',
           contentStyle: { backgroundColor: colors.background },
           animation: 'slide_from_right',
         }}

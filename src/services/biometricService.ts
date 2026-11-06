@@ -60,6 +60,17 @@ function labelForKind(kind: BiometricKind): string {
 }
 
 /**
+ * Synchronous biometric label based on platform, for use in static UI text
+ * where an async `getBiometricStatus()` call is not practical.
+ */
+export function getBiometricLabelSync(): string {
+  if (Platform.OS === 'ios') {
+    return 'Face ID';
+  }
+  return 'Fingerprint';
+}
+
+/**
  * Inspect the physical sensor and enrolment state before any prompt is shown.
  * This lets the kiosk explain *why* verification is unavailable on iOS Face ID
  * devices, Android sensors, and hardware without biometrics.

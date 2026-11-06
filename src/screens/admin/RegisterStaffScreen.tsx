@@ -31,6 +31,7 @@ import {
 } from '../../database/queries';
 import type { RootStackParamList } from '../../navigation/types';
 import { createFaceSignature } from '../../services/faceSignature';
+import { getBiometricLabelSync } from '../../services/biometricService';
 import {
   captureStaffPhoto,
   chooseStaffPhoto,
@@ -332,7 +333,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
             color={colors.slate500}
           />
           <Text style={styles.noteText}>
-            Code mode verifies the fingerprint or Face ID enrolled on this
+            Code mode verifies the {getBiometricLabelSync()} enrolled on this
             terminal. Face mode uses this profile photo for an on-device visual
             match, so use a clear, front-facing portrait when possible.
           </Text>

@@ -26,6 +26,7 @@ import {
 } from '../../services/appSettings';
 import {
   type BiometricStatus,
+  getBiometricLabelSync,
   getBiometricStatus,
 } from '../../services/biometricService';
 import {
@@ -209,7 +210,7 @@ export function AdminSettingsScreen() {
           <Text style={styles.authNote}>
             Face mode uses an on-device visual match against staff photos and
             may ask the staff member to confirm. Code mode uses this device's
-            fingerprint or Face ID.
+            {getBiometricLabelSync()}.
           </Text>
         </Card>
 
@@ -265,7 +266,7 @@ export function AdminSettingsScreen() {
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>Device biometrics</Text>
           <Text style={styles.cardHint}>
-            Code mode verifies the fingerprint or Face ID enrolled on this
+            Code mode verifies the {getBiometricLabelSync()} enrolled on this
             terminal. Face-recognition mode uses the camera instead.
           </Text>
 
