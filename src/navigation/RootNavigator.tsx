@@ -125,7 +125,7 @@ export function RootNavigator() {
         <Stack.Screen
           name="StaffList"
           component={StaffListScreen}
-          options={{ title: 'Staff' }}
+          options={{ title: 'Staff', headerLeft: () => null }}
         />
         <Stack.Screen
           name="RegisterStaff"
@@ -135,12 +135,12 @@ export function RootNavigator() {
         <Stack.Screen
           name="ScheduleSettings"
           component={ScheduleSettingsScreen}
-          options={{ title: 'Schedule' }}
+          options={{ title: 'Schedule', headerLeft: () => null }}
         />
         <Stack.Screen
           name="AttendanceHistory"
           component={AttendanceHistoryScreen}
-          options={{ title: 'Attendance' }}
+          options={{ title: 'Attendance', headerLeft: () => null }}
         />
         <Stack.Screen
           name="ExportReports"
@@ -150,7 +150,7 @@ export function RootNavigator() {
         <Stack.Screen
           name="AdminSettings"
           component={AdminSettingsScreen}
-          options={{ title: 'Settings' }}
+          options={{ title: 'Settings', headerLeft: () => null }}
         />
       </Stack.Navigator>
     </NavigationContainer>

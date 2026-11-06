@@ -19,11 +19,11 @@ interface AdminBottomTabBarProps {
 export function AdminBottomTabBar({ navigation, active }: AdminBottomTabBarProps) {
   const tabs: Tab[] = [
     {
-      key: 'RegisterStaff',
-      label: 'Add staff',
-      icon: 'person-add-outline',
-      onPress: () => navigation.navigate('RegisterStaff'),
-      active: active === 'RegisterStaff',
+      key: 'AdminDashboard',
+      label: 'Home',
+      icon: 'home-outline',
+      onPress: () => navigation.navigate('AdminDashboard'),
+      active: active === 'AdminDashboard',
     },
     {
       key: 'StaffList',
@@ -45,13 +45,6 @@ export function AdminBottomTabBar({ navigation, active }: AdminBottomTabBarProps
       icon: 'calendar-outline',
       onPress: () => navigation.navigate('AttendanceHistory'),
       active: active === 'AttendanceHistory',
-    },
-    {
-      key: 'ExportReports',
-      label: 'Export',
-      icon: 'download-outline',
-      onPress: () => navigation.navigate('ExportReports'),
-      active: active === 'ExportReports',
     },
     {
       key: 'AdminSettings',
