@@ -98,7 +98,7 @@ export function RootNavigator() {
                 <Ionicons
                   name="lock-closed"
                   size={30}
-                  color={colors.danger}
+                  color={colors.dangerBright}
                 />
               </Pressable>
             ),

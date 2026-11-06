@@ -40,6 +40,7 @@ export const colors = {
   warningSoft: '#FEF3C7',
   warningDark: '#92400E',
   danger: '#DC2626',
+  dangerBright: '#FF4D4F',
   dangerSoft: '#FEE2E2',
   dangerDark: '#991B1B',
   info: '#2563EB',
