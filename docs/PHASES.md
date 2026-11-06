@@ -161,19 +161,21 @@ This document tracks the implementation phases derived from the
         (version bump → `eas build` → device smoke test → `eas submit`).
   - [ ] Verify the exported config contains no secrets and that config plugins
         are applied in the native projects.
-- [ ] **Native face-embedding model (C++/TFLite)**
-  - [ ] Replace the 64-bit dHash matcher behind
-        `src/services/faceRecognitionService.ts` with a native module that
-        returns a fixed-length embedding (e.g. FaceNet/MobileFaceNet TFLite).
-  - [ ] Ship the `.tflite` model + C++ inference wrapper via an Expo config
-        plugin, with Android NNAPI and iOS Core ML delegates where available.
-  - [ ] Add face detection/alignment (landmarks, crop, quality checks) before
-        embedding so captures match enrolment conditions.
-  - [ ] Migrate stored `face_signature` values to versioned embeddings; keep
-        dHash as a fallback for un-migrated photos and re-enrol lazily.
-  - [ ] Calibrate similarity thresholds against a labelled staff set, store the
-        threshold in settings, and require confirmation below the auto-match
-        score.
+- [x] **Native face-embedding model (TFLite)**
+  - [x] Replace the dHash default with `@nitro-mlkit/face-recognition`:
+        Google ML Kit face detection + a bundled FaceNet TFLite model
+        returning 512-d embeddings.
+  - [x] Bundle the model at `assets/models/facenet512.tflite` and register
+        the Expo config plugin.
+  - [x] Detect/crop the largest face before embedding; reject photos without a
+        usable face at registration.
+  - [x] Store versioned `mf2:` embeddings in `face_signature`; keep the dHash
+        matcher as a development/legacy fallback and upgrade lazily.
+  - [x] Use cosine similarity with an auto-confirm threshold and a
+        confirmation band. The bundled model scores about 0.85 for the same
+        person and below 0.1 for different people in offline checks.
+  - [ ] Calibrate thresholds against a labelled staff set on real kiosk
+        hardware and store the threshold in settings.
   - [ ] Add liveness/anti-spoof checks (blink, depth or motion) and document
         privacy handling for on-device biometric templates.
   - [ ] Benchmark inference time on low-end kiosk hardware and cap the
@@ -196,6 +198,22 @@ This document tracks the implementation phases derived from the
       native share sheet.
 - [x] Add indexed SQLite date filtering (`attendance_logs.date`) and a distinct
       recorded-date query for the calendar picker.
+
+## Phase 12 — Face & Biometric Hardening ✅
+
+- [x] Make a clear profile photo mandatory in registration and edit; saving is
+      blocked until a photo exists.
+- [x] Validate photos with the face engine and reject images with no detectable
+      face.
+- [x] Replace visual-hash matching with FaceNet embeddings on native
+      builds, while keeping a development/legacy fallback.
+- [x] Show face-engine and biometric readiness problems directly on the kiosk
+      instead of failing silently.
+- [x] Refresh the biometric prompt options for iOS/Android and expand failure
+      messages.
+- [x] Add portal-style photo guidance and a higher-quality 3:4 capture/crop.
+- [ ] Rebuild the Android APK/iOS dev build and complete face + biometric QA on
+      physical devices.
 
 ---
 
@@ -222,8 +240,9 @@ src/
     appSettings.ts             company name + auth method
     attendanceLogic.ts         state engine + calculations
     biometricService.ts        expo-local-authentication wrapper
-    faceSignature.ts           dHash visual fingerprints
-    faceRecognitionService.ts  candidate ranking + thresholds
+    faceEngine.ts              ML Kit + FaceNet embeddings
+    faceSignature.ts           legacy dHash fallback
+    faceRecognitionService.ts  enrolment + candidate ranking + thresholds
     exportService.ts           XLSX/CSV + sharing
     pinService.ts              salted PIN hashing/verification
     photoService.ts            persist captured photos
@@ -243,9 +262,12 @@ src/
    biometric prompt, preserving the biometric+photo confirmation experience.
 4. **Dual-mode kiosk**: admins choose staff code + biometrics (recommended), or
    face recognition. Both modes are switchable at any time from Settings.
-5. **Face mode is beta**: the Expo Go MVP uses a 64-bit visual fingerprint, not
-   a native ML face-embedding model. It auto-confirms only very close matches,
-   asks for confirmation otherwise, and always offers the code fallback.
+5. **Face mode uses on-device embeddings**: a bundled FaceNet model
+   produces 512-d templates from ML Kit face crops. It auto-confirms only very
+   close, clearly separated matches, asks for confirmation otherwise, and
+   always offers the code fallback. Expo Go and the iOS Simulator fall back to
+   the legacy matcher or the code keypad; real face recognition needs a native
+   development/production build on a physical device.
 6. **Terminology**: all user-facing copy, schema fields, export headers and
    documentation use "staff" (with "company / school name" for the
    organisation).

@@ -16,6 +16,8 @@ import { colors, fontSize, radius, spacing } from '../../theme';
 interface FaceScanPanelProps {
   busy: boolean;
   profileCount: number;
+  engineAvailable: boolean | null;
+  engineMessage?: string;
   onCapture: (uri: string) => void;
   onUseCode: () => void;
 }
@@ -23,6 +25,8 @@ interface FaceScanPanelProps {
 export function FaceScanPanel({
   busy,
   profileCount,
+  engineAvailable,
+  engineMessage,
   onCapture,
   onUseCode,
 }: FaceScanPanelProps) {
@@ -38,7 +42,7 @@ export function FaceScanPanel({
     setCameraError(null);
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.7,
+        quality: 0.9,
         base64: false,
         skipProcessing: false,
       });
@@ -57,15 +61,35 @@ export function FaceScanPanel({
   };
 
   if (profileCount === 0) {
+    if (engineAvailable === null) {
+      return (
+        <View style={styles.loading}>
+          <ActivityIndicator color={colors.kioskText} />
+          <Text style={styles.loadingText}>Preparing face profiles…</Text>
+        </View>
+      );
+    }
+
+    const engineUnavailable = engineAvailable === false;
     return (
       <View style={styles.permissionCard}>
         <View style={styles.permissionIcon}>
-          <Ionicons name="people-outline" size={30} color={colors.primary} />
+          <Ionicons
+            name={engineUnavailable ? 'warning-outline' : 'people-outline'}
+            size={30}
+            color={colors.primary}
+          />
         </View>
-        <Text style={styles.permissionTitle}>No face profiles yet</Text>
+        <Text style={styles.permissionTitle}>
+          {engineUnavailable
+            ? 'Face recognition unavailable'
+            : 'No face profiles yet'}
+        </Text>
         <Text style={styles.permissionText}>
-          Add a clear profile photo for each staff member in the admin area, or
-          use the staff-code keypad for now.
+          {engineUnavailable
+            ? engineMessage ??
+              'This installed build cannot run the face engine. Install the latest app build, or use the staff-code keypad for now.'
+            : 'Add a clear profile photo for each staff member in the admin area, or use the staff-code keypad for now.'}
         </Text>
         <Pressable onPress={onUseCode} style={styles.linkButton}>
           <Text style={styles.linkLabel}>Use staff code instead</Text>
@@ -157,6 +181,13 @@ export function FaceScanPanel({
         · matching happens on this device
       </Text>
 
+      {engineAvailable === false ? (
+        <Text style={styles.warning}>
+          This build is using a basic fallback matcher. Install the latest app
+          build for full face recognition.
+        </Text>
+      ) : null}
+
       {cameraError ? <Text style={styles.error}>{cameraError}</Text> : null}
 
       <AppButton
@@ -190,8 +221,8 @@ export function FaceScanPanel({
       </Pressable>
 
       <Text style={styles.disclaimer}>
-        Visual matching is an on-device estimate. If the match is close but not
-        certain, you will be asked to confirm before attendance is recorded.
+        Face matching runs entirely on this device. If the match is close but
+        not certain, you will be asked to confirm before attendance is recorded.
       </Text>
     </View>
   );
@@ -298,6 +329,13 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     color: colors.kioskMuted,
     fontSize: fontSize.xs,
+    textAlign: 'center',
+  },
+  warning: {
+    marginTop: spacing.sm,
+    color: '#FCD34D',
+    fontSize: fontSize.xs,
+    lineHeight: 17,
     textAlign: 'center',
   },
   error: {

@@ -8,9 +8,6 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class KioskLockTaskModule extends ReactContextBaseJavaModule {
 
   public KioskLockTaskModule(ReactApplicationContext reactContext) {
@@ -67,8 +64,4 @@ public class KioskLockTaskModule extends ReactContextBaseJavaModule {
     }
   }
 
-  @Override
-  public List<Object> getCustomDirectEventTypes() {
-    return new ArrayList<>();
-  }
 }

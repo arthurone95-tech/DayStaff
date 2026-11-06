@@ -2,7 +2,7 @@
   "expo": {
     "name": "DayStaff",
     "slug": "daystaff",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -53,6 +53,7 @@
           "faceIDPermission": "Allow DayStaff to use Face ID for staff attendance verification."
         }
       ],
+      "@nitro-mlkit/face-recognition",
       [
         "expo-image-picker",
         {

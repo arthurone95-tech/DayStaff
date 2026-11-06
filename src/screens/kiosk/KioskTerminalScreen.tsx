@@ -19,11 +19,16 @@ import { useNow } from '../../hooks/useNow';
 import type { RootNavigation } from '../../navigation/types';
 import { getAuthMethod, getCompanyName } from '../../services/appSettings';
 import { clockOutStaff, recordAttendance } from '../../services/attendanceLogic';
-import { authenticateBiometric } from '../../services/biometricService';
 import {
-  ensureStaffFaceSignatures,
+  authenticateBiometric,
+  getBiometricStatus,
+  type BiometricStatus,
+} from '../../services/biometricService';
+import {
   matchFaceToStaff,
+  prepareStaffFaceProfiles,
   type FaceCandidate,
+  type FaceProfileSummary,
 } from '../../services/faceRecognitionService';
 import { colors, fontSize, radius, spacing } from '../../theme';
 import type { AttendanceResult, AuthMethod, Staff } from '../../types';
@@ -55,6 +60,10 @@ export function KioskTerminalScreen() {
   const [faceBusy, setFaceBusy] = useState(false);
   const [pendingMatch, setPendingMatch] = useState<FaceCandidate | null>(null);
   const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
+  const [faceProfileSummary, setFaceProfileSummary] =
+    useState<FaceProfileSummary | null>(null);
+  const [biometricStatus, setBiometricStatus] =
+    useState<BiometricStatus | null>(null);
 
   const [feedback, setFeedback] = useState<AttendanceResult | null>(null);
   const [feedbackVisible, setFeedbackVisible] = useState(false);
@@ -79,6 +88,14 @@ export function KioskTerminalScreen() {
       submittedCodeRef.current = null;
       setPendingMatch(null);
       setCapturedPhotoUri(null);
+      setFaceProfileSummary(null);
+      setBiometricStatus(null);
+
+      void getBiometricStatus().then((status) => {
+        if (active) {
+          setBiometricStatus(status);
+        }
+      });
 
       // Enable OS-level kiosk lock task mode when the terminal screen becomes
       // active (production Android builds only; no-op in Expo Go / simulators).
@@ -97,14 +114,27 @@ export function KioskTerminalScreen() {
       }
 
       if (method === 'FACE_RECOGNITION') {
-        void ensureStaffFaceSignatures()
-          .then((updated) => {
-            if (active && updated > 0) {
+        void prepareStaffFaceProfiles()
+          .then((summary) => {
+            if (active) {
               setStaff(getActiveStaff());
+              setFaceProfileSummary(summary);
             }
           })
-          .catch(() => {
-            // Face mode falls back to the code keypad if preparation fails.
+          .catch((error) => {
+            if (active) {
+              setFaceProfileSummary({
+                engineAvailable: false,
+                total: getActiveStaff().length,
+                ready: 0,
+                missing: getActiveStaff().length,
+                updated: 0,
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : 'Face profiles could not be prepared.',
+              });
+            }
           });
       }
 
@@ -211,7 +241,13 @@ export function KioskTerminalScreen() {
   };
 
   useEffect(() => {
-    if (mode !== 'CODE' || code.length < 2 || processingId !== null || faceBusy) {
+    if (
+      mode !== 'CODE' ||
+      code.length < 2 ||
+      processingId !== null ||
+      faceBusy ||
+      biometricStatus?.available !== true
+    ) {
       return;
     }
 
@@ -237,7 +273,15 @@ export function KioskTerminalScreen() {
     }, 350);
 
     return () => clearTimeout(timeout);
-  }, [code, faceBusy, handleCodeSubmit, mode, processingId, staff]);
+  }, [
+    biometricStatus,
+    code,
+    faceBusy,
+    handleCodeSubmit,
+    mode,
+    processingId,
+    staff,
+  ]);
 
   const handleFaceCapture = async (uri: string) => {
     if (operationRef.current || faceBusy || processingId !== null) {
@@ -323,9 +367,9 @@ export function KioskTerminalScreen() {
   };
 
   const exactStaff = staff.find((item) => item.staffCode === code);
-  const faceProfileCount = staff.filter((member) =>
-    Boolean(member.faceSignature),
-  ).length;
+  const faceProfileCount =
+    faceProfileSummary?.ready ??
+    staff.filter((member) => Boolean(member.faceSignature)).length;
 
   if (staff.length === 0) {
     return (
@@ -488,6 +532,18 @@ export function KioskTerminalScreen() {
                 onChange={handleCodeChange}
                 onSubmit={handleCodeVerify}
               />
+              {biometricStatus && !biometricStatus.available ? (
+                <View style={styles.biometricWarning}>
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={16}
+                    color={colors.kioskMuted}
+                  />
+                  <Text style={styles.biometricWarningText}>
+                    {biometricStatus.message}
+                  </Text>
+                </View>
+              ) : null}
               {processingId !== null ? (
                 <View style={styles.processing}>
                   <ActivityIndicator color={colors.kioskText} />
@@ -520,6 +576,8 @@ export function KioskTerminalScreen() {
             <FaceScanPanel
               busy={faceBusy}
               profileCount={faceProfileCount}
+              engineAvailable={faceProfileSummary?.engineAvailable ?? null}
+              engineMessage={faceProfileSummary?.message}
               onCapture={(uri) => void handleFaceCapture(uri)}
               onUseCode={() => {
                 setUseCodeFallback(true);
@@ -694,6 +752,20 @@ const styles = StyleSheet.create({
   },
   bodyTop: {
     flex: 1,
+  },
+  biometricWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  biometricWarningText: {
+    flex: 1,
+    color: colors.kioskMuted,
+    fontSize: fontSize.xs,
+    lineHeight: 17,
   },
   processing: {
     flexDirection: 'row',

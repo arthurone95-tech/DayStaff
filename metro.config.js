@@ -11,6 +11,9 @@ const { getDefaultConfig } = require('expo/metro-config');
 const config = getDefaultConfig(__dirname);
 const emptyShim = path.resolve(__dirname, 'src/shims/empty.js');
 
+// The on-device face embedding model is bundled with the app.
+config.resolver.assetExts.push('tflite');
+
 config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,
   fs: emptyShim,

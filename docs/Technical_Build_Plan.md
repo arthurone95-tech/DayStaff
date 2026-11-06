@@ -52,8 +52,9 @@ DayStaff/
 │   │   ├── appSettings.ts      company name + auth method accessors
 │   │   ├── attendanceLogic.ts  state engine + late/early calculations
 │   │   ├── biometricService.ts device biometric wrapper
-│   │   ├── faceSignature.ts    dHash visual fingerprints (64-bit)
-│   │   ├── faceRecognitionService.ts  candidate ranking + thresholds
+│   │   ├── faceEngine.ts       ML Kit + FaceNet embeddings
+│   │   ├── faceSignature.ts    legacy dHash fallback (64-bit)
+│   │   ├── faceRecognitionService.ts  enrolment + ranking + thresholds
 │   │   ├── exportService.ts    XLSX/CSV generation + sharing
 │   │   ├── photoService.ts     persist captured/profile photos
 │   │   └── pinService.ts       salted SHA-256 admin PIN
@@ -126,22 +127,31 @@ missing sensor can be simulated so emulators remain usable.
 
 ### Face mode
 
-- `faceSignature.ts`
-  - resizes a photo to 96 px wide with `expo-image-manipulator`;
-  - decodes it with `jpeg-js`;
-  - samples a centred 9×8 grayscale grid;
-  - stores a 64-bit difference hash (plus a mirrored variant for front-camera
-    captures).
+- `faceEngine.ts`
+  - loads the bundled FaceNet `.tflite` model through
+    `@nitro-mlkit/face-recognition` + `react-native-nitro-modules`;
+  - uses Google ML Kit to detect and crop the largest face;
+  - returns a 512-dimensional embedding and compares embeddings with cosine
+    similarity;
+  - serialises native calls because the shared TFLite interpreter is not
+    concurrency-safe;
+  - requires a native development/production build; Expo Go and the iOS
+    Simulator cannot run the native model.
 - `faceRecognitionService.ts`
-  - compares a capture against all active staff signatures using Hamming
-    distance;
+  - enrols new staff photos as `mf2:`-prefixed embeddings;
+  - upgrades legacy 64-bit dHash signatures automatically;
   - auto-confirms only very close, clearly separated matches;
   - otherwise returns the best candidate for a confirmation modal;
   - returns no suggestion beyond a threshold and directs the user to the code
     keypad.
+- `faceSignature.ts`
+  - remains as an Expo Go/development fallback and for reading legacy hashes:
+    a 96 px grayscale sample reduced to a 64-bit difference hash (plus a
+    mirrored variant for front-camera captures).
 
-This is intentionally a heuristic, not certified biometrics. The interface is
-isolated so a native embedding model can replace it.
+The model is bundled at `assets/models/facenet512.tflite` (MIT-licensed
+FaceNet weights, 512-d output) so recognition works fully offline. Face profiles
+are templates, not raw biometric data, and stay on the device.
 
 ### Admin PIN
 

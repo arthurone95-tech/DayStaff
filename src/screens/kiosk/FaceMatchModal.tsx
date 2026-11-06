@@ -50,7 +50,7 @@ export function FaceMatchModal({
 
           <Text style={styles.title}>Is this you?</Text>
           <Text style={styles.subtitle}>
-            We found a close visual match. Confirm only if this is your profile.
+            We found a close face match. Confirm only if this is your profile.
           </Text>
 
           <View style={styles.matchRow}>
@@ -90,8 +90,8 @@ export function FaceMatchModal({
           </View>
 
           <Text style={styles.note}>
-            Face matching is a beta on-device estimate. If this is not you, use
-            the staff-code keypad instead.
+            Face matching runs on this device. Confirm only if this is you;
+            otherwise use the staff-code keypad instead.
           </Text>
 
           <View style={styles.actions}>

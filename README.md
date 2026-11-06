@@ -25,8 +25,20 @@ npm install
 npx expo start
 ```
 
-Then scan the QR code with **Expo Go** (Android/iOS), or press `a` / `i` for an
-emulator. For a production build with full OS-level kiosk behavior use
+Expo Go is fine for the UI and code/biometric flow, but it cannot load the
+native face-recognition module. For face mode, kiosk lock and real biometric
+testing, build a development client:
+
+```bash
+npx expo run:android
+# or
+npx expo run:ios
+# or
+eas build --profile development --platform android
+```
+
+The iOS Simulator cannot run ML Kit face detection; face recognition must be
+tested on a physical iPhone or Android device. For a production build use
 `eas build`.
 
 ### First-run setup
@@ -43,8 +55,9 @@ one-time setup wizard before the kiosk is unlocked:
 After setup, the kiosk is locked. From there:
 
 1. Tap **Admin** (top-right) and enter the PIN.
-2. Add staff, assign each person a unique 2–6 character staff code and a clear
-   profile photo.
+2. Add staff, assign each person a unique 2–6 character staff code and a
+   **required** clear profile photo. Registration is blocked until a usable
+   face photo has been saved.
 3. Set the schedule, switch kiosk mode or change the PIN from **Settings**.
 
 ---
@@ -67,7 +80,7 @@ After setup, the kiosk is locked. From there:
   clear message instead.
 - The "Verify" key retries the biometric prompt if it is cancelled.
 
-### Face recognition (beta)
+### Face recognition
 
 - The kiosk shows a live front-camera preview with a face guide.
 - Tap **Scan my face** to capture a frame and match it against the profile
@@ -75,13 +88,19 @@ After setup, the kiosk is locked. From there:
 - A very close match records attendance immediately. A less certain match
   shows a confirmation card so the staff member can confirm or reject it.
 - **Use staff code instead** is always available as a fallback.
+- A photo is mandatory for every staff member. New photos are validated by the
+  face engine, and photos without a detectable face are rejected.
 
-> Face mode is an on-device **visual-fingerprint** matcher (a 64-bit difference
-> hash), not a production ML identity model. Expo Go cannot load a custom
-> native face-embedding module, so the matcher is deliberately isolated behind
-> `src/services/faceRecognitionService.ts`. A native ML model can replace it
-> without changing the kiosk UI. For higher accuracy, use clear, front-facing
-> profile photos with an uncluttered background.
+> Face mode uses Google ML Kit for on-device face detection and a bundled
+> FaceNet TensorFlow Lite model for 512-dimensional face embeddings
+> (`src/services/faceEngine.ts`). Matching is cosine similarity, entirely
+> on-device. Legacy 64-bit visual-hash profiles are upgraded automatically when
+> the native engine is available.
+>
+> The native module and model require a **development/production build**; Expo
+> Go cannot load them. Build with EAS or `npx expo run:android` /
+> `npx expo run:ios` after installing dependencies. The iOS Simulator cannot
+> run ML Kit face detection; test face recognition on a physical device.
 
 ---
 

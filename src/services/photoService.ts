@@ -26,8 +26,10 @@ async function persistPhoto(tempUri: string): Promise<string> {
 const pickerOptions: ImagePicker.ImagePickerOptions = {
   mediaTypes: ['images'],
   allowsEditing: true,
-  aspect: [1, 1],
-  quality: 0.7,
+  // Prefer a head-and-shoulders portrait. iOS may still apply its square crop,
+  // but the face engine detects and crops the largest face either way.
+  aspect: [3, 4],
+  quality: 0.9,
 };
 
 export async function captureStaffPhoto(): Promise<string | null> {

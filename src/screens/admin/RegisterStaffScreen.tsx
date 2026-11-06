@@ -30,8 +30,13 @@ import {
   updateStaff,
 } from '../../database/queries';
 import type { RootStackParamList } from '../../navigation/types';
-import { createFaceSignature } from '../../services/faceSignature';
 import { getBiometricLabelSync } from '../../services/biometricService';
+import {
+  FaceEngineUnavailableError,
+  FacePhotoError,
+  isFaceEmbeddingSignature,
+} from '../../services/faceEngine';
+import { createStaffFaceSignature } from '../../services/faceRecognitionService';
 import {
   captureStaffPhoto,
   chooseStaffPhoto,
@@ -61,6 +66,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   const [errors, setErrors] = useState<{
     name?: string;
     code?: string;
+    photo?: string;
   }>({});
   const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
@@ -85,9 +91,14 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   }, [isEditing, staffId, navigation]);
 
   const validate = (): boolean => {
-    const next: { name?: string; code?: string } = {};
+    const next: { name?: string; code?: string; photo?: string } = {};
     if (!fullName.trim()) {
       next.name = 'Full name is required.';
+    }
+
+    if (!photoUri) {
+      next.photo =
+        'A clear profile photo is required before this staff member can be saved.';
     }
 
     const normalizedCode = normalizeCode(staffCode);
@@ -115,17 +126,19 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
           : await chooseStaffPhoto();
       if (uri) {
         setPhotoUri(uri);
+        setFaceSignature(null);
+        setErrors((prev) => ({ ...prev, photo: undefined }));
       }
     } catch (error) {
-      Alert.alert(
-        'Photo unavailable',
-        error instanceof Error ? error.message : 'Could not access the photo.',
-      );
+      const message =
+        error instanceof Error ? error.message : 'Could not access the photo.';
+      setErrors((prev) => ({ ...prev, photo: message }));
+      Alert.alert('Photo unavailable', message);
     }
   };
 
   const handleSave = async () => {
-    if (!validate()) {
+    if (!validate() || !photoUri) {
       return;
     }
     setSaving(true);
@@ -133,13 +146,30 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       const normalizedCode = normalizeCode(staffCode);
       let nextSignature = faceSignature;
 
-      if (!photoUri) {
-        nextSignature = null;
-      } else if (photoUri !== initialPhoto || !nextSignature) {
+      if (
+        photoUri !== initialPhoto ||
+        !isFaceEmbeddingSignature(nextSignature)
+      ) {
         try {
-          nextSignature = await createFaceSignature(photoUri);
-        } catch {
-          nextSignature = null;
+          const enrollment = await createStaffFaceSignature(photoUri, {
+            // Expo Go cannot load the native face engine. Keep development
+            // usable with the legacy matcher, but production builds must use
+            // the real embedding model.
+            allowLegacy: __DEV__,
+          });
+          nextSignature = enrollment.signature;
+        } catch (error) {
+          const message =
+            error instanceof FacePhotoError
+              ? error.message
+              : error instanceof FaceEngineUnavailableError
+                ? error.message
+                : error instanceof Error
+                  ? error.message
+                  : 'A face profile could not be created from this photo.';
+          setErrors((prev) => ({ ...prev, photo: message }));
+          Alert.alert('Photo cannot be used', message);
+          return;
         }
       }
 
@@ -220,15 +250,26 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
           showsVerticalScrollIndicator={false}
         >
         <Card style={styles.photoCard}>
+          <View style={styles.photoHeading}>
+            <Text style={styles.photoTitle}>Profile photo</Text>
+            <View style={styles.requiredPill}>
+              <Text style={styles.requiredLabel}>Required</Text>
+            </View>
+          </View>
           <Avatar
             name={fullName || 'New staff'}
             photoUri={photoUri}
             size={110}
-            ringColor={colors.slate200}
+            ringColor={errors.photo ? colors.danger : colors.slate200}
           />
+          <Text style={styles.photoHint}>
+            Passport-style photo: face and shoulders, looking straight ahead,
+            even lighting, no hat or sunglasses. This photo is also used for
+            face recognition.
+          </Text>
           <View style={styles.photoActions}>
             <AppButton
-              title="Camera"
+              title={photoUri ? 'Retake' : 'Camera'}
               onPress={() => pickPhoto('camera')}
               variant="secondary"
               size="sm"
@@ -242,7 +283,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
               }
             />
             <AppButton
-              title="Library"
+              title={photoUri ? 'Replace' : 'Library'}
               onPress={() => pickPhoto('library')}
               variant="ghost"
               size="sm"
@@ -255,16 +296,10 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 />
               }
             />
-            {photoUri ? (
-              <AppButton
-                title="Remove"
-                onPress={() => setPhotoUri(null)}
-                variant="ghost"
-                size="sm"
-                fullWidth={false}
-              />
-            ) : null}
           </View>
+          {errors.photo ? (
+            <Text style={styles.photoError}>{errors.photo}</Text>
+          ) : null}
         </Card>
 
         <Card style={styles.formCard}>
@@ -334,8 +369,8 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
           />
           <Text style={styles.noteText}>
             Code mode verifies the {getBiometricLabelSync()} enrolled on this
-            terminal. Face mode uses this profile photo for an on-device visual
-            match, so use a clear, front-facing portrait when possible.
+            terminal. Face mode builds an on-device face profile from this photo;
+            a clear, front-facing portrait gives the most reliable match.
           </Text>
         </View>
         </ScrollView>
@@ -359,6 +394,45 @@ const styles = StyleSheet.create({
   },
   photoCard: {
     alignItems: 'center',
+  },
+  photoHeading: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  photoTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.slate800,
+  },
+  requiredPill: {
+    backgroundColor: colors.dangerSoft,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  requiredLabel: {
+    color: colors.dangerDark,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+  photoHint: {
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.sm,
+    fontSize: fontSize.xs,
+    color: colors.slate500,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  photoError: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    fontSize: fontSize.xs,
+    color: colors.danger,
+    lineHeight: 18,
+    textAlign: 'center',
   },
   photoActions: {
     flexDirection: 'row',

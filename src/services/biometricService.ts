@@ -136,7 +136,15 @@ function mapFailure(error: LocalAuthentication.LocalAuthenticationError): string
     case 'user_fallback':
       return 'Device passcode fallback is disabled. Try your biometric again.';
     case 'authentication_failed':
-      return 'Biometric verification failed. Try again.';
+      return 'Biometric verification failed. Hold steady and try again.';
+    case 'unable_to_process':
+      return 'The device could not process the biometric. Try again.';
+    case 'invalid_context':
+      return 'The biometric prompt is already in use. Close the other prompt and try again.';
+    case 'no_space':
+      return 'The device is out of secure storage space. Free some space and try again.';
+    case 'unknown':
+      return 'The device could not verify your biometric. Try again.';
     default:
       return 'Biometric verification failed.';
   }
@@ -168,17 +176,24 @@ export async function authenticateBiometric(
   try {
     const result = await LocalAuthentication.authenticateAsync({
       promptMessage,
-      promptSubtitle:
-        status.kind === 'face' ? 'Look at the front camera' : undefined,
-      promptDescription:
-        status.kind === 'face'
-          ? 'Confirm your attendance with Face ID.'
-          : 'Confirm your attendance with your enrolled biometric.',
       cancelLabel: 'Cancel',
       // Never surface the OS device-passcode prompt for attendance.
       disableDeviceFallback: true,
-      fallbackLabel: '',
-      requireConfirmation: false,
+      ...(Platform.OS === 'android'
+        ? {
+            promptSubtitle:
+              status.kind === 'face'
+                ? 'Look at the front camera'
+                : undefined,
+            promptDescription:
+              status.kind === 'face'
+                ? 'Confirm your attendance with face recognition.'
+                : 'Confirm your attendance with your enrolled biometric.',
+            // Allow Class 2 face unlock as well as Class 3 fingerprints.
+            biometricsSecurityLevel: 'weak' as const,
+            requireConfirmation: false,
+          }
+        : {}),
     });
 
     if (result.success) {
