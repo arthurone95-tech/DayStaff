@@ -19,6 +19,14 @@ import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+/**
+ * iOS 26 introduced the "liquid glass" bar-button background. Earlier iOS
+ * versions render no background, so the chevron must stay white there to
+ * remain visible on the blue header.
+ */
+const hasIosLiquidGlass =
+  Platform.OS === 'ios' && parseInt(String(Platform.Version), 10) >= 26;
+
 const navigationTheme: Theme = {
   ...DefaultTheme,
   colors: {
@@ -50,7 +58,7 @@ export function RootNavigator() {
           // iOS 26+ renders a native "liquid glass" pill around bar button
           // items. Keep it on iOS so the app matches platform conventions,
           // and omit it on Android where that style does not exist.
-          headerLeftBackgroundVisible: Platform.OS === 'ios',
+          headerLeftBackgroundVisible: hasIosLiquidGlass,
           headerLeft: ({ canGoBack }) =>
             canGoBack ? (
               <Pressable
@@ -66,7 +74,7 @@ export function RootNavigator() {
                 <Ionicons
                   name="chevron-back"
                   size={26}
-                  color={colors.white}
+                  color={hasIosLiquidGlass ? colors.primary : colors.white}
                 />
               </Pressable>
             ) : null,
