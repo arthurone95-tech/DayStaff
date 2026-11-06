@@ -50,7 +50,6 @@ interface AttendanceRow {
 interface ExportRow extends AttendanceRow {
   full_name: string;
   staff_code: string | null;
-  phone_number: string;
 }
 
 const mapStaff = (row: StaffRow): Staff => ({

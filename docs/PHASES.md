@@ -125,16 +125,22 @@ This document tracks the implementation phases derived from the
 - [ ] Admin PIN change, auth-mode switch, and company-name edit persist across
       an app restart.
 
-## Phase 10 — Production Native Build & Hardening ⬜
+## Phase 10 — Production Native Build & Hardening 🚧
 
-> **Status: planned.** Everything below requires leaving Expo Go and producing a
-> custom development/production binary. The Expo managed workflow is kept for
-> day-to-day UI work; this phase hardens the kiosk for real deployment.
+> **Status: in progress.** Android Lock Task Mode has been implemented and
+> verified via `npx expo prebuild`. Remaining items require a paid Apple
+> Developer account (iOS builds) or additional native work.
 
-- [ ] **Android Lock Task Mode**
-  - [ ] Enable Android kiosk mode natively (`startLockTask`) from a small
-        Expo config plugin / native module, exposed as
-        `enterKioskMode()` / `exitKioskMode()`.
+- [x] **Android Lock Task Mode**
+  - [x] Enable Android kiosk mode natively (`startLockTask`) via Expo config
+        plugin `/src/plugins/withKioskLockTask.js`, exposed as
+        `enableKiosk()` / `disableKiosk()` in `src/services/kioskLockTask.ts`.
+  - [x] Inject `android:lockTaskMode="if_whitelisted"` into MainActivity and
+        add `MANAGE_DEVICE_POLICY_LOCK_TASK` permission via config plugin.
+  - [x] Register `KioskLockTaskPackage` in `MainApplication.kt` via config plugin.
+  - [x] Call `enableKiosk()` when kiosk screen activates
+        (`KioskTerminalScreen.tsx`).
+  - [x] Add "Exit kiosk mode" button in Admin → Settings behind PIN gate.
   - [ ] Declare a dedicated device-owner/kiosk provisioning path (or document
         the required `dpm set-device-owner` / screen-pinning setup) so
         `startLockTask` is not silently downgraded to screen pinning.
@@ -142,19 +148,19 @@ This document tracks the implementation phases derived from the
         way to leave the terminal.
   - [ ] Restore normal lock-task state on app foreground and block hardware
         back/recents where the OS permits.
-  - [ ] Add a guarded escape hatch (admin PIN → exit kiosk) for maintenance.
 - [ ] **EAS Build pipeline**
-  - [ ] Add `eas.json` with `development`, `preview` and `production` profiles
+  - [x] Add `eas.json` with `development`, `preview` and `production` profiles
         (development client + internal distribution for QA).
-  - [ ] Configure `app.json` / `app.config.ts` with the Android package,
-        iOS bundle identifier, version/build numbers, and required permissions.
+  - [x] Configure `app.json` with Android package, iOS bundle identifier,
+        version/build numbers, and required permissions.
+  - [x] Build Android APK via `npx eas build -p android --profile preview`
+        (build `e44a2938`, finished 2026-11-05).
   - [ ] Store signing credentials in EAS (Android keystore, iOS certificates and
         provisioning profiles); document the one-time `eas credentials` setup.
-  - [ ] Add build/submit scripts and a documented release checklist (version
-        bump → `eas build` → device smoke test → `eas submit`).
-  - [ ] Verify the exported config (`npx expo config --type public`) contains no
-        secrets and that `expo-camera`, `expo-local-authentication` and
-        `expo-sqlite` config plugins are applied in the native projects.
+  - [ ] Add build/submit scripts and a documented release checklist
+        (version bump → `eas build` → device smoke test → `eas submit`).
+  - [ ] Verify the exported config contains no secrets and that config plugins
+        are applied in the native projects.
 - [ ] **Native face-embedding model (C++/TFLite)**
   - [ ] Replace the 64-bit dHash matcher behind
         `src/services/faceRecognitionService.ts` with a native module that
@@ -228,9 +234,9 @@ src/
 
 ## Known Limitations / Post-MVP
 
-- True OS-level kiosk lock (`startLockTask`) requires a custom Android native
-  module and a development/production build; app-level locking is implemented
-  here and the native hook is scheduled in Phase 10.
+- True OS-level kiosk lock (`startLockTask`) is implemented for Android via
+  the `withKioskLockTask` config plugin (Phase 10). It requires device-owner
+  provisioning or user confirmation on first use to take full effect.
 - Device biometrics cannot be mapped per staff member with Expo managed APIs;
   see decision #3.
 - Face mode is a beta visual matcher in Expo Go; Phase 10 replaces it with a
