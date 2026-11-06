@@ -380,13 +380,6 @@ export function KioskTerminalScreen() {
         <View style={styles.emptyScreen}>
           <View style={styles.topBar}>
             <View style={styles.brandRow}>
-              <View style={styles.logoDot}>
-                <Ionicons
-                  name="finger-print"
-                  size={20}
-                  color={colors.white}
-                />
-              </View>
               <View style={styles.brandTextWrap}>
                 <Text style={styles.brand} numberOfLines={1}>
                   {companyName}
@@ -460,13 +453,6 @@ export function KioskTerminalScreen() {
       >
         <View style={styles.topBar}>
           <View style={styles.brandRow}>
-            <View style={styles.logoDot}>
-              <Ionicons
-                name={mode === 'FACE' ? 'scan-outline' : 'finger-print'}
-                size={20}
-                color={colors.white}
-              />
-            </View>
             <View style={styles.brandTextWrap}>
               <Text style={styles.brand} numberOfLines={1}>
                 {companyName}
@@ -652,15 +638,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexShrink: 1,
-  },
-  logoDot: {
-    width: 38,
-    height: 38,
-    borderRadius: radius.md,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.sm,
   },
   brandTextWrap: {
     flexShrink: 1,
