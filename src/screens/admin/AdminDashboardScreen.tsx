@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 import { ActionTile } from '../../components/ActionTile';
@@ -139,11 +140,30 @@ export function AdminDashboardScreen() {
         </View>
 
         <View style={styles.listHeader}>
-          <Text style={styles.sectionTitle}>Today's attendance</Text>
-          <Text style={styles.listCount}>
-            {summary.totalStaff - summary.absent}/{summary.totalStaff} checked
-            in
-          </Text>
+          <View style={styles.listHeaderText}>
+            <Text style={styles.listTitle}>Today at a glance</Text>
+            <Text style={styles.listCount}>
+              {summary.totalStaff - summary.absent}/{summary.totalStaff} checked
+              in
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => navigation.navigate('AttendanceHistory')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="View attendance history"
+            style={({ pressed }) => [
+              styles.historyLink,
+              pressed && styles.historyLinkPressed,
+            ]}
+          >
+            <Text style={styles.historyLinkLabel}>History</Text>
+            <Ionicons
+              name="chevron-forward"
+              size={14}
+              color={colors.primary}
+            />
+          </Pressable>
         </View>
 
         <Card padded={false} style={styles.listCard}>
@@ -272,15 +292,43 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   listHeader: {
+    marginTop: spacing.xl,
+    marginBottom: spacing.md,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  listHeaderText: {
+    flex: 1,
+  },
+  listTitle: {
+    fontSize: fontSize.sm,
+    fontWeight: '800',
+    color: colors.slate500,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
   listCount: {
-    marginBottom: spacing.md,
+    marginTop: 2,
     fontSize: fontSize.xs,
     color: colors.slate500,
     fontWeight: '600',
+  },
+  historyLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: spacing.xs,
+    paddingLeft: spacing.sm,
+  },
+  historyLinkPressed: {
+    opacity: 0.55,
+  },
+  historyLinkLabel: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.primary,
   },
   listCard: {
     overflow: 'hidden',
