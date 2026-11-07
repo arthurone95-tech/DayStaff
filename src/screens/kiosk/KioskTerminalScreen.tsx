@@ -4,10 +4,12 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -37,6 +39,10 @@ import {
   parseFaceEmbedding,
   prepareFaceEngine,
 } from '../../services/faceEngine';
+import {
+  isStaffPinFormatValid,
+  verifyStaffPin,
+} from '../../services/staffPinService';
 import { colors, fontSize, radius, spacing } from '../../theme';
 import type { AttendanceResult, AuthMethod, Staff } from '../../types';
 import { formatDateLong, formatTime24h } from '../../utils/date';
@@ -75,6 +81,12 @@ export function KioskTerminalScreen() {
     useState<BiometricStatus | null>(null);
   const [codeFaceMember, setCodeFaceMember] = useState<Staff | null>(null);
   const [codeFaceBusy, setCodeFaceBusy] = useState(false);
+
+  const [ambiguousCandidates, setAmbiguousCandidates] = useState<FaceCandidate[] | null>(null);
+  const [ambiguousPin, setAmbiguousPin] = useState('');
+  const [ambiguousPinError, setAmbiguousPinError] = useState<string | undefined>();
+  const [ambiguousPinBusy, setAmbiguousPinBusy] = useState(false);
+  const [ambiguousPinLockedUntil, setAmbiguousPinLockedUntil] = useState<number | null>(null);
 
   const [feedback, setFeedback] = useState<AttendanceResult | null>(null);
   const [feedbackVisible, setFeedbackVisible] = useState(false);
@@ -252,6 +264,53 @@ export function KioskTerminalScreen() {
     submittedCodeRef.current = null;
   }, []);
 
+  const handleAmbiguousPinSubmit = useCallback(async () => {
+    if (ambiguousPinBusy || !ambiguousCandidates) return;
+    if (ambiguousPinLockedUntil && Date.now() < ambiguousPinLockedUntil) {
+      setAmbiguousPinError('Too many attempts. Please wait.');
+      return;
+    }
+    if (!isStaffPinFormatValid(ambiguousPin)) {
+      setAmbiguousPinError('Enter your 6-digit PIN.');
+      return;
+    }
+    setAmbiguousPinBusy(true);
+    setAmbiguousPinError(undefined);
+    try {
+      let matchedStaff: Staff | null = null;
+      for (const candidate of ambiguousCandidates) {
+        const ok = await verifyStaffPin(candidate.staff.id, ambiguousPin);
+        if (ok) {
+          matchedStaff = candidate.staff;
+          break;
+        }
+      }
+      if (matchedStaff) {
+        const result = recordAttendance(matchedStaff);
+        setFeedback(result);
+        setSimulated(false);
+        setFeedbackVisible(true);
+        setAmbiguousCandidates(null);
+        setAmbiguousPin('');
+      } else {
+        setAmbiguousPinError('Incorrect PIN. Try again.');
+        setAmbiguousPin('');
+      }
+    } catch (error) {
+      setAmbiguousPinError(
+        error instanceof Error ? error.message : 'PIN verification failed.',
+      );
+    } finally {
+      setAmbiguousPinBusy(false);
+    }
+  }, [ambiguousCandidates, ambiguousPin, ambiguousPinBusy, ambiguousPinLockedUntil]);
+
+  const handleAmbiguousPinCancel = useCallback(() => {
+    setAmbiguousCandidates(null);
+    setAmbiguousPin('');
+    setAmbiguousPinError(undefined);
+  }, []);
+
   const handleManualSignOut = useCallback(() => {
     if (
       operationRef.current ||
@@ -355,6 +414,14 @@ export function KioskTerminalScreen() {
         setSimulated(false);
         setFeedbackVisible(true);
         setPendingMatch(null);
+        setCapturedPhotoUri(null);
+        return;
+      }
+
+      if (match.ambiguous && match.candidates.length > 0) {
+        setAmbiguousCandidates(match.candidates);
+        setAmbiguousPin('');
+        setAmbiguousPinError(undefined);
         setCapturedPhotoUri(null);
         return;
       }
@@ -670,6 +737,54 @@ export function KioskTerminalScreen() {
         </View>
       </ScrollView>
 
+      <Modal
+        visible={ambiguousCandidates !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={handleAmbiguousPinCancel}
+      >
+        <View style={styles.pinModalOverlay}>
+          <View style={styles.pinModalCard}>
+            <Text style={styles.pinModalTitle}>Identity check</Text>
+            <Text style={styles.pinModalHint}>
+              Multiple possible matches. Enter your 6-digit PIN to confirm.
+            </Text>
+            <TextInput
+              value={ambiguousPin}
+              onChangeText={(v) => {
+                setAmbiguousPin(v.replace(/\D/g, '').slice(0, 6));
+                setAmbiguousPinError(undefined);
+              }}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={6}
+              placeholder="••••••"
+              style={styles.pinModalInput}
+              autoFocus
+            />
+            {ambiguousPinError ? (
+              <Text style={styles.pinModalError}>{ambiguousPinError}</Text>
+            ) : null}
+            <View style={styles.pinModalActions}>
+              <AppButton
+                title="Cancel"
+                onPress={handleAmbiguousPinCancel}
+                variant="ghost"
+                size="sm"
+                fullWidth={false}
+              />
+              <AppButton
+                title={ambiguousPinBusy ? 'Verifying…' : 'Verify'}
+                onPress={() => void handleAmbiguousPinSubmit()}
+                loading={ambiguousPinBusy}
+                size="sm"
+                fullWidth={false}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <FeedbackModal
         visible={feedbackVisible}
         result={feedback}
@@ -880,6 +995,56 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 1,
     backgroundColor: 'rgba(59, 130, 246, 0.45)',
+  },
+  pinModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  pinModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    alignItems: 'center',
+  },
+  pinModalTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.slate900,
+  },
+  pinModalHint: {
+    marginTop: spacing.xs,
+    fontSize: fontSize.xs,
+    color: colors.slate500,
+    textAlign: 'center',
+  },
+  pinModalInput: {
+    marginTop: spacing.md,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    fontSize: fontSize.xl,
+    textAlign: 'center',
+    letterSpacing: 8,
+    color: colors.slate900,
+  },
+  pinModalError: {
+    marginTop: spacing.xs,
+    fontSize: fontSize.xs,
+    color: colors.danger,
+    textAlign: 'center',
+  },
+  pinModalActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
   },
   footerText: {
     color: '#A9BCE0',

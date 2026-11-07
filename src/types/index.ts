@@ -28,6 +28,14 @@ export interface Staff {
   photoUri: string | null;
   /** Visual fingerprint of the profile photo, used by face mode. */
   faceSignature: string | null;
+  /** Hashed staff fallback PIN (never plaintext). */
+  staffPinHash: string | null;
+  /** Per-staff salt for the PIN hash. */
+  staffPinSalt: string | null;
+  /** Consecutive failed PIN attempts. */
+  pinFailedAttempts: number;
+  /** ISO timestamp until which PIN entry is locked, or null. */
+  pinLockedUntil: string | null;
   isActive: number;
   createdAt: string;
 }
@@ -37,6 +45,8 @@ export interface NewStaff {
   staffCode: string;
   photoUri: string | null;
   faceSignature: string | null;
+  staffPinHash?: string | null;
+  staffPinSalt?: string | null;
 }
 
 export interface Schedule {

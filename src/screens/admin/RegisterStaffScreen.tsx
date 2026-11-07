@@ -37,6 +37,8 @@ import {
   FacePhotoError,
 } from '../../services/faceEngine';
 import { createStaffFaceSignature } from '../../services/faceRecognitionService';
+import { setStaffPinForStaff } from '../../services/staffPinService';
+import { persistPhoto } from '../../services/photoService';
 import { colors, fontSize, radius, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RegisterStaff'>;
@@ -67,6 +69,8 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [faceSignature, setFaceSignature] = useState<string | null>(null);
+  const [staffPin, setStaffPin] = useState('');
+  const [staffPinConfirm, setStaffPinConfirm] = useState('');
   const [faceBusy, setFaceBusy] = useState(false);
   const [faceError, setFaceError] = useState<string | null>(null);
   const [faceGuidanceIndex, setFaceGuidanceIndex] = useState(0);
@@ -132,10 +136,11 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
         return;
       }
       try {
-        const enrollment = await createStaffFaceSignature(photo.uri, {
+        const persisted = await persistPhoto(photo.uri);
+        const enrollment = await createStaffFaceSignature(persisted, {
           allowLegacy: __DEV__,
         });
-        setPhotoUri(photo.uri);
+        setPhotoUri(persisted);
         setFaceSignature(enrollment.signature);
       } catch (error) {
         const message =
@@ -171,6 +176,28 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       setStep(1);
       return;
     }
+
+    // PIN validation.
+    if (!isEditing) {
+      if (!/^\d{6}$/.test(staffPin)) {
+        Alert.alert('PIN required', 'Enter a 6-digit fallback PIN.');
+        return;
+      }
+      if (staffPin !== staffPinConfirm) {
+        Alert.alert('PIN mismatch', 'The PIN and confirmation do not match.');
+        return;
+      }
+    } else if (staffPin || staffPinConfirm) {
+      if (!/^\d{6}$/.test(staffPin)) {
+        Alert.alert('Invalid PIN', 'PIN must be exactly 6 digits.');
+        return;
+      }
+      if (staffPin !== staffPinConfirm) {
+        Alert.alert('PIN mismatch', 'The PIN and confirmation do not match.');
+        return;
+      }
+    }
+
     if (!photoUri || !faceSignature) {
       Alert.alert(
         'Face scan required',
@@ -183,6 +210,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
     setSaving(true);
     try {
       const normalizedCode = normalizeCode(staffCode);
+      let savedId: number | null = null;
       if (isEditing && staffId) {
         updateStaff(staffId, {
           fullName,
@@ -190,13 +218,18 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
           photoUri,
           faceSignature,
         });
+        savedId = staffId;
       } else {
-        createStaff({
+        const created = createStaff({
           fullName,
           staffCode: normalizedCode,
           photoUri,
           faceSignature,
         });
+        savedId = created.id;
+      }
+      if (savedId && staffPin) {
+        await setStaffPinForStaff(savedId, staffPin);
       }
       navigation.goBack();
     } catch (error) {
@@ -290,6 +323,25 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 error={errors.code}
                 hint={`${STAFF_CODE_MIN_LENGTH}–${STAFF_CODE_MAX_LENGTH} letters or numbers.`}
                 maxLength={STAFF_CODE_MAX_LENGTH}
+              />
+              <TextField
+                label="Fallback PIN (6 digits)"
+                value={staffPin}
+                onChangeText={setStaffPin}
+                placeholder="e.g. 123456"
+                keyboardType="number-pad"
+                maxLength={6}
+                secureTextEntry
+                hint="Used only when face recognition is ambiguous."
+              />
+              <TextField
+                label="Confirm PIN"
+                value={staffPinConfirm}
+                onChangeText={setStaffPinConfirm}
+                placeholder="e.g. 123456"
+                keyboardType="number-pad"
+                maxLength={6}
+                secureTextEntry
               />
               <AppButton
                 title="Next"

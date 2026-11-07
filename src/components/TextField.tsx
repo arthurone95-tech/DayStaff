@@ -19,6 +19,7 @@ interface TextFieldProps {
   maxLength?: number;
   editable?: boolean;
   hint?: string;
+  secureTextEntry?: boolean;
 }
 
 export function TextField({
@@ -32,6 +33,7 @@ export function TextField({
   maxLength,
   editable = true,
   hint,
+  secureTextEntry = false,
 }: TextFieldProps) {
   return (
     <View style={styles.container}>
@@ -46,6 +48,7 @@ export function TextField({
         autoCorrect={false}
         maxLength={maxLength}
         editable={editable}
+        secureTextEntry={secureTextEntry}
         style={[styles.input, error ? styles.inputError : null, !editable && styles.disabled]}
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}

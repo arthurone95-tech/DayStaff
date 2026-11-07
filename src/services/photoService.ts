@@ -14,7 +14,7 @@ async function ensurePhotoDirectory(): Promise<void> {
   }
 }
 
-async function persistPhoto(tempUri: string): Promise<string> {
+export async function persistPhoto(tempUri: string): Promise<string> {
   await ensurePhotoDirectory();
   const cleaned = tempUri.split('?')[0];
   const extension = cleaned.split('.').pop() || 'jpg';

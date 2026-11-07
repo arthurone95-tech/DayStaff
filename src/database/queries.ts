@@ -23,6 +23,10 @@ interface StaffRow {
   staff_code: string | null;
   photo_uri: string | null;
   face_signature: string | null;
+  staff_pin_hash: string | null;
+  staff_pin_salt: string | null;
+  pin_failed_attempts: number;
+  pin_locked_until: string | null;
   is_active: number;
   created_at: string;
 }
@@ -58,6 +62,10 @@ const mapStaff = (row: StaffRow): Staff => ({
   staffCode: row.staff_code ?? '',
   photoUri: row.photo_uri,
   faceSignature: row.face_signature,
+  staffPinHash: row.staff_pin_hash,
+  staffPinSalt: row.staff_pin_salt,
+  pinFailedAttempts: row.pin_failed_attempts ?? 0,
+  pinLockedUntil: row.pin_locked_until,
   isActive: row.is_active,
   createdAt: row.created_at,
 });
@@ -133,13 +141,15 @@ export function createStaff(input: NewStaff): Staff {
   const createdAt = new Date().toISOString();
   const result = getDb().runSync(
     `INSERT INTO staff
-       (full_name, staff_code, photo_uri, face_signature, is_active, created_at)
-     VALUES (?, ?, ?, ?, 1, ?)`,
+       (full_name, staff_code, photo_uri, face_signature, staff_pin_hash, staff_pin_salt, pin_failed_attempts, pin_locked_until, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0, NULL, 1, ?)`,
     [
       input.fullName.trim(),
       input.staffCode.trim().toUpperCase(),
       input.photoUri,
       input.faceSignature,
+      input.staffPinHash ?? null,
+      input.staffPinSalt ?? null,
       createdAt,
     ],
   );
@@ -153,13 +163,15 @@ export function createStaff(input: NewStaff): Staff {
 export function updateStaff(id: number, input: NewStaff): Staff {
   getDb().runSync(
     `UPDATE staff
-     SET full_name = ?, staff_code = ?, photo_uri = ?, face_signature = ?
+     SET full_name = ?, staff_code = ?, photo_uri = ?, face_signature = ?, staff_pin_hash = ?, staff_pin_salt = ?
      WHERE id = ?`,
     [
       input.fullName.trim(),
       input.staffCode.trim().toUpperCase(),
       input.photoUri,
       input.faceSignature,
+      input.staffPinHash ?? null,
+      input.staffPinSalt ?? null,
       id,
     ],
   );
@@ -185,6 +197,40 @@ export function setStaffFaceSignature(
     signature,
     id,
   ]);
+}
+
+export function setStaffPin(
+  id: number,
+  pinHash: string | null,
+  pinSalt: string | null,
+): void {
+  getDb().runSync(
+    'UPDATE staff SET staff_pin_hash = ?, staff_pin_salt = ?, pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = ?',
+    [pinHash, pinSalt, id],
+  );
+}
+
+export function recordStaffPinFailure(id: number): void {
+  const row = getDb().getFirstSync<{
+    pin_failed_attempts: number;
+    pin_locked_until: string | null;
+  }>('SELECT pin_failed_attempts, pin_locked_until FROM staff WHERE id = ?', [id]);
+  const attempts = (row?.pin_failed_attempts ?? 0) + 1;
+  let lockedUntil: string | null = null;
+  if (attempts >= 5) {
+    lockedUntil = new Date(Date.now() + 30 * 1000).toISOString();
+  }
+  getDb().runSync(
+    'UPDATE staff SET pin_failed_attempts = ?, pin_locked_until = ? WHERE id = ?',
+    [attempts, lockedUntil, id],
+  );
+}
+
+export function resetStaffPinFailures(id: number): void {
+  getDb().runSync(
+    'UPDATE staff SET pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = ?',
+    [id],
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -338,6 +384,10 @@ interface AttendanceWithStaffSqlRow {
   staff_code: string | null;
   photo_uri: string | null;
   face_signature: string | null;
+  staff_pin_hash: string | null;
+  staff_pin_salt: string | null;
+  pin_failed_attempts: number;
+  pin_locked_until: string | null;
   is_active: number;
   created_at: string;
 }
@@ -365,6 +415,10 @@ export function getAttendanceWithStaffForDate(
        s.staff_code,
        s.photo_uri,
        s.face_signature,
+       s.staff_pin_hash,
+       s.staff_pin_salt,
+       s.pin_failed_attempts,
+       s.pin_locked_until,
        s.is_active,
        s.created_at
      FROM attendance_logs l
@@ -381,6 +435,10 @@ export function getAttendanceWithStaffForDate(
       staff_code: row.staff_code,
       photo_uri: row.photo_uri,
       face_signature: row.face_signature,
+      staff_pin_hash: row.staff_pin_hash,
+      staff_pin_salt: row.staff_pin_salt,
+      pin_failed_attempts: row.pin_failed_attempts ?? 0,
+      pin_locked_until: row.pin_locked_until,
       is_active: row.is_active,
       created_at: row.created_at,
     }),

@@ -49,6 +49,7 @@ export interface FaceMatchResult {
   suggested: FaceCandidate | null;
   /** True for a very close, clearly separated match; log without a prompt. */
   autoConfirm: boolean;
+  ambiguous: boolean;
   method: 'embedding' | 'legacy';
   /** Legacy capture hashes, retained for debugging. */
   capture: FaceHashes | null;
@@ -264,12 +265,19 @@ async function matchWithEmbeddings(
     best !== null &&
     best.similarity >= AUTO_MATCH_SIMILARITY &&
     margin >= MIN_AUTO_MARGIN;
+  const ambiguous =
+    best !== null &&
+    best.similarity >= SUGGEST_MATCH_SIMILARITY &&
+    second !== undefined &&
+    second.similarity >= SUGGEST_MATCH_SIMILARITY &&
+    margin < MIN_AUTO_MARGIN;
 
   return {
     candidates: ranked.slice(0, 3),
     best,
     suggested,
     autoConfirm,
+    ambiguous,
     method: 'embedding',
     capture: null,
   };
@@ -319,6 +327,7 @@ async function matchWithLegacyHashes(
     best,
     suggested,
     autoConfirm,
+    ambiguous: false,
     method: 'legacy',
     capture,
   };

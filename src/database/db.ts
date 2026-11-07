@@ -8,7 +8,7 @@
 import * as SQLite from 'expo-sqlite';
 
 export const DATABASE_NAME = 'daystaff.db';
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 let connection: SQLite.SQLiteDatabase | null = null;
 
@@ -41,6 +41,10 @@ function migrate(db: SQLite.SQLiteDatabase): void {
         staff_code TEXT,
         photo_uri TEXT,
         face_signature TEXT,
+        staff_pin_hash TEXT,
+        staff_pin_salt TEXT,
+        pin_failed_attempts INTEGER NOT NULL DEFAULT 0,
+        pin_locked_until TEXT,
         is_active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL
       );
@@ -86,6 +90,18 @@ function migrate(db: SQLite.SQLiteDatabase): void {
     }
     if (!columnNames.has('face_signature')) {
       db.execSync('ALTER TABLE staff ADD COLUMN face_signature TEXT;');
+    }
+    if (!columnNames.has('staff_pin_hash')) {
+      db.execSync('ALTER TABLE staff ADD COLUMN staff_pin_hash TEXT;');
+    }
+    if (!columnNames.has('staff_pin_salt')) {
+      db.execSync('ALTER TABLE staff ADD COLUMN staff_pin_salt TEXT;');
+    }
+    if (!columnNames.has('pin_failed_attempts')) {
+      db.execSync('ALTER TABLE staff ADD COLUMN pin_failed_attempts INTEGER NOT NULL DEFAULT 0;');
+    }
+    if (!columnNames.has('pin_locked_until')) {
+      db.execSync('ALTER TABLE staff ADD COLUMN pin_locked_until TEXT;');
     }
 
     // Give existing staff a deterministic, unique code so the keypad works
