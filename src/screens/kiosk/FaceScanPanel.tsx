@@ -27,7 +27,7 @@ interface FaceScanPanelProps {
   engineAvailable: boolean | null;
   engineMessage?: string;
   onCapture: (uri: string) => void;
-  onUseCode: () => void;
+  onUseCode?: () => void;
 }
 
 export function FaceScanPanel({
@@ -141,9 +141,6 @@ export function FaceScanPanel({
               'This installed build cannot run the face engine. Install the latest app build, or use the staff-code keypad for now.'
             : 'Add a clear profile photo for each staff member in the admin area, or use the staff-code keypad for now.'}
         </Text>
-        <Pressable onPress={onUseCode} style={styles.linkButton}>
-          <Text style={styles.linkLabel}>Use staff code instead</Text>
-        </Pressable>
       </View>
     );
   }
@@ -179,9 +176,6 @@ export function FaceScanPanel({
           }}
           size="sm"
         />
-        <Pressable onPress={onUseCode} style={styles.linkButton}>
-          <Text style={styles.linkLabel}>Use staff code instead</Text>
-        </Pressable>
       </View>
     );
   }
@@ -245,24 +239,6 @@ export function FaceScanPanel({
           )
         }
       />
-
-      <Pressable
-        onPress={onUseCode}
-        disabled={busy}
-        style={({ pressed }) => [
-          styles.linkButton,
-          pressed && styles.pressed,
-        ]}
-      >
-        <Ionicons
-          name="keypad-outline"
-          size={16}
-          color={LINK_BLUE}
-        />
-        <Text style={[styles.linkLabel, styles.linkLabelDark]}>
-          Use staff code instead
-        </Text>
-      </Pressable>
 
       <Text style={styles.disclaimer}>
         Face matching runs entirely on this device.

@@ -231,9 +231,9 @@ export function AdminSettingsScreen() {
             />
           </View>
           <Text style={styles.authNote}>
-            Face mode uses an on-device visual match against staff photos and
-            may ask the staff member to confirm. Code mode uses this device's
-            {getBiometricLabelSync()}.
+            Attendance identification uses on-device facial recognition against
+            enrolled staff photos. A personal 6-digit PIN is requested only when
+            the face match is ambiguous.
           </Text>
         </Card>
 

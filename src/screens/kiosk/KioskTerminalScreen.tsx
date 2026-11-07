@@ -23,22 +23,11 @@ import type { RootNavigation } from '../../navigation/types';
 import { getAuthMethod, getCompanyName } from '../../services/appSettings';
 import { clockOutStaff, recordAttendance } from '../../services/attendanceLogic';
 import {
-  authenticateBiometric,
-  getBiometricStatus,
-  type BiometricStatus,
-} from '../../services/biometricService';
-import {
   matchFaceToStaff,
   prepareStaffFaceProfiles,
   type FaceCandidate,
   type FaceProfileSummary,
 } from '../../services/faceRecognitionService';
-import {
-  compareFaceEmbeddings,
-  extractFaceEmbedding,
-  parseFaceEmbedding,
-  prepareFaceEngine,
-} from '../../services/faceEngine';
 import {
   isStaffPinFormatValid,
   verifyStaffPin,
@@ -48,7 +37,6 @@ import type { AttendanceResult, AuthMethod, Staff } from '../../types';
 import { formatDateLong, formatTime24h } from '../../utils/date';
 import { enableKiosk, isKioskLockTaskAvailable } from '../../services/kioskLockTask';
 import { AdminPinModal } from '../auth/AdminPinModal';
-import { CodeKeypad } from './CodeKeypad';
 import { FaceMatchModal } from './FaceMatchModal';
 import { FaceScanPanel } from './FaceScanPanel';
 
@@ -63,13 +51,9 @@ export function KioskTerminalScreen() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [companyName, setCompanyName] = useState(DEFAULT_COMPANY_NAME);
   const [authMethod, setAuthMethod] = useState<AuthMethod>(DEFAULT_AUTH_METHOD);
-  const [useCodeFallback, setUseCodeFallback] = useState(false);
 
-  const [code, setCode] = useState('');
-  const [codeError, setCodeError] = useState<string | undefined>();
   const [processingId, setProcessingId] = useState<number | null>(null);
-  const submittedCodeRef = useRef<string | null>(null);
-  /** Synchronous lock so a fast Verify tap cannot race the auto-submit timer. */
+  /** Synchronous lock so a fast action cannot race. */
   const operationRef = useRef(false);
 
   const [faceBusy, setFaceBusy] = useState(false);
@@ -77,10 +61,6 @@ export function KioskTerminalScreen() {
   const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
   const [faceProfileSummary, setFaceProfileSummary] =
     useState<FaceProfileSummary | null>(null);
-  const [biometricStatus, setBiometricStatus] =
-    useState<BiometricStatus | null>(null);
-  const [codeFaceMember, setCodeFaceMember] = useState<Staff | null>(null);
-  const [codeFaceBusy, setCodeFaceBusy] = useState(false);
 
   const [ambiguousCandidates, setAmbiguousCandidates] = useState<FaceCandidate[] | null>(null);
   const [ambiguousPin, setAmbiguousPin] = useState('');
@@ -94,8 +74,7 @@ export function KioskTerminalScreen() {
   const [pinVisible, setPinVisible] = useState(false);
   const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
 
-  const mode: 'FACE' | 'CODE' =
-    authMethod === 'FACE_RECOGNITION' && !useCodeFallback ? 'FACE' : 'CODE';
+  const mode = 'FACE' as const;
 
   useFocusEffect(
     useCallback(() => {
@@ -105,20 +84,9 @@ export function KioskTerminalScreen() {
       setStaff(getActiveStaff());
       setCompanyName(getCompanyName());
       setAuthMethod(method);
-      setUseCodeFallback(false);
-      setCode('');
-      setCodeError(undefined);
-      submittedCodeRef.current = null;
       setPendingMatch(null);
       setCapturedPhotoUri(null);
       setFaceProfileSummary(null);
-      setBiometricStatus(null);
-
-      void getBiometricStatus().then((status) => {
-        if (active) {
-          setBiometricStatus(status);
-        }
-      });
 
       // Enable OS-level kiosk lock task mode when the terminal screen becomes
       // active (production Android builds only; no-op in Expo Go / simulators).
@@ -136,30 +104,28 @@ export function KioskTerminalScreen() {
           });
       }
 
-      if (method === 'FACE_RECOGNITION') {
-        void prepareStaffFaceProfiles()
-          .then((summary) => {
-            if (active) {
-              setStaff(getActiveStaff());
-              setFaceProfileSummary(summary);
-            }
-          })
-          .catch((error) => {
-            if (active) {
-              setFaceProfileSummary({
-                engineAvailable: false,
-                total: getActiveStaff().length,
-                ready: 0,
-                missing: getActiveStaff().length,
-                updated: 0,
-                message:
-                  error instanceof Error
-                    ? error.message
-                    : 'Face profiles could not be prepared.',
-              });
-            }
-          });
-      }
+      void prepareStaffFaceProfiles()
+        .then((summary) => {
+          if (active) {
+            setStaff(getActiveStaff());
+            setFaceProfileSummary(summary);
+          }
+        })
+        .catch((error) => {
+          if (active) {
+            setFaceProfileSummary({
+              engineAvailable: false,
+              total: getActiveStaff().length,
+              ready: 0,
+              missing: getActiveStaff().length,
+              updated: 0,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : 'Face profiles could not be prepared.',
+            });
+          }
+        });
 
       return () => {
         active = false;
@@ -177,92 +143,6 @@ export function KioskTerminalScreen() {
     );
     return () => clearTimeout(timeout);
   }, [feedbackVisible, feedback]);
-
-  const handleCodeSubmit = useCallback(
-    async (member: Staff) => {
-      if (operationRef.current || processingId !== null || faceBusy) {
-        return;
-      }
-      setCodeError(undefined);
-
-      // Prefer a 1-to-1 face check against the enrolled profile for this code.
-      const engineReady = await prepareFaceEngine();
-      const memberEmbedding = parseFaceEmbedding(member.faceSignature);
-      if (engineReady && memberEmbedding) {
-        setCodeFaceMember(member);
-        return;
-      }
-
-      // No face profile on file: cannot verify identity, so do not fall back
-      // to a device-level biometric (which would allow impersonation).
-      setCodeError('No face profile on file. Contact an administrator.');
-      setCode('');
-      submittedCodeRef.current = null;
-      Alert.alert(
-        'Face profile required',
-        'This staff member has no face profile. An administrator must add a clear profile photo before clock-in is allowed.',
-      );
-    },
-    [faceBusy, processingId],
-  );
-
-  const handleCodeFaceCapture = useCallback(
-    async (uri: string) => {
-      const member = codeFaceMember;
-      if (!member || codeFaceBusy) {
-        return;
-      }
-      const memberEmbedding = parseFaceEmbedding(member.faceSignature);
-      if (!memberEmbedding) {
-        setCodeFaceMember(null);
-        return;
-      }
-
-      setCodeFaceBusy(true);
-      try {
-        const captureEmbedding = await extractFaceEmbedding(uri);
-        const similarity = compareFaceEmbeddings(
-          captureEmbedding,
-          memberEmbedding,
-        );
-
-        if (similarity >= 0.6) {
-          const result = recordAttendance(member);
-          setFeedback(result);
-          setSimulated(false);
-          setFeedbackVisible(true);
-          setCode('');
-          submittedCodeRef.current = null;
-          setCodeFaceMember(null);
-        } else {
-          setCodeError('Biometric identity does not match staff code.');
-          setCode('');
-          submittedCodeRef.current = null;
-          setCodeFaceMember(null);
-          Alert.alert(
-            'Identity mismatch',
-            'Biometric identity does not match staff code.',
-          );
-        }
-      } catch (error) {
-        setCodeError(
-          error instanceof Error
-            ? error.message
-            : 'Face verification failed.',
-        );
-        setCodeFaceMember(null);
-      } finally {
-        setCodeFaceBusy(false);
-      }
-    },
-    [codeFaceBusy, codeFaceMember],
-  );
-
-  const handleCodeFaceCancel = useCallback(() => {
-    setCodeFaceMember(null);
-    setCode('');
-    submittedCodeRef.current = null;
-  }, []);
 
   const handleAmbiguousPinSubmit = useCallback(async () => {
     if (ambiguousPinBusy || !ambiguousCandidates) return;
@@ -325,8 +205,6 @@ export function KioskTerminalScreen() {
       setFeedback(result);
       setSimulated(false);
       setFeedbackVisible(true);
-      setCode('');
-      submittedCodeRef.current = null;
     } catch (error) {
       Alert.alert(
         'Could not sign out',
@@ -338,65 +216,6 @@ export function KioskTerminalScreen() {
       operationRef.current = false;
     }
   }, [feedback]);
-
-  const handleCodeChange = (next: string) => {
-    submittedCodeRef.current = null;
-    setCodeError(undefined);
-    setCode(next.toUpperCase());
-  };
-
-  const handleCodeVerify = () => {
-    const member = staff.find((item) => item.staffCode === code);
-    if (!member) {
-      setCodeError('That code does not match an active staff member.');
-      return;
-    }
-    submittedCodeRef.current = code;
-    void handleCodeSubmit(member);
-  };
-
-  useEffect(() => {
-    if (
-      mode !== 'CODE' ||
-      code.length < 2 ||
-      processingId !== null ||
-      faceBusy ||
-      biometricStatus?.available !== true
-    ) {
-      return;
-    }
-
-    const exact = staff.find((item) => item.staffCode === code);
-    if (!exact) {
-      return;
-    }
-
-    // If a longer code starts with the same characters, wait for the user to
-    // finish typing (or press Verify) instead of guessing.
-    const hasLongerMatch = staff.some(
-      (item) =>
-        item.staffCode.length > code.length &&
-        item.staffCode.startsWith(code),
-    );
-    if (hasLongerMatch || submittedCodeRef.current === code) {
-      return;
-    }
-
-    const timeout = setTimeout(() => {
-      submittedCodeRef.current = code;
-      void handleCodeSubmit(exact);
-    }, 350);
-
-    return () => clearTimeout(timeout);
-  }, [
-    biometricStatus,
-    code,
-    faceBusy,
-    handleCodeSubmit,
-    mode,
-    processingId,
-    staff,
-  ]);
 
   const handleFaceCapture = async (uri: string) => {
     if (operationRef.current || faceBusy || processingId !== null) {
@@ -430,10 +249,9 @@ export function KioskTerminalScreen() {
       setCapturedPhotoUri(null);
       Alert.alert(
         'Face not recognized',
-        'We could not match that face to a staff profile. Face the camera straight on with good light, or use your staff code instead.',
+        'We could not match that face to a staff profile. Face the camera straight on with good light and try again.',
         [
           { text: 'Try again', style: 'cancel' },
-          { text: 'Use staff code', onPress: () => setUseCodeFallback(true) },
         ],
       );
     } catch (error) {
@@ -484,7 +302,6 @@ export function KioskTerminalScreen() {
     setCapturedPhotoUri(null);
   };
 
-  const exactStaff = staff.find((item) => item.staffCode === code);
   const faceProfileCount =
     faceProfileSummary?.ready ??
     staff.filter((member) => Boolean(member.faceSignature)).length;
@@ -627,86 +444,16 @@ export function KioskTerminalScreen() {
         <View
           style={[
             styles.body,
-            mode === 'CODE' ? styles.bodyBottom : styles.bodyTop,
+            styles.bodyTop,
           ]}
         >
-          {mode === 'CODE' && codeFaceMember ? (
+          {ambiguousCandidates ? (
             <View style={styles.codeFaceWrap}>
-              <Text style={styles.codeFaceTitle}>
-                Verify {codeFaceMember.fullName}
-              </Text>
+              <Text style={styles.codeFaceTitle}>Identity check</Text>
               <Text style={styles.codeFaceHint}>
-                Scan your face to confirm this code.
+                Multiple possible matches. Enter your 6-digit PIN.
               </Text>
-              <FaceScanPanel
-                busy={codeFaceBusy}
-                profileCount={1}
-                engineAvailable={faceProfileSummary?.engineAvailable ?? true}
-                engineMessage={faceProfileSummary?.message}
-                onCapture={(uri) => void handleCodeFaceCapture(uri)}
-                onUseCode={handleCodeFaceCancel}
-              />
-              <AppButton
-                title="Cancel"
-                onPress={handleCodeFaceCancel}
-                variant="ghost"
-                size="sm"
-              />
             </View>
-          ) : mode === 'CODE' ? (
-            <>
-              <CodeKeypad
-                code={code}
-                hint={
-                  exactStaff
-                    ? `${exactStaff.staffCode} · ${exactStaff.fullName}`
-                    : undefined
-                }
-                error={codeError}
-                disabled={processingId !== null || faceBusy || codeFaceBusy}
-                onChange={handleCodeChange}
-                onSubmit={handleCodeVerify}
-              />
-              {biometricStatus && !biometricStatus.available ? (
-                <View style={styles.biometricWarning}>
-                  <Ionicons
-                    name="alert-circle-outline"
-                    size={16}
-                    color={colors.kioskMuted}
-                  />
-                  <Text style={styles.biometricWarningText}>
-                    {biometricStatus.message}
-                  </Text>
-                </View>
-              ) : null}
-              {processingId !== null ? (
-                <View style={styles.processing}>
-                  <ActivityIndicator color={colors.kioskText} />
-                  <Text style={styles.processingText}>
-                    Waiting for biometric verification…
-                  </Text>
-                </View>
-              ) : null}
-              {authMethod === 'FACE_RECOGNITION' ? (
-                <Pressable
-                  onPress={() => {
-                    setUseCodeFallback(false);
-                    setCode('');
-                    setCodeError(undefined);
-                  }}
-                  style={styles.fallbackLink}
-                >
-                  <Ionicons
-                    name="scan-outline"
-                    size={16}
-                    color={colors.kioskMuted}
-                  />
-                  <Text style={styles.fallbackLinkLabel}>
-                    Back to face scan
-                  </Text>
-                </Pressable>
-              ) : null}
-            </>
           ) : (
             <FaceScanPanel
               busy={faceBusy}
@@ -714,11 +461,6 @@ export function KioskTerminalScreen() {
               engineAvailable={faceProfileSummary?.engineAvailable ?? null}
               engineMessage={faceProfileSummary?.message}
               onCapture={(uri) => void handleFaceCapture(uri)}
-              onUseCode={() => {
-                setUseCodeFallback(true);
-                setCode('');
-                setCodeError(undefined);
-              }}
             />
           )}
         </View>
