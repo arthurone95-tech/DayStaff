@@ -11,6 +11,11 @@ import {
 } from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
+import {
+  compareFaceEmbeddings,
+  extractFaceEmbedding,
+  prepareFaceEngine,
+} from '../../services/faceEngine';
 import { colors, fontSize, radius, spacing } from '../../theme';
 
 /** Light blue (same family as the Verify button) for tappable text links. */
@@ -37,6 +42,7 @@ export function FaceScanPanel({
   const cameraRef = useRef<CameraView | null>(null);
   const [ready, setReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [livenessPrompt, setLivenessPrompt] = useState<string | null>(null);
 
   const handleScan = async () => {
     if (busy || !ready || !cameraRef.current) {
@@ -44,17 +50,58 @@ export function FaceScanPanel({
     }
     setCameraError(null);
     try {
-      const photo = await cameraRef.current.takePictureAsync({
+      // Liveness: capture two frames a moment apart. A real face moves;
+      // a printed photo stays identical.
+      setLivenessPrompt('Hold still…');
+      const first = await cameraRef.current.takePictureAsync({
         quality: 0.9,
         base64: false,
         skipProcessing: false,
       });
-      if (photo?.uri) {
-        onCapture(photo.uri);
-      } else {
+      if (!first?.uri) {
         setCameraError('The camera did not return a photo. Try again.');
+        setLivenessPrompt(null);
+        return;
       }
+
+      setLivenessPrompt('Now turn your head slightly…');
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      if (!cameraRef.current) {
+        setLivenessPrompt(null);
+        return;
+      }
+      const second = await cameraRef.current.takePictureAsync({
+        quality: 0.9,
+        base64: false,
+        skipProcessing: false,
+      });
+      setLivenessPrompt(null);
+      if (!second?.uri) {
+        setCameraError('The camera did not return a photo. Try again.');
+        return;
+      }
+
+      const engineReady = await prepareFaceEngine();
+      if (engineReady) {
+        try {
+          const firstEmb = await extractFaceEmbedding(first.uri);
+          const secondEmb = await extractFaceEmbedding(second.uri);
+          const similarity = compareFaceEmbeddings(firstEmb, secondEmb);
+          // Too similar = no real motion -> likely a photo attack.
+          if (similarity > 0.985) {
+            setCameraError(
+              'No motion detected. Please turn your head slightly and try again.',
+            );
+            return;
+          }
+        } catch {
+          // If embedding extraction fails, fall through and use the capture.
+        }
+      }
+
+      onCapture(second.uri);
     } catch (error) {
+      setLivenessPrompt(null);
       setCameraError(
         error instanceof Error
           ? error.message
@@ -180,6 +227,9 @@ export function FaceScanPanel({
         Look straight at the camera and keep your face inside the oval.
       </Text>
 
+      {livenessPrompt ? (
+        <Text style={styles.liveness}>{livenessPrompt}</Text>
+      ) : null}
       {cameraError ? <Text style={styles.error}>{cameraError}</Text> : null}
 
       <AppButton
@@ -321,6 +371,12 @@ const styles = StyleSheet.create({
   error: {
     marginTop: spacing.sm,
     color: '#FCA5A5',
+    fontSize: fontSize.sm,
+    textAlign: 'center',
+  },
+  liveness: {
+    marginTop: spacing.sm,
+    color: '#93C5FD',
     fontSize: fontSize.sm,
     textAlign: 'center',
   },

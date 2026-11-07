@@ -181,38 +181,15 @@ export function KioskTerminalScreen() {
         return;
       }
 
-      // Fallback when no face profile is available: device-level biometric.
-      operationRef.current = true;
-      setProcessingId(member.id);
-      try {
-        const biometric = await authenticateBiometric(
-          `Verify ${member.fullName} to record attendance`,
-        );
-
-        if (!biometric.success) {
-          setCodeError(
-            biometric.error ?? 'Biometric verification was not successful.',
-          );
-          return;
-        }
-
-        const result = recordAttendance(member);
-        setFeedback(result);
-        setSimulated(biometric.simulated === true);
-        setFeedbackVisible(true);
-        setCode('');
-        submittedCodeRef.current = null;
-      } catch (error) {
-        Alert.alert(
-          'Could not record attendance',
-          error instanceof Error
-            ? error.message
-            : 'An unexpected error occurred.',
-        );
-      } finally {
-        operationRef.current = false;
-        setProcessingId(null);
-      }
+      // No face profile on file: cannot verify identity, so do not fall back
+      // to a device-level biometric (which would allow impersonation).
+      setCodeError('No face profile on file. Contact an administrator.');
+      setCode('');
+      submittedCodeRef.current = null;
+      Alert.alert(
+        'Face profile required',
+        'This staff member has no face profile. An administrator must add a clear profile photo before clock-in is allowed.',
+      );
     },
     [faceBusy, processingId],
   );
@@ -382,16 +359,11 @@ export function KioskTerminalScreen() {
         return;
       }
 
-      if (match.suggested) {
-        setPendingMatch(match.suggested);
-        return;
-      }
-
       setPendingMatch(null);
       setCapturedPhotoUri(null);
       Alert.alert(
-        'No confident match',
-        'We could not match that capture to a staff profile. Face the camera straight on with good light, or use your staff code instead.',
+        'Face not recognized',
+        'We could not match that face to a staff profile. Face the camera straight on with good light, or use your staff code instead.',
         [
           { text: 'Try again', style: 'cancel' },
           { text: 'Use staff code', onPress: () => setUseCodeFallback(true) },
