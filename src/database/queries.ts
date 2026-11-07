@@ -23,7 +23,6 @@ interface StaffRow {
   staff_code: string | null;
   photo_uri: string | null;
   face_signature: string | null;
-  fingerprint_signature: string | null;
   is_active: number;
   created_at: string;
 }
@@ -59,7 +58,6 @@ const mapStaff = (row: StaffRow): Staff => ({
   staffCode: row.staff_code ?? '',
   photoUri: row.photo_uri,
   faceSignature: row.face_signature,
-  fingerprintSignature: row.fingerprint_signature,
   isActive: row.is_active,
   createdAt: row.created_at,
 });
@@ -135,14 +133,13 @@ export function createStaff(input: NewStaff): Staff {
   const createdAt = new Date().toISOString();
   const result = getDb().runSync(
     `INSERT INTO staff
-       (full_name, staff_code, photo_uri, face_signature, fingerprint_signature, is_active, created_at)
-     VALUES (?, ?, ?, ?, ?, 1, ?)`,
+       (full_name, staff_code, photo_uri, face_signature, is_active, created_at)
+     VALUES (?, ?, ?, ?, 1, ?)`,
     [
       input.fullName.trim(),
       input.staffCode.trim().toUpperCase(),
       input.photoUri,
       input.faceSignature,
-      input.fingerprintSignature,
       createdAt,
     ],
   );
@@ -156,14 +153,13 @@ export function createStaff(input: NewStaff): Staff {
 export function updateStaff(id: number, input: NewStaff): Staff {
   getDb().runSync(
     `UPDATE staff
-     SET full_name = ?, staff_code = ?, photo_uri = ?, face_signature = ?, fingerprint_signature = ?
+     SET full_name = ?, staff_code = ?, photo_uri = ?, face_signature = ?
      WHERE id = ?`,
     [
       input.fullName.trim(),
       input.staffCode.trim().toUpperCase(),
       input.photoUri,
       input.faceSignature,
-      input.fingerprintSignature,
       id,
     ],
   );
@@ -186,16 +182,6 @@ export function setStaffFaceSignature(
   signature: string | null,
 ): void {
   getDb().runSync('UPDATE staff SET face_signature = ? WHERE id = ?', [
-    signature,
-    id,
-  ]);
-}
-
-export function setStaffFingerprintSignature(
-  id: number,
-  signature: string | null,
-): void {
-  getDb().runSync('UPDATE staff SET fingerprint_signature = ? WHERE id = ?', [
     signature,
     id,
   ]);
@@ -352,7 +338,6 @@ interface AttendanceWithStaffSqlRow {
   staff_code: string | null;
   photo_uri: string | null;
   face_signature: string | null;
-  fingerprint_signature: string | null;
   is_active: number;
   created_at: string;
 }
@@ -396,7 +381,6 @@ export function getAttendanceWithStaffForDate(
       staff_code: row.staff_code,
       photo_uri: row.photo_uri,
       face_signature: row.face_signature,
-      fingerprint_signature: row.fingerprint_signature,
       is_active: row.is_active,
       created_at: row.created_at,
     }),

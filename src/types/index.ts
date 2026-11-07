@@ -28,8 +28,6 @@ export interface Staff {
   photoUri: string | null;
   /** Visual fingerprint of the profile photo, used by face mode. */
   faceSignature: string | null;
-  /** Enrolled fingerprint template/hash, used for code-mode verification. */
-  fingerprintSignature: string | null;
   isActive: number;
   createdAt: string;
 }
@@ -39,7 +37,6 @@ export interface NewStaff {
   staffCode: string;
   photoUri: string | null;
   faceSignature: string | null;
-  fingerprintSignature: string | null;
 }
 
 export interface Schedule {

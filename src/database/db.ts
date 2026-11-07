@@ -8,7 +8,7 @@
 import * as SQLite from 'expo-sqlite';
 
 export const DATABASE_NAME = 'daystaff.db';
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 2;
 
 let connection: SQLite.SQLiteDatabase | null = null;
 
@@ -41,7 +41,6 @@ function migrate(db: SQLite.SQLiteDatabase): void {
         staff_code TEXT,
         photo_uri TEXT,
         face_signature TEXT,
-        fingerprint_signature TEXT,
         is_active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL
       );
@@ -87,9 +86,6 @@ function migrate(db: SQLite.SQLiteDatabase): void {
     }
     if (!columnNames.has('face_signature')) {
       db.execSync('ALTER TABLE staff ADD COLUMN face_signature TEXT;');
-    }
-    if (!columnNames.has('fingerprint_signature')) {
-      db.execSync('ALTER TABLE staff ADD COLUMN fingerprint_signature TEXT;');
     }
 
     // Give existing staff a deterministic, unique code so the keypad works

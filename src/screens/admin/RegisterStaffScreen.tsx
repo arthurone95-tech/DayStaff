@@ -189,7 +189,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
           staffCode: normalizedCode,
           photoUri,
           faceSignature,
-          fingerprintSignature: null,
         });
       } else {
         createStaff({
@@ -197,7 +196,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
           staffCode: normalizedCode,
           photoUri,
           faceSignature,
-          fingerprintSignature: null,
         });
       }
       navigation.goBack();
