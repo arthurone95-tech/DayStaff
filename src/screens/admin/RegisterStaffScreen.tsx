@@ -7,7 +7,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -32,14 +31,12 @@ import {
   updateStaff,
 } from '../../database/queries';
 import type { RootStackParamList } from '../../navigation/types';
-import { getBiometricLabelSync, getBiometricStatus } from '../../services/biometricService';
+import { getBiometricLabelSync } from '../../services/biometricService';
 import {
   FaceEngineUnavailableError,
   FacePhotoError,
 } from '../../services/faceEngine';
-import {
-  createStaffFaceSignature,
-} from '../../services/faceRecognitionService';
+import { createStaffFaceSignature } from '../../services/faceRecognitionService';
 import { colors, fontSize, radius, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RegisterStaff'>;
@@ -50,14 +47,6 @@ function normalizeCode(value: string): string {
     .replace(/[^A-Z0-9]/g, '')
     .slice(0, STAFF_CODE_MAX_LENGTH);
 }
-
-const FINGERPRINT_STEPS = [
-  'Place your finger on the scanner.',
-  'Lift and press again.',
-  'Shift slightly left and press.',
-  'Tilt right and press.',
-  'Lift and press one final time.',
-];
 
 const FACE_GUIDANCE = [
   'Look straight ahead.',
@@ -71,16 +60,10 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   const staffId = route.params?.staffId;
   const isEditing = typeof staffId === 'number';
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2>(1);
   const [fullName, setFullName] = useState('');
   const [staffCode, setStaffCode] = useState('');
   const [errors, setErrors] = useState<{ name?: string; code?: string }>({});
-
-  const [fingerprintStep, setFingerprintStep] = useState(0);
-  const [fingerprintDone, setFingerprintDone] = useState(false);
-  const [fingerprintSignature, setFingerprintSignature] = useState<string | null>(
-    null,
-  );
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [faceSignature, setFaceSignature] = useState<string | null>(null);
@@ -107,14 +90,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
         setStaffCode(existing.staffCode);
         setPhotoUri(existing.photoUri);
         setFaceSignature(existing.faceSignature);
-        setFingerprintSignature(existing.fingerprintSignature);
         setIsActive(existing.isActive === 1);
-        if (existing.fingerprintSignature) {
-          setFingerprintDone(true);
-        }
-        if (existing.faceSignature) {
-          // Skip to review-ish: start at step 1 but allow re-enrollment.
-        }
       }
       setLoading(false);
     }
@@ -139,17 +115,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
     }
     setErrors(next);
     return Object.keys(next).length === 0;
-  };
-
-  const handleFingerprintTap = () => {
-    if (fingerprintDone) return;
-    const next = fingerprintStep + 1;
-    if (next >= FINGERPRINT_STEPS.length) {
-      setFingerprintDone(true);
-      setFingerprintSignature(`fp:${Date.now()}`);
-    } else {
-      setFingerprintStep(next);
-    }
   };
 
   const handleFaceCapture = async () => {
@@ -194,7 +159,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
 
   // Cycle guidance text while on face step.
   useEffect(() => {
-    if (step !== 3) return;
+    if (step !== 2) return;
     const interval = setInterval(() => {
       setFaceGuidanceIndex((i) => (i + 1) % FACE_GUIDANCE.length);
     }, 2500);
@@ -206,20 +171,12 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       setStep(1);
       return;
     }
-    if (!fingerprintDone) {
-      Alert.alert(
-        'Fingerprint required',
-        'Complete the fingerprint enrollment before saving.',
-      );
-      setStep(2);
-      return;
-    }
     if (!photoUri || !faceSignature) {
       Alert.alert(
         'Face scan required',
         'Complete the face scan before saving.',
       );
-      setStep(3);
+      setStep(2);
       return;
     }
 
@@ -232,7 +189,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
           staffCode: normalizedCode,
           photoUri,
           faceSignature,
-          fingerprintSignature,
+          fingerprintSignature: null,
         });
       } else {
         createStaff({
@@ -240,7 +197,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
           staffCode: normalizedCode,
           photoUri,
           faceSignature,
-          fingerprintSignature,
+          fingerprintSignature: null,
         });
       }
       navigation.goBack();
@@ -300,18 +257,12 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
         >
           <View style={styles.stepHeader}>
             <Text style={styles.stepTitle}>
-              {step === 1
-                ? 'Step 1: Basic info'
-                : step === 2
-                  ? 'Step 2: Fingerprint'
-                  : 'Step 3: Face scan'}
+              {step === 1 ? 'Step 1: Basic info' : 'Step 2: Face scan'}
             </Text>
             <Text style={styles.stepSubtitle}>
               {step === 1
                 ? 'Name and staff code.'
-                : step === 2
-                  ? 'Enroll a fingerprint.'
-                  : 'Scan the face and capture a photo.'}
+                : 'Scan the face and capture a photo.'}
             </Text>
           </View>
 
@@ -354,51 +305,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
 
           {step === 2 ? (
             <Card style={styles.formCard}>
-              <Text style={styles.cardTitle}>Fingerprint enrollment</Text>
-              <Text style={styles.cardHint}>
-                Tap the scanner below, following the prompts, to enroll a
-                fingerprint.
-              </Text>
-              <Pressable
-                onPress={handleFingerprintTap}
-                style={({ pressed }) => [
-                  styles.fingerScanner,
-                  pressed && styles.fingerScannerPressed,
-                  fingerprintDone && styles.fingerScannerDone,
-                ]}
-              >
-                <Ionicons
-                  name={fingerprintDone ? 'checkmark-circle' : 'finger-print'}
-                  size={64}
-                  color={fingerprintDone ? colors.success : colors.primary}
-                />
-                <Text style={styles.fingerScannerText}>
-                  {fingerprintDone
-                    ? 'Enrolled'
-                    : FINGERPRINT_STEPS[fingerprintStep]}
-                </Text>
-              </Pressable>
-              <View style={styles.stepNav}>
-                <AppButton
-                  title="Back"
-                  onPress={() => setStep(1)}
-                  variant="ghost"
-                  size="sm"
-                  fullWidth={false}
-                />
-                <AppButton
-                  title="Next"
-                  onPress={() => setStep(3)}
-                  size="sm"
-                  fullWidth={false}
-                  disabled={!fingerprintDone}
-                />
-              </View>
-            </Card>
-          ) : null}
-
-          {step === 3 ? (
-            <Card style={styles.formCard}>
               <Text style={styles.cardTitle}>Face scan</Text>
               <Text style={styles.cardHint}>
                 {FACE_GUIDANCE[faceGuidanceIndex]}
@@ -440,7 +346,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
               <View style={styles.stepNav}>
                 <AppButton
                   title="Back"
-                  onPress={() => setStep(2)}
+                  onPress={() => setStep(1)}
                   variant="ghost"
                   size="sm"
                   fullWidth={false}
@@ -480,6 +386,19 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
               </View>
             </Card>
           ) : null}
+
+          <View style={styles.note}>
+            <Ionicons
+              name="scan-outline"
+              size={16}
+              color={colors.slate500}
+            />
+            <Text style={styles.noteText}>
+              Face mode builds an on-device face profile from this scan; a
+              clear, front-facing capture gives the most reliable match. Code
+              mode will require this face to match the staff code at clock-in.
+            </Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
@@ -501,24 +420,12 @@ const styles = StyleSheet.create({
   statusText: { flex: 1 },
   statusTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.slate800 },
   statusHint: { marginTop: 2, fontSize: fontSize.xs, color: colors.slate500, lineHeight: 18 },
-  fingerScanner: {
-    marginTop: spacing.lg,
-    height: 180,
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.white,
-  },
-  fingerScannerPressed: { opacity: 0.7 },
-  fingerScannerDone: { borderColor: colors.success, backgroundColor: colors.successSoft ?? colors.white },
-  fingerScannerText: { fontSize: fontSize.sm, color: colors.slate500, textAlign: 'center', paddingHorizontal: spacing.md },
   cameraWrap: { marginTop: spacing.md, height: 260, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.slate200 },
   camera: { flex: 1 },
   cameraPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   previewRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
   photoError: { marginTop: spacing.sm, fontSize: fontSize.xs, color: colors.danger, textAlign: 'center' },
   stepNav: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.lg, gap: spacing.sm },
+  note: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg, paddingHorizontal: spacing.sm },
+  noteText: { flex: 1, fontSize: fontSize.xs, color: colors.slate500, lineHeight: 18 },
 });
