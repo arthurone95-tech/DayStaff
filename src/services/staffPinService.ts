@@ -2,7 +2,7 @@ import * as Crypto from 'expo-crypto';
 
 import { getStaffById, recordStaffPinFailure, resetStaffPinFailures, setStaffPin } from '../database/queries';
 
-const PIN_ITERATIONS = 10000;
+const PIN_ITERATIONS = 1000;
 
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes)
