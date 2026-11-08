@@ -176,13 +176,10 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
           </View>
 
           {step === 0 ? (
-            <>
-              <Text style={styles.heading}>Welcome to your attendance terminal</Text>
-              <Text style={styles.intro}>
-                Set up your organisation, secure the admin area, and choose how
-                staff will clock in.
-              </Text>
-            </>
+            <Text style={styles.intro}>
+              Set up your organisation, secure the admin area, and choose how
+              staff will clock in.
+            </Text>
           ) : null}
 
           <View style={styles.steps}>
@@ -248,16 +245,22 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
               </View>
 
               <Text style={styles.sectionLabel}>Default shift schedule</Text>
-              <TimeField
-                label="Opening / arrival time"
-                value={startTime}
-                onChange={setStartTime}
-              />
-              <TimeField
-                label="Closing time"
-                value={endTime}
-                onChange={setEndTime}
-              />
+              <View style={styles.timeRow}>
+                <View style={styles.timeFieldWrap}>
+                  <TimeField
+                    label="Opening / arrival time"
+                    value={startTime}
+                    onChange={setStartTime}
+                  />
+                </View>
+                <View style={styles.timeFieldWrap}>
+                  <TimeField
+                    label="Closing time"
+                    value={endTime}
+                    onChange={setEndTime}
+                  />
+                </View>
+              </View>
 
               <View style={styles.graceRow}>
                 <View style={styles.graceText}>
@@ -553,6 +556,13 @@ const styles = StyleSheet.create({
     color: colors.slate700,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  timeFieldWrap: {
+    flex: 1,
   },
   graceRow: {
     flexDirection: 'row',
