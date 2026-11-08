@@ -131,12 +131,6 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
     return (
       <Screen edges={['top', 'left', 'right', 'bottom']}>
         <View style={styles.welcomeWrap}>
-          <View style={styles.brandRow}>
-            <View style={styles.brandText}>
-              <Text style={styles.brandTitle}>DayStaff</Text>
-              <Text style={styles.brandSub}>One-time setup</Text>
-            </View>
-          </View>
           <Text style={styles.heading}>Welcome to your attendance terminal</Text>
           <Text style={styles.intro}>
             Set up your organisation, secure the admin area, and choose how
@@ -168,13 +162,6 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
           showsVerticalScrollIndicator={false}
         >
         <View style={styles.shell}>
-          <View style={styles.brandRow}>
-            <View style={styles.brandText}>
-              <Text style={styles.brandTitle}>DayStaff</Text>
-              <Text style={styles.brandSub}>One-time setup</Text>
-            </View>
-          </View>
-
           {step === 0 ? (
             <>
               <Text style={styles.heading}>Welcome to your attendance terminal</Text>
@@ -248,16 +235,22 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
               </View>
 
               <Text style={styles.sectionLabel}>Default shift schedule</Text>
-              <TimeField
-                label="Opening / arrival time"
-                value={startTime}
-                onChange={setStartTime}
-              />
-              <TimeField
-                label="Closing time"
-                value={endTime}
-                onChange={setEndTime}
-              />
+              <View style={styles.timeRow}>
+                <View style={styles.timeFieldWrap}>
+                  <TimeField
+                    label="Opening / arrival time"
+                    value={startTime}
+                    onChange={setStartTime}
+                  />
+                </View>
+                <View style={styles.timeFieldWrap}>
+                  <TimeField
+                    label="Closing time"
+                    value={endTime}
+                    onChange={setEndTime}
+                  />
+                </View>
+              </View>
 
               <View style={styles.graceRow}>
                 <View style={styles.graceText}>
@@ -553,6 +546,13 @@ const styles = StyleSheet.create({
     color: colors.slate700,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  timeFieldWrap: {
+    flex: 1,
   },
   graceRow: {
     flexDirection: 'row',
