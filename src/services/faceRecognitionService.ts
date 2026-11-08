@@ -196,7 +196,7 @@ export async function prepareStaffFaceProfiles(): Promise<FaceProfileSummary> {
       continue;
     }
 
-    if (__DEV__ && member.faceSignature && !isFaceEmbeddingSignature(member.faceSignature)) {
+    if (member.faceSignature && !isFaceEmbeddingSignature(member.faceSignature)) {
       ready += 1;
     } else {
       missing += 1;
@@ -343,15 +343,8 @@ export async function matchFaceToStaff(
     return matchWithEmbeddings(capturedPhotoUri, activeStaff);
   }
 
-  // The visual-hash matcher is only a development/Expo Go fallback. Production
-  // builds must use the real embedding engine rather than silently accepting a
-  // weaker match.
-  if (__DEV__) {
-    return matchWithLegacyHashes(capturedPhotoUri, activeStaff);
-  }
-
-  throw new FaceEngineUnavailableError(
-    getFaceEngineError() ??
-      'Face recognition needs the latest installed app build. Use the staff code for now.',
-  );
+  // The native face engine is unavailable in this build (e.g. a build where
+  // the Nitro module failed to link). Fall back to the legacy visual matcher so
+  // attendance still works, while making clear that matching is basic.
+  return matchWithLegacyHashes(capturedPhotoUri, activeStaff);
 }

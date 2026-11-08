@@ -106,15 +106,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       next.name = 'Full name is required.';
     }
     const normalizedCode = normalizeCode(staffCode);
-    if (!normalizedCode) {
-      next.code = 'A kiosk staff code is required.';
-    } else if (
-      !STAFF_CODE_PATTERN.test(normalizedCode) ||
-      normalizedCode.length < STAFF_CODE_MIN_LENGTH ||
-      normalizedCode.length > STAFF_CODE_MAX_LENGTH
-    ) {
-      next.code = `Use ${STAFF_CODE_MIN_LENGTH}–${STAFF_CODE_MAX_LENGTH} letters or numbers.`;
-    } else if (isStaffCodeTaken(normalizedCode, staffId)) {
+    if (normalizedCode && isStaffCodeTaken(normalizedCode, staffId)) {
       next.code = 'That code is already assigned to another staff member.';
     }
     setErrors(next);
@@ -138,7 +130,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       try {
         const persisted = await persistPhoto(photo.uri);
         const enrollment = await createStaffFaceSignature(persisted, {
-          allowLegacy: __DEV__,
+          allowLegacy: true,
         });
         setPhotoUri(persisted);
         setFaceSignature(enrollment.signature);
@@ -212,9 +204,10 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       const normalizedCode = normalizeCode(staffCode);
       let savedId: number | null = null;
       if (isEditing && staffId) {
+        const existingCode = getStaffById(staffId)?.staffCode ?? '';
         updateStaff(staffId, {
           fullName,
-          staffCode: normalizedCode,
+          staffCode: normalizedCode || existingCode,
           photoUri,
           faceSignature,
         });
@@ -292,7 +285,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
             </Text>
             <Text style={styles.stepSubtitle}>
               {step === 1
-                ? 'Name and staff code.'
+                ? 'Name and fallback PIN.'
                 : 'Scan the face and capture a photo.'}
             </Text>
           </View>
@@ -310,19 +303,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 autoCapitalize="words"
                 error={errors.name}
                 maxLength={80}
-              />
-              <TextField
-                label="Staff ID / code"
-                value={staffCode}
-                onChangeText={(value) => {
-                  setStaffCode(normalizeCode(value));
-                  setErrors((prev) => ({ ...prev, code: undefined }));
-                }}
-                placeholder="e.g. G2"
-                autoCapitalize="characters"
-                error={errors.code}
-                hint={`${STAFF_CODE_MIN_LENGTH}–${STAFF_CODE_MAX_LENGTH} letters or numbers.`}
-                maxLength={STAFF_CODE_MAX_LENGTH}
               />
               <TextField
                 label="Fallback PIN (6 digits)"
@@ -445,8 +425,8 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
             />
             <Text style={styles.noteText}>
               Face mode builds an on-device face profile from this scan; a
-              clear, front-facing capture gives the most reliable match. Code
-              mode will require this face to match the staff code at clock-in.
+              clear, front-facing capture gives the most reliable match. The
+              staff code is generated automatically and shown on the staff list.
             </Text>
           </View>
         </ScrollView>

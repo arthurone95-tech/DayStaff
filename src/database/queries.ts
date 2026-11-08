@@ -139,13 +139,14 @@ export function isStaffCodeTaken(code: string, excludeId?: number): boolean {
 
 export function createStaff(input: NewStaff): Staff {
   const createdAt = new Date().toISOString();
+  const providedCode = (input.staffCode ?? '').trim().toUpperCase();
   const result = getDb().runSync(
     `INSERT INTO staff
        (full_name, staff_code, photo_uri, face_signature, staff_pin_hash, staff_pin_salt, pin_failed_attempts, pin_locked_until, is_active, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 0, NULL, 1, ?)`,
     [
       input.fullName.trim(),
-      input.staffCode.trim().toUpperCase(),
+      providedCode || null,
       input.photoUri,
       input.faceSignature,
       input.staffPinHash ?? null,
@@ -153,7 +154,18 @@ export function createStaff(input: NewStaff): Staff {
       createdAt,
     ],
   );
-  const staff = getStaffById(Number(result.lastInsertRowId));
+  const newId = Number(result.lastInsertRowId);
+  // Auto-generate a deterministic code when none was provided.
+  if (!providedCode) {
+    const firstChar = input.fullName.trim().charAt(0).toUpperCase();
+    const prefix = /^[A-Z0-9]$/.test(firstChar) ? firstChar : 'S';
+    const generated = `${prefix}${newId}`;
+    getDb().runSync('UPDATE staff SET staff_code = ? WHERE id = ?', [
+      generated,
+      newId,
+    ]);
+  }
+  const staff = getStaffById(newId);
   if (!staff) {
     throw new Error('Failed to create staff member.');
   }
@@ -167,7 +179,7 @@ export function updateStaff(id: number, input: NewStaff): Staff {
      WHERE id = ?`,
     [
       input.fullName.trim(),
-      input.staffCode.trim().toUpperCase(),
+      (input.staffCode ?? '').trim().toUpperCase(),
       input.photoUri,
       input.faceSignature,
       input.staffPinHash ?? null,

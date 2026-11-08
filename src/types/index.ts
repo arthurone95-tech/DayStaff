@@ -42,7 +42,7 @@ export interface Staff {
 
 export interface NewStaff {
   fullName: string;
-  staffCode: string;
+  staffCode?: string;
   photoUri: string | null;
   faceSignature: string | null;
   staffPinHash?: string | null;
