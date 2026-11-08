@@ -142,9 +142,6 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
         >
         <View style={styles.shell}>
           <View style={styles.brandRow}>
-            <View style={styles.logo}>
-              <Ionicons name="finger-print" size={30} color={colors.white} />
-            </View>
             <View style={styles.brandText}>
               <Text style={styles.brandTitle}>DayStaff</Text>
               <Text style={styles.brandSub}>One-time setup</Text>
@@ -414,15 +411,8 @@ const styles = StyleSheet.create({
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-  },
-  logo: {
-    width: 58,
-    height: 58,
-    borderRadius: radius.lg,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
     justifyContent: 'center',
+    gap: spacing.md,
   },
   brandText: {
     flex: 1,
@@ -442,12 +432,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.slate900,
     lineHeight: 34,
+    textAlign: 'center',
   },
   intro: {
     marginTop: spacing.sm,
     fontSize: fontSize.sm,
     lineHeight: 21,
     color: colors.slate500,
+    textAlign: 'center',
   },
   steps: {
     flexDirection: 'row',

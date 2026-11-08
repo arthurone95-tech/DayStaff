@@ -73,7 +73,8 @@ export function AdminPinModal({
       {/* Lifts the card above the keyboard so Cancel / Unlock stay visible. */}
       <KeyboardAvoidingView
         style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}

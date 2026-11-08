@@ -322,22 +322,6 @@ export function KioskTerminalScreen() {
                 <Text style={styles.brandSub}>Staff attendance terminal</Text>
               </View>
             </View>
-            <Pressable
-              onPress={() => setPinVisible(true)}
-              style={({ pressed }) => [
-                styles.lockButton,
-                pressed && styles.lockButtonPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Open administrator area"
-            >
-              <Ionicons
-                name="lock-closed-outline"
-                size={22}
-                color={colors.kioskText}
-              />
-              <Text style={styles.lockLabel}>Admin</Text>
-            </Pressable>
           </View>
 
           <View style={styles.empty}>

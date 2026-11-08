@@ -50,6 +50,7 @@ export function RootNavigator() {
           headerStyle: { backgroundColor: colors.primary },
           headerTintColor: colors.white,
           headerTitleStyle: { fontWeight: '700' },
+          headerTitleAlign: 'center',
           headerShadowVisible: false,
           // Replace the native back button with a bare white chevron so no
           // destination label or iOS 26 "liquid glass" pill is rendered.
