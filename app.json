@@ -65,7 +65,8 @@
       "expo-sqlite",
       "expo-sharing",
       "expo-font",
-      "./src/plugins/withKioskLockTask.js"
+      "./src/plugins/withKioskLockTask.js",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {

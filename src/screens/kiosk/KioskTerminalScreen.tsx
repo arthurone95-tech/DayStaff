@@ -415,7 +415,7 @@ export function KioskTerminalScreen() {
           <View style={styles.livePill}>
             <View style={styles.liveDot} />
             <Text style={styles.liveLabel}>
-              {mode === 'FACE' ? 'Face recognition' : 'Code + biometrics'}
+              Face recognition
             </Text>
           </View>
           {mode === 'FACE' ? (

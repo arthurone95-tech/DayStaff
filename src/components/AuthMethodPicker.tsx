@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fontSize, radius, spacing } from '../theme';
-import { getBiometricLabelSync } from '../services/biometricService';
 import type { AuthMethod } from '../types';
 
 interface AuthMethodPickerProps {
@@ -11,6 +10,8 @@ interface AuthMethodPickerProps {
   disabled?: boolean;
 }
 
+// Staff code + biometrics has been retired in favour of face recognition.
+// Keep the type import so the picker stays compatible if it is restored later.
 const OPTIONS: Array<{
   value: AuthMethod;
   title: string;
@@ -19,19 +20,12 @@ const OPTIONS: Array<{
   recommended?: boolean;
 }> = [
   {
-    value: 'PIN_BIOMETRIC',
-    title: 'Staff code + biometrics',
-    description:
-      `Staff enter a short code on the on-screen keypad, then confirm with the ${getBiometricLabelSync()} enrolled on this device.`,
-    icon: 'keypad-outline',
-    recommended: true,
-  },
-  {
     value: 'FACE_RECOGNITION',
     title: 'Face recognition',
     description:
       'Staff look at the camera and the app matches the capture against profile photos. Best with clear, front-facing photos.',
     icon: 'scan-outline',
+    recommended: true,
   },
 ];
 

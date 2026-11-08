@@ -24,6 +24,11 @@ export function setCompanyName(name: string): void {
 
 export function getAuthMethod(): AuthMethod {
   const value = getSetting(AUTH_METHOD_SETTING);
+  // Staff code + biometrics has been retired; any previously saved value is
+  // treated as face recognition so existing installs keep working.
+  if (value === 'PIN_BIOMETRIC') {
+    return 'FACE_RECOGNITION';
+  }
   return value === 'FACE_RECOGNITION' ? 'FACE_RECOGNITION' : DEFAULT_AUTH_METHOD;
 }
 

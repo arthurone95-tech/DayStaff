@@ -314,8 +314,8 @@ export function AdminSettingsScreen() {
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>Device biometrics</Text>
           <Text style={styles.cardHint}>
-            Code mode verifies the {getBiometricLabelSync()} enrolled on this
-            terminal. Face-recognition mode uses the camera instead.
+            Attendance uses face recognition. Device biometrics are shown here
+            for informational purposes only.
           </Text>
 
           <View style={styles.statusList}>

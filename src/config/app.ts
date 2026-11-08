@@ -7,7 +7,7 @@ export const LEGACY_SCHOOL_NAME_SETTING = 'school_name';
 export const DEFAULT_COMPANY_NAME = 'DayStaff';
 
 export const AUTH_METHOD_SETTING = 'auth_method';
-export const DEFAULT_AUTH_METHOD: AuthMethod = 'PIN_BIOMETRIC';
+export const DEFAULT_AUTH_METHOD: AuthMethod = 'FACE_RECOGNITION';
 
 export const ADMIN_PIN_SETTING = 'admin_pin_hash';
 export const SETUP_COMPLETED_SETTING = 'setup_completed_at';
