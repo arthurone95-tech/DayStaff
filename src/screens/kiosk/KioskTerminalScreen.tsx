@@ -30,6 +30,7 @@ import {
 } from '../../services/faceRecognitionService';
 import {
   isStaffPinFormatValid,
+  recordSinglePinFailure,
   verifyStaffPin,
 } from '../../services/staffPinService';
 import { colors, fontSize, radius, spacing } from '../../theme';
@@ -159,7 +160,11 @@ export function KioskTerminalScreen() {
     try {
       let matchedStaff: Staff | null = null;
       for (const candidate of ambiguousCandidates) {
-        const ok = await verifyStaffPin(candidate.staff.id, ambiguousPin);
+        // A wrong PIN must not count against every possible match. Verify
+        // silently, then record at most one failure below.
+        const ok = await verifyStaffPin(candidate.staff.id, ambiguousPin, {
+          recordFailure: false,
+        });
         if (ok) {
           matchedStaff = candidate.staff;
           break;
@@ -173,6 +178,17 @@ export function KioskTerminalScreen() {
         setAmbiguousCandidates(null);
         setAmbiguousPin('');
       } else {
+        // Penalise only the most likely candidate that actually has a PIN so
+        // an innocent second candidate is never locked out.
+        const failureTarget =
+          ambiguousCandidates.find(
+            (candidate) => Boolean(candidate.staff.staffPinHash),
+          ) ??
+          ambiguousCandidates[0] ??
+          null;
+        if (failureTarget) {
+          recordSinglePinFailure(failureTarget.staff.id);
+        }
         setAmbiguousPinError('Incorrect PIN. Try again.');
         setAmbiguousPin('');
       }
@@ -217,15 +233,18 @@ export function KioskTerminalScreen() {
     }
   }, [feedback]);
 
-  const handleFaceCapture = async (uri: string) => {
+  const handleFaceCapture = async (
+    frames: string[],
+    embedding: number[] | null,
+  ) => {
     if (operationRef.current || faceBusy || processingId !== null) {
       return;
     }
     operationRef.current = true;
     setFaceBusy(true);
-    setCapturedPhotoUri(uri);
+    setCapturedPhotoUri(frames[frames.length - 1] ?? null);
     try {
-      const match = await matchFaceToStaff(uri);
+      const match = await matchFaceToStaff(frames, embedding);
 
       if (match.autoConfirm && match.best) {
         const result = recordAttendance(match.best.staff);
@@ -261,7 +280,7 @@ export function KioskTerminalScreen() {
         'Face check unavailable',
         error instanceof Error
           ? error.message
-          : 'The face check could not be completed. Please use your staff code.',
+          : 'The face check could not be completed. Please try again.',
         [{ text: 'OK' }],
       );
     } finally {
@@ -334,8 +353,8 @@ export function KioskTerminalScreen() {
             </View>
             <Text style={styles.emptyTitle}>No staff registered yet</Text>
             <Text style={styles.emptyText}>
-              An administrator can add staff members and assign their kiosk
-              codes from the admin area.
+              An administrator can add staff members and register their faces
+              from the admin area.
             </Text>
             <Pressable
               onPress={() => setPinVisible(true)}
@@ -444,7 +463,9 @@ export function KioskTerminalScreen() {
               profileCount={faceProfileCount}
               engineAvailable={faceProfileSummary?.engineAvailable ?? null}
               engineMessage={faceProfileSummary?.message}
-              onCapture={(uri) => void handleFaceCapture(uri)}
+              onScanned={(frames, embedding) =>
+                void handleFaceCapture(frames, embedding)
+              }
             />
           )}
         </View>

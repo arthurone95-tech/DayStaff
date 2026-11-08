@@ -1,17 +1,24 @@
 /**
  * Face-mode matching.
  *
- * New profiles are enrolled as FaceNet embeddings (see faceEngine.ts).
- * Embeddings are compared with cosine similarity, which is robust to small
- * changes in lighting, camera and expression. Legacy 64-bit dHash signatures
- * remain readable so existing installations keep working, but they are
- * upgraded automatically whenever the native engine is available.
+ * Staff profiles are enrolled as FaceNet embeddings averaged over several
+ * frames (see faceLiveness.ts). Scans are verified as live, moving faces and
+ * matched by cosine similarity against every active profile.
+ *
+ * TUNING (FaceNet512 on-device, front camera, indoor lighting):
+ *  - same person, different session: similarity ~0.45 – 0.75
+ *  - different people:                similarity ~0.20 – 0.42
+ * Auto-confirm is set at 0.58 with a top-1/top-2 margin of 0.05. If two
+ * profiles both score at least 0.45 and the margin is under 0.05, the kiosk
+ * asks for the staff PIN. Lower-confidence single candidates are rejected
+ * rather than confirmed by name, so a photo cannot claim someone else's
+ * identity.
+ * Do NOT raise AUTO_MATCH_SIMILARITY toward 0.7 — that range only fires for
+ * near-identical photos and makes every real scan fail with
+ * "face not recognized".
  */
 
-import {
-  getActiveStaff,
-  setStaffFaceSignature,
-} from '../database/queries';
+import { getActiveStaff, setStaffFaceSignature } from '../database/queries';
 import type { Staff } from '../types';
 import {
   compareFaceEmbeddings,
@@ -23,6 +30,7 @@ import {
   prepareFaceEngine,
   serializeFaceEmbedding,
 } from './faceEngine';
+import { averageEmbeddings } from './faceLiveness';
 import {
   compareFaceHashes,
   createFaceHashes,
@@ -45,7 +53,7 @@ export interface FaceCandidate {
 export interface FaceMatchResult {
   candidates: FaceCandidate[];
   best: FaceCandidate | null;
-  /** Best candidate if it is close enough to ask the staff to confirm. */
+  /** Best candidate above the suggest threshold; diagnostics only. */
   suggested: FaceCandidate | null;
   /** True for a very close, clearly separated match; log without a prompt. */
   autoConfirm: boolean;
@@ -64,22 +72,20 @@ export interface FaceProfileSummary {
   message?: string;
 }
 
-export const AUTO_MATCH_SIMILARITY = 0.7;
-export const SUGGEST_MATCH_SIMILARITY = 0.55;
-export const MIN_AUTO_MARGIN = 0.08;
+export const AUTO_MATCH_SIMILARITY = 0.58;
+export const SUGGEST_MATCH_SIMILARITY = 0.45;
+export const MIN_AUTO_MARGIN = 0.05;
 
-export const AUTO_MATCH_DISTANCE = 7;
-export const SUGGEST_MATCH_DISTANCE = 22;
-export const MIN_LEGACY_AUTO_MARGIN = 8;
+// Legacy dHash fallback — dev builds only (native engine missing).
+export const AUTO_MATCH_DISTANCE = 12;
+export const SUGGEST_MATCH_DISTANCE = 30;
+export const MIN_LEGACY_AUTO_MARGIN = 6;
 
 function clamp(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-function embeddingCandidate(
-  staff: Staff,
-  similarity: number,
-): FaceCandidate {
+function embeddingCandidate(staff: Staff, similarity: number): FaceCandidate {
   const score = clamp(similarity);
   return {
     staff,
@@ -102,29 +108,20 @@ function legacyCandidate(staff: Staff, distance: number): FaceCandidate {
 
 export function confidenceLabel(candidate: FaceCandidate): string {
   if (candidate.method === 'embedding') {
-    if (candidate.similarity >= 0.8) {
-      return 'Strong face match';
-    }
-    if (candidate.similarity >= 0.65) {
-      return 'Likely face match';
-    }
+    if (candidate.similarity >= 0.65) return 'Strong face match';
+    if (candidate.similarity >= 0.52) return 'Likely face match';
     return 'Possible face match';
   }
-
-  if (candidate.distance <= AUTO_MATCH_DISTANCE + 3) {
-    return 'Strong visual match';
-  }
-  if (candidate.distance <= 14) {
-    return 'Likely visual match';
-  }
+  if (candidate.distance <= AUTO_MATCH_DISTANCE + 3) return 'Strong visual match';
+  if (candidate.distance <= 18) return 'Likely visual match';
   return 'Possible visual match';
 }
 
 export interface CreateStaffFaceSignatureOptions {
   /**
    * Development builds may fall back to the legacy matcher when the native
-   * module is unavailable (for example Expo Go). Production builds require the
-   * real embedding engine.
+   * module is unavailable (for example Expo Go). Production builds require
+   * the real embedding engine.
    */
   allowLegacy?: boolean;
 }
@@ -134,37 +131,45 @@ export interface StaffFaceSignature {
   method: 'embedding' | 'legacy';
 }
 
-/** Build the face profile stored with a staff member's photo. */
+/**
+ * Build the face profile stored with a staff member.
+ * Pass SEVERAL frames (from the guided scan) so lighting noise averages out;
+ * a single-frame profile is brittle against day-to-day variation.
+ */
 export async function createStaffFaceSignature(
-  uri: string,
+  uris: string[] | string,
   options: CreateStaffFaceSignatureOptions = {},
 ): Promise<StaffFaceSignature> {
+  const list = Array.isArray(uris) ? uris : [uris];
   const engineAvailable = await prepareFaceEngine();
 
   if (engineAvailable) {
-    const vector = await extractFaceEmbedding(uri);
+    const embeddings = await Promise.all(
+      list.map((uri) => extractFaceEmbedding(uri)),
+    );
+    const averaged = averageEmbeddings(embeddings);
+    if (!averaged) {
+      throw new Error('Could not build a face profile from these frames.');
+    }
     return {
-      signature: serializeFaceEmbedding(vector),
+      signature: serializeFaceEmbedding(averaged),
       method: 'embedding',
     };
   }
 
   if (options.allowLegacy) {
     return {
-      signature: await createFaceSignature(uri),
+      signature: await createFaceSignature(list[0]),
       method: 'legacy',
     };
   }
 
-  throw new FaceEngineUnavailableError(
-    getFaceEngineError() ?? undefined,
-  );
+  throw new FaceEngineUnavailableError(getFaceEngineError() ?? undefined);
 }
 
 /**
  * Ensure every active staff photo has a usable profile. Legacy hashes are
- * upgraded to embeddings when possible. Returns a summary the kiosk can show
- * instead of silently pretending every profile is ready.
+ * upgraded to embeddings when possible.
  */
 export async function prepareStaffFaceProfiles(): Promise<FaceProfileSummary> {
   const activeStaff = getActiveStaff();
@@ -184,7 +189,6 @@ export async function prepareStaffFaceProfiles(): Promise<FaceProfileSummary> {
         ready += 1;
         continue;
       }
-
       try {
         const vector = await extractFaceEmbedding(member.photoUri);
         setStaffFaceSignature(member.id, serializeFaceEmbedding(vector));
@@ -196,7 +200,10 @@ export async function prepareStaffFaceProfiles(): Promise<FaceProfileSummary> {
       continue;
     }
 
-    if (member.faceSignature && !isFaceEmbeddingSignature(member.faceSignature)) {
+    if (
+      member.faceSignature &&
+      !isFaceEmbeddingSignature(member.faceSignature)
+    ) {
       ready += 1;
     } else {
       missing += 1;
@@ -217,15 +224,14 @@ export async function prepareStaffFaceProfiles(): Promise<FaceProfileSummary> {
 }
 
 async function matchWithEmbeddings(
-  capturedPhotoUri: string,
+  captureUris: string[],
   activeStaff: Staff[],
+  scanEmbedding: number[] | null,
 ): Promise<FaceMatchResult> {
   const profiles: Array<{ staff: Staff; embedding: number[] }> = [];
 
   for (const member of activeStaff) {
-    if (!member.photoUri) {
-      continue;
-    }
+    if (!member.photoUri) continue;
 
     let embedding = parseFaceEmbedding(member.faceSignature);
     if (!embedding) {
@@ -246,12 +252,22 @@ async function matchWithEmbeddings(
     );
   }
 
-  const captureEmbedding = await extractFaceEmbedding(capturedPhotoUri);
+  let captureEmbedding = scanEmbedding;
+  if (!captureEmbedding) {
+    const extracted = await Promise.all(
+      captureUris.map((uri) => extractFaceEmbedding(uri)),
+    );
+    captureEmbedding = averageEmbeddings(extracted);
+  }
+  if (!captureEmbedding) {
+    throw new Error('The scan could not be converted into a face signature.');
+  }
+
   const ranked = profiles
     .map((profile) =>
       embeddingCandidate(
         profile.staff,
-        compareFaceEmbeddings(captureEmbedding, profile.embedding),
+        compareFaceEmbeddings(captureEmbedding as number[], profile.embedding),
       ),
     )
     .sort((a, b) => b.similarity - a.similarity);
@@ -259,8 +275,7 @@ async function matchWithEmbeddings(
   const best = ranked[0] ?? null;
   const second = ranked[1];
   const margin = second ? (best?.similarity ?? 0) - second.similarity : 1;
-  const suggested =
-    best && best.similarity >= SUGGEST_MATCH_SIMILARITY ? best : null;
+  const suggested = best && best.similarity >= SUGGEST_MATCH_SIMILARITY ? best : null;
   const autoConfirm =
     best !== null &&
     best.similarity >= AUTO_MATCH_SIMILARITY &&
@@ -296,7 +311,7 @@ async function matchWithLegacyHashes(
   if (legacyProfiles.length === 0) {
     throw new FaceEngineUnavailableError(
       getFaceEngineError() ??
-        'Face recognition needs the latest installed app build. Use the staff code for now.',
+        'Face recognition needs the latest installed app build. Please try again.',
     );
   }
 
@@ -312,11 +327,8 @@ async function matchWithLegacyHashes(
 
   const best = ranked[0] ?? null;
   const second = ranked[1];
-  const margin = second
-    ? (best?.distance ?? 64) - second.distance
-    : 64;
-  const suggested =
-    best && best.distance <= SUGGEST_MATCH_DISTANCE ? best : null;
+  const margin = second ? (best?.distance ?? 64) - second.distance : 64;
+  const suggested = best && best.distance <= SUGGEST_MATCH_DISTANCE ? best : null;
   const autoConfirm =
     best !== null &&
     best.distance <= AUTO_MATCH_DISTANCE &&
@@ -333,18 +345,24 @@ async function matchWithLegacyHashes(
   };
 }
 
+/**
+ * Match a scan against active staff profiles.
+ * Pass the verified liveness frames plus the precomputed averaged embedding
+ * (from verifyLiveness) to avoid extracting embeddings twice.
+ */
 export async function matchFaceToStaff(
-  capturedPhotoUri: string,
+  captureUris: string[] | string,
+  scanEmbedding?: number[] | null,
 ): Promise<FaceMatchResult> {
+  const list = Array.isArray(captureUris) ? captureUris : [captureUris];
   const activeStaff = getActiveStaff();
   const engineAvailable = await prepareFaceEngine();
 
   if (engineAvailable) {
-    return matchWithEmbeddings(capturedPhotoUri, activeStaff);
+    return matchWithEmbeddings(list, activeStaff, scanEmbedding ?? null);
   }
 
-  // The native face engine is unavailable in this build (e.g. a build where
-  // the Nitro module failed to link). Fall back to the legacy visual matcher so
-  // attendance still works, while making clear that matching is basic.
-  return matchWithLegacyHashes(capturedPhotoUri, activeStaff);
+  // Native engine missing (e.g. a broken build or Expo Go): fall back to the
+  // legacy visual matcher so attendance still works, but matching is basic.
+  return matchWithLegacyHashes(list[0], activeStaff);
 }

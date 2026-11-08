@@ -91,7 +91,7 @@ export function FaceMatchModal({
 
           <Text style={styles.note}>
             Face matching runs on this device. Confirm only if this is you;
-            otherwise use the staff-code keypad instead.
+            otherwise tap Not me and try the scan again.
           </Text>
 
           <View style={styles.actions}>

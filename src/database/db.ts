@@ -7,8 +7,8 @@
 
 import * as SQLite from 'expo-sqlite';
 
-export const DATABASE_NAME = 'daystaff.db';
-const SCHEMA_VERSION = 3;
+export const DATABASE_NAME = 'daystaff_v2.db';
+const SCHEMA_VERSION = 4;
 
 let connection: SQLite.SQLiteDatabase | null = null;
 
@@ -21,8 +21,34 @@ export function getDb(): SQLite.SQLiteDatabase {
   db.execSync('PRAGMA journal_mode = WAL;');
   db.execSync('PRAGMA foreign_keys = ON;');
   migrate(db);
+  // Runs on every launch, even when the schema version is already current,
+  // so a database stamped by an older build can never be missing a column.
+  ensureStaffColumns(db);
+  console.log('[DayStaff] database ready:', DATABASE_NAME);
   connection = db;
   return db;
+}
+
+/** Add any staff columns that an older database is missing. Idempotent. */
+function ensureStaffColumns(db: SQLite.SQLiteDatabase): void {
+  const names = new Set(
+    db
+      .getAllSync<{ name: string }>('PRAGMA table_info(staff)')
+      .map((column) => column.name),
+  );
+  const needed: Array<[string, string]> = [
+    ['staff_code', 'TEXT'],
+    ['face_signature', 'TEXT'],
+    ['staff_pin_hash', 'TEXT'],
+    ['staff_pin_salt', 'TEXT'],
+    ['pin_failed_attempts', 'INTEGER NOT NULL DEFAULT 0'],
+    ['pin_locked_until', 'TEXT'],
+  ];
+  for (const [name, type] of needed) {
+    if (!names.has(name)) {
+      db.execSync(`ALTER TABLE staff ADD COLUMN ${name} ${type};`);
+    }
+  }
 }
 
 function migrate(db: SQLite.SQLiteDatabase): void {
@@ -82,27 +108,9 @@ function migrate(db: SQLite.SQLiteDatabase): void {
       );
     `);
 
-    // v1 databases need the new staff columns added in place.
-    const columns = db.getAllSync<{ name: string }>('PRAGMA table_info(staff)');
-    const columnNames = new Set(columns.map((column) => column.name));
-    if (!columnNames.has('staff_code')) {
-      db.execSync('ALTER TABLE staff ADD COLUMN staff_code TEXT;');
-    }
-    if (!columnNames.has('face_signature')) {
-      db.execSync('ALTER TABLE staff ADD COLUMN face_signature TEXT;');
-    }
-    if (!columnNames.has('staff_pin_hash')) {
-      db.execSync('ALTER TABLE staff ADD COLUMN staff_pin_hash TEXT;');
-    }
-    if (!columnNames.has('staff_pin_salt')) {
-      db.execSync('ALTER TABLE staff ADD COLUMN staff_pin_salt TEXT;');
-    }
-    if (!columnNames.has('pin_failed_attempts')) {
-      db.execSync('ALTER TABLE staff ADD COLUMN pin_failed_attempts INTEGER NOT NULL DEFAULT 0;');
-    }
-    if (!columnNames.has('pin_locked_until')) {
-      db.execSync('ALTER TABLE staff ADD COLUMN pin_locked_until TEXT;');
-    }
+    // Older databases need the newer staff columns added in place. This must
+    // happen before the staff_code backfill and unique index below.
+    ensureStaffColumns(db);
 
     // Give existing staff a deterministic, unique code so the keypad works
     // immediately after upgrading.

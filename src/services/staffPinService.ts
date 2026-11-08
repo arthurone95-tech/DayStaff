@@ -1,6 +1,11 @@
 import * as Crypto from 'expo-crypto';
 
-import { getStaffById, recordStaffPinFailure, resetStaffPinFailures, setStaffPin } from '../database/queries';
+import {
+  getStaffById,
+  recordStaffPinFailure,
+  resetStaffPinFailures,
+  setStaffPin,
+} from '../database/queries';
 
 const PIN_ITERATIONS = 1000;
 
@@ -17,7 +22,7 @@ export async function generatePinSalt(): Promise<string> {
 
 export async function hashStaffPin(pin: string, salt: string): Promise<string> {
   let value = `${salt}:${pin}`;
-  for (let i = 0; i < PIN_ITERATIONS; i++) {
+  for (let i = 0; i < PIN_ITERATIONS; i += 1) {
     value = await Crypto.digestStringAsync(
       Crypto.CryptoDigestAlgorithm.SHA256,
       value,
@@ -30,7 +35,10 @@ export function isStaffPinFormatValid(pin: string): boolean {
   return /^\d{6}$/.test(pin);
 }
 
-export async function setStaffPinForStaff(staffId: number, pin: string): Promise<void> {
+export async function setStaffPinForStaff(
+  staffId: number,
+  pin: string,
+): Promise<void> {
   if (!isStaffPinFormatValid(pin)) {
     throw new Error('PIN must be exactly 6 digits.');
   }
@@ -39,7 +47,20 @@ export async function setStaffPinForStaff(staffId: number, pin: string): Promise
   setStaffPin(staffId, hash, salt);
 }
 
-export async function verifyStaffPin(staffId: number, pin: string): Promise<boolean> {
+export interface VerifyStaffPinOptions {
+  /**
+   * Set false when testing one PIN against several possible candidates:
+   * a wrong guess must NOT count as a failed attempt on an innocent staff
+   * member (that bug could lock staff out after 5 tries).
+   */
+  recordFailure?: boolean;
+}
+
+export async function verifyStaffPin(
+  staffId: number,
+  pin: string,
+  options: VerifyStaffPinOptions = {},
+): Promise<boolean> {
   const staff = getStaffById(staffId);
   if (!staff || !staff.staffPinHash || !staff.staffPinSalt) {
     return false;
@@ -56,8 +77,15 @@ export async function verifyStaffPin(staffId: number, pin: string): Promise<bool
     resetStaffPinFailures(staffId);
     return true;
   }
-  recordStaffPinFailure(staffId);
+  if (options.recordFailure !== false) {
+    recordStaffPinFailure(staffId);
+  }
   return false;
+}
+
+/** Record a single failed attempt explicitly (used by the ambiguous-face flow). */
+export function recordSinglePinFailure(staffId: number): void {
+  recordStaffPinFailure(staffId);
 }
 
 export function isStaffPinLocked(staffId: number): boolean {

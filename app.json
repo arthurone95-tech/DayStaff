@@ -54,6 +54,7 @@
         }
       ],
       "@nitro-mlkit/face-recognition",
+      "./src/plugins/withNitroProguardKeepRules.js",
       [
         "expo-image-picker",
         {

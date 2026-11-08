@@ -1,32 +1,38 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
   ActivityIndicator,
+  Animated,
   Linking,
-  Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
+import { prepareFaceEngine } from '../../services/faceEngine';
 import {
-  compareFaceEmbeddings,
-  extractFaceEmbedding,
-  prepareFaceEngine,
-} from '../../services/faceEngine';
+  captureChallengeFrames,
+  LIVENESS_STEPS,
+  verifyLiveness,
+} from '../../services/faceLiveness';
 import { colors, fontSize, radius, spacing } from '../../theme';
 
-/** Light blue (same family as the Verify button) for tappable text links. */
-const LINK_BLUE = '#5AA2FF';
+const FRAME_SIZE = 320;
+
+type ScanPhase = 'idle' | 'capturing' | 'verifying';
 
 interface FaceScanPanelProps {
   busy: boolean;
   profileCount: number;
   engineAvailable: boolean | null;
   engineMessage?: string;
-  onCapture: (uri: string) => void;
+  /**
+   * Called with the verified live-scan frames and their averaged embedding.
+   * The kiosk matches these against staff profiles.
+   */
+  onScanned: (frames: string[], embedding: number[] | null) => void;
   onUseCode?: () => void;
 }
 
@@ -35,77 +41,93 @@ export function FaceScanPanel({
   profileCount,
   engineAvailable,
   engineMessage,
-  onCapture,
+  onScanned,
   onUseCode,
 }: FaceScanPanelProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView | null>(null);
   const [ready, setReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [livenessPrompt, setLivenessPrompt] = useState<string | null>(null);
+  const [phase, setPhase] = useState<ScanPhase>('idle');
+  const [stepIndex, setStepIndex] = useState(0);
+  const [hint, setHint] = useState<string | null>(null);
+
+  // Continuous scan-line animation across the camera frame.
+  const scanProgress = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(scanProgress, {
+        toValue: 1,
+        duration: 2200,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [scanProgress]);
+
+  const scanLineTranslate = scanProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [10, FRAME_SIZE - 14],
+  });
+
+  const scanning = phase !== 'idle';
 
   const handleScan = async () => {
-    if (busy || !ready || !cameraRef.current) {
-      return;
-    }
+    if (busy || scanning || !ready || !cameraRef.current) return;
     setCameraError(null);
+    setPhase('capturing');
+    setStepIndex(0);
+    setHint(LIVENESS_STEPS[0]?.hint ?? null);
     try {
-      // Liveness: capture two frames a moment apart. A real face moves;
-      // a printed photo stays identical.
-      setLivenessPrompt('Hold still…');
-      const first = await cameraRef.current.takePictureAsync({
-        quality: 0.9,
-        base64: false,
-        skipProcessing: false,
-      });
-      if (!first?.uri) {
-        setCameraError('The camera did not return a photo. Try again.');
-        setLivenessPrompt(null);
-        return;
-      }
+      const shutter = () =>
+        cameraRef.current!.takePictureAsync({
+          quality: 0.9,
+          base64: false,
+          skipProcessing: false,
+        });
+      const frames = await captureChallengeFrames(
+        shutter,
+        LIVENESS_STEPS,
+        (index) => {
+          setStepIndex(index);
+          setHint(LIVENESS_STEPS[index]?.hint ?? null);
+        },
+      );
 
-      setLivenessPrompt('Now turn your head slightly…');
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      if (!cameraRef.current) {
-        setLivenessPrompt(null);
-        return;
-      }
-      const second = await cameraRef.current.takePictureAsync({
-        quality: 0.9,
-        base64: false,
-        skipProcessing: false,
-      });
-      setLivenessPrompt(null);
-      if (!second?.uri) {
-        setCameraError('The camera did not return a photo. Try again.');
-        return;
-      }
+      setPhase('verifying');
+      setHint('Verifying it is a live scan…');
 
       const engineReady = await prepareFaceEngine();
-      if (engineReady) {
-        try {
-          const firstEmb = await extractFaceEmbedding(first.uri);
-          const secondEmb = await extractFaceEmbedding(second.uri);
-          const similarity = compareFaceEmbeddings(firstEmb, secondEmb);
-          // Too similar = no real motion -> likely a photo attack.
-          if (similarity > 0.985) {
-            setCameraError(
-              'No motion detected. Please turn your head slightly and try again.',
-            );
-            return;
-          }
-        } catch {
-          // If embedding extraction fails, fall through and use the capture.
-        }
+      if (!engineReady) {
+        setPhase('idle');
+        setHint(null);
+        setCameraError(
+          'Face recognition is not available in this build. Install the latest DayStaff build.',
+        );
+        return;
       }
 
-      onCapture(second.uri);
+      const liveness = await verifyLiveness(frames);
+      if (!liveness.ok) {
+        setPhase('idle');
+        setHint(null);
+        setCameraError(
+          liveness.message ?? 'The liveness check failed. Try again.',
+        );
+        return;
+      }
+
+      setPhase('idle');
+      setHint(null);
+      onScanned(liveness.frames, liveness.embedding);
     } catch (error) {
-      setLivenessPrompt(null);
+      setPhase('idle');
+      setHint(null);
       setCameraError(
         error instanceof Error
           ? error.message
-          : 'Could not capture a photo. Try again.',
+          : 'Could not complete the scan. Try again.',
       );
     }
   };
@@ -119,7 +141,6 @@ export function FaceScanPanel({
         </View>
       );
     }
-
     const engineUnavailable = engineAvailable === false;
     return (
       <View style={styles.permissionCard}>
@@ -131,15 +152,13 @@ export function FaceScanPanel({
           />
         </View>
         <Text style={styles.permissionTitle}>
-          {engineUnavailable
-            ? 'Face recognition unavailable'
-            : 'No face profiles yet'}
+          {engineUnavailable ? 'Face recognition unavailable' : 'No face profiles yet'}
         </Text>
         <Text style={styles.permissionText}>
           {engineUnavailable
             ? engineMessage ??
-              'This installed build cannot run the face engine. Install the latest app build, or use the staff-code keypad for now.'
-            : 'Add a clear profile photo for each staff member in the admin area, or use the staff-code keypad for now.'}
+              'This installed build cannot run the face engine. Install the latest app build.'
+            : 'Add a clear profile photo for each staff member in the admin area.'}
         </Text>
       </View>
     );
@@ -162,8 +181,7 @@ export function FaceScanPanel({
         </View>
         <Text style={styles.permissionTitle}>Camera access is off</Text>
         <Text style={styles.permissionText}>
-          DayStaff needs the front camera to match staff profile photos. You can
-          also use the staff-code keypad instead.
+          DayStaff needs the front camera to match staff profile photos.
         </Text>
         <AppButton
           title={permission.canAskAgain ? 'Allow camera' : 'Open settings'}
@@ -192,53 +210,91 @@ export function FaceScanPanel({
             setCameraError(event?.message ?? 'The camera could not start.')
           }
         />
+
+        {/* Face guide oval */}
         <View pointerEvents="none" style={styles.overlay}>
           <View style={styles.oval} />
         </View>
-        {busy || !ready ? (
+
+        {/* Corner brackets */}
+        <View pointerEvents="none" style={styles.bracketTopLeft} />
+        <View pointerEvents="none" style={styles.bracketTopRight} />
+        <View pointerEvents="none" style={styles.bracketBottomLeft} />
+        <View pointerEvents="none" style={styles.bracketBottomRight} />
+
+        {/* Animated scan line */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.scanLine,
+            { transform: [{ translateY: scanLineTranslate }] },
+          ]}
+        />
+
+        {busy || scanning || !ready ? (
           <View style={styles.cameraBusy}>
-            {cameraError ? (
-              <Ionicons
-                name="warning-outline"
-                size={28}
-                color={colors.white}
-              />
+            {cameraError && !scanning ? (
+              <Ionicons name="warning-outline" size={28} color={colors.white} />
             ) : (
               <ActivityIndicator color={colors.white} size="large" />
             )}
             <Text style={styles.cameraBusyText}>
-              {busy
-                ? 'Matching your face…'
-                : cameraError
-                  ? 'Camera unavailable'
-                  : 'Starting camera…'}
+              {!ready
+                ? 'Starting camera…'
+                : scanning
+                  ? phase === 'verifying'
+                    ? 'Verifying…'
+                    : `Scanning · step ${Math.min(stepIndex + 1, LIVENESS_STEPS.length)} of ${LIVENESS_STEPS.length}`
+                  : 'Matching your face…'}
             </Text>
           </View>
         ) : null}
       </View>
 
+      {/* Step dots */}
+      <View style={styles.dotsRow}>
+        {LIVENESS_STEPS.map((step, index) => (
+          <View
+            key={step.key}
+            style={[
+              styles.dot,
+              scanning && index === stepIndex && styles.dotActive,
+              scanning && index < stepIndex && styles.dotDone,
+            ]}
+          />
+        ))}
+      </View>
+
       <Text style={styles.instruction}>
-        Look straight at the camera and keep your face inside the oval.
+        {hint ??
+          'Position your face inside the oval, then tap “Scan my face” and follow the prompts.'}
       </Text>
 
-      {livenessPrompt ? (
-        <Text style={styles.liveness}>{livenessPrompt}</Text>
-      ) : null}
       {cameraError ? <Text style={styles.error}>{cameraError}</Text> : null}
 
       <AppButton
-        title={busy ? 'Matching…' : 'Scan my face'}
+        title={scanning ? 'Scanning…' : busy ? 'Matching…' : 'Scan my face'}
         onPress={handleScan}
-        loading={busy}
-        disabled={!ready || busy}
+        loading={busy || scanning}
+        disabled={!ready || busy || scanning}
         size="lg"
         style={styles.scanButton}
         icon={
-          busy ? undefined : (
+          busy || scanning ? undefined : (
             <Ionicons name="scan-outline" size={20} color={colors.white} />
           )
         }
       />
+
+      {onUseCode ? (
+        <AppButton
+          title="Use staff code instead"
+          onPress={onUseCode}
+          variant="ghost"
+          size="sm"
+          style={styles.useCodeButton}
+        />
+      ) : null}
 
       <Text style={styles.disclaimer}>
         Face matching runs entirely on this device.
@@ -248,18 +304,13 @@ export function FaceScanPanel({
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    width: '100%',
-  },
+  wrap: { width: '100%' },
   loading: {
     alignItems: 'center',
     paddingVertical: spacing.xxl,
     gap: spacing.sm,
   },
-  loadingText: {
-    color: colors.kioskMuted,
-    fontSize: fontSize.sm,
-  },
+  loadingText: { color: colors.kioskMuted, fontSize: fontSize.sm },
   permissionCard: {
     width: '100%',
     maxWidth: 420,
@@ -294,9 +345,8 @@ const styles = StyleSheet.create({
   },
   cameraFrame: {
     width: '100%',
-    maxWidth: 360,
-    aspectRatio: 1,
-    maxHeight: 330,
+    maxWidth: FRAME_SIZE,
+    height: FRAME_SIZE,
     borderRadius: radius.xl,
     overflow: 'hidden',
     backgroundColor: colors.kioskSurface,
@@ -307,9 +357,9 @@ const styles = StyleSheet.create({
   overlay: {
     position: 'absolute',
     top: 0,
-    left: 0,
     right: 0,
     bottom: 0,
+    left: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -318,15 +368,67 @@ const styles = StyleSheet.create({
     aspectRatio: 0.78,
     borderRadius: 999,
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.9)',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  bracketTopLeft: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    width: 34,
+    height: 34,
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
+    borderColor: '#5AA2FF',
+    borderTopLeftRadius: 14,
+  },
+  bracketTopRight: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 34,
+    height: 34,
+    borderTopWidth: 4,
+    borderRightWidth: 4,
+    borderColor: '#5AA2FF',
+    borderTopRightRadius: 14,
+  },
+  bracketBottomLeft: {
+    position: 'absolute',
+    bottom: 14,
+    left: 14,
+    width: 34,
+    height: 34,
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
+    borderColor: '#5AA2FF',
+    borderBottomLeftRadius: 14,
+  },
+  bracketBottomRight: {
+    position: 'absolute',
+    bottom: 14,
+    right: 14,
+    width: 34,
+    height: 34,
+    borderBottomWidth: 4,
+    borderRightWidth: 4,
+    borderColor: '#5AA2FF',
+    borderBottomRightRadius: 14,
+  },
+  scanLine: {
+    position: 'absolute',
+    left: 22,
+    right: 22,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(90, 162, 255, 0.9)',
   },
   cameraBusy: {
     position: 'absolute',
     top: 0,
-    left: 0,
     right: 0,
     bottom: 0,
+    left: 0,
     backgroundColor: 'rgba(11, 27, 43, 0.66)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -336,13 +438,30 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: fontSize.sm,
     fontWeight: '700',
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
   },
+  dotsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.kioskSurfaceRaised,
+  },
+  dotActive: { backgroundColor: '#5AA2FF', width: 20 },
+  dotDone: { backgroundColor: '#34F5B5' },
   instruction: {
     marginTop: spacing.md,
     color: colors.kioskText,
     fontSize: fontSize.md,
     fontWeight: '600',
     textAlign: 'center',
+    lineHeight: 22,
   },
   error: {
     marginTop: spacing.sm,
@@ -350,35 +469,8 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     textAlign: 'center',
   },
-  liveness: {
-    marginTop: spacing.sm,
-    color: '#93C5FD',
-    fontSize: fontSize.sm,
-    textAlign: 'center',
-  },
-  scanButton: {
-    marginTop: spacing.md,
-  },
-  linkButton: {
-    marginTop: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-  },
-  linkLabel: {
-    color: colors.info, // darker blue: readable on the white cards
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  linkLabelDark: {
-    color: LINK_BLUE, // light blue: readable on the dark kiosk background
-  },
-  pressed: {
-    opacity: 0.7,
-  },
+  scanButton: { marginTop: spacing.md },
+  useCodeButton: { marginTop: spacing.xs },
   disclaimer: {
     marginTop: spacing.sm,
     color: colors.kioskMuted,
