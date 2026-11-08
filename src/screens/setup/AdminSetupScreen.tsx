@@ -127,10 +127,7 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
   };
 
   return (
-    <Screen
-      edges={['top', 'left', 'right', 'bottom']}
-      backgroundColor="#0B132B"
-    >
+    <Screen edges={['top', 'left', 'right', 'bottom']}>
       <KeyboardAvoidingView
         style={styles.keyboardWrap}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
