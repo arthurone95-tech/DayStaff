@@ -245,22 +245,16 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
               </View>
 
               <Text style={styles.sectionLabel}>Default shift schedule</Text>
-              <View style={styles.timeRow}>
-                <View style={styles.timeFieldWrap}>
-                  <TimeField
-                    label="Opening / arrival time"
-                    value={startTime}
-                    onChange={setStartTime}
-                  />
-                </View>
-                <View style={styles.timeFieldWrap}>
-                  <TimeField
-                    label="Closing time"
-                    value={endTime}
-                    onChange={setEndTime}
-                  />
-                </View>
-              </View>
+              <TimeField
+                label="Opening / arrival time"
+                value={startTime}
+                onChange={setStartTime}
+              />
+              <TimeField
+                label="Closing time"
+                value={endTime}
+                onChange={setEndTime}
+              />
 
               <View style={styles.graceRow}>
                 <View style={styles.graceText}>
@@ -556,13 +550,6 @@ const styles = StyleSheet.create({
     color: colors.slate700,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  timeFieldWrap: {
-    flex: 1,
   },
   graceRow: {
     flexDirection: 'row',
