@@ -148,11 +148,15 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
             </View>
           </View>
 
-          <Text style={styles.heading}>Welcome to your attendance terminal</Text>
-          <Text style={styles.intro}>
-            Set up your organisation, secure the admin area, and choose how
-            staff will clock in.
-          </Text>
+          {step === 0 ? (
+            <>
+              <Text style={styles.heading}>Welcome to your attendance terminal</Text>
+              <Text style={styles.intro}>
+                Set up your organisation, secure the admin area, and choose how
+                staff will clock in.
+              </Text>
+            </>
+          ) : null}
 
           <View style={styles.steps}>
             {STEP_LABELS.map((label, index) => {
@@ -383,10 +387,12 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
             />
           </View>
 
-          <Text style={styles.footnote}>
+          {step === 2 ? (
+            <Text style={styles.footnote}>
             You can change the company details, schedule, PIN and kiosk mode
             later from Admin → Settings.
           </Text>
+          ) : null}
         </View>
         </ScrollView>
       </KeyboardAvoidingView>
