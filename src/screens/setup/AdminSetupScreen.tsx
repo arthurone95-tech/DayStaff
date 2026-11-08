@@ -37,7 +37,6 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
   const scrollRef = useRef<ComponentRef<typeof ScrollView> | null>(null);
 
   const [step, setStep] = useState(0);
-  const [showWelcome, setShowWelcome] = useState(true);
   const [companyName, setCompanyNameState] = useState('');
   const [startTime, setStartTime] = useState(DEFAULT_SCHEDULE.startTime);
   const [endTime, setEndTime] = useState(DEFAULT_SCHEDULE.endTime);
@@ -126,32 +125,6 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
       setSaving(false);
     }
   };
-
-  if (showWelcome) {
-    return (
-      <Screen edges={['top', 'left', 'right', 'bottom']}>
-        <View style={styles.welcomeWrap}>
-          <View style={styles.brandRow}>
-            <View style={styles.brandText}>
-              <Text style={styles.brandTitle}>DayStaff</Text>
-              <Text style={styles.brandSub}>One-time setup</Text>
-            </View>
-          </View>
-          <Text style={styles.heading}>Welcome to your attendance terminal</Text>
-          <Text style={styles.intro}>
-            Set up your organisation, secure the admin area, and choose how
-            staff will clock in and out.
-          </Text>
-          <AppButton
-            title="Start setup"
-            onPress={() => setShowWelcome(false)}
-            size="lg"
-            style={styles.startButton}
-          />
-        </View>
-      </Screen>
-    );
-  }
 
   return (
     <Screen edges={['top', 'left', 'right', 'bottom']}>
@@ -427,17 +400,6 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
 const styles = StyleSheet.create({
   keyboardWrap: {
     flex: 1,
-  },
-  welcomeWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
-    gap: spacing.md,
-  },
-  startButton: {
-    marginTop: spacing.xl,
-    alignSelf: 'stretch',
   },
   content: {
     flexGrow: 1,
