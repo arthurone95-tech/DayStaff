@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -89,6 +90,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   const [pinCheckBusy, setPinCheckBusy] = useState(false);
   const [faceCheckBusy, setFaceCheckBusy] = useState(false);
   const [duplicateFaceStaff, setDuplicateFaceStaff] = useState<Staff | null>(null);
+  const [pinEditable, setPinEditable] = useState(!isEditing);
 
   const [isActive, setIsActive] = useState(true);
   const [loading, setLoading] = useState(isEditing);
@@ -100,6 +102,11 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   useEffect(() => {
     navigation.setOptions({
       title: isEditing ? 'Edit staff' : 'Register staff',
+      headerLeft: () => (
+        <Pressable onPress={handleBack} style={styles.headerBack}>
+          <Ionicons name="chevron-back" size={20} color={colors.primary} />
+        </Pressable>
+      ),
     });
 
     if (isEditing && staffId) {
@@ -113,7 +120,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       }
       setLoading(false);
     }
-  }, [isEditing, staffId, navigation]);
+  }, [isEditing, staffId, navigation, step]);
 
   const validateBasic = (): boolean => {
     const next: { name?: string; code?: string } = {};
@@ -379,6 +386,9 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       destructive: true,
       onConfirm: () => {
         resetStaffPin(staffId);
+        setStaffPin('');
+        setStaffPinConfirm('');
+        setPinEditable(true);
         alert({
           tone: 'success',
           title: 'PIN reset',
@@ -386,6 +396,14 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
         });
       },
     });
+  };
+
+  const handleBack = () => {
+    if (step > 1) {
+      setStep(1);
+    } else {
+      navigation.goBack();
+    }
   };
 
   if (loading) {
@@ -457,6 +475,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 keyboardType="number-pad"
                 maxLength={6}
                 secureTextEntry
+                editable={pinEditable}
                 error={errors.pin}
                 hint="Used only when face recognition is ambiguous."
               />
@@ -471,6 +490,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 keyboardType="number-pad"
                 maxLength={6}
                 secureTextEntry
+                editable={pinEditable}
                 error={errors.pinConfirm}
               />
               <AppButton
@@ -501,6 +521,39 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 size="lg"
                 disabled={pinCheckBusy}
               />
+              {isEditing && (
+                <Card style={[styles.statusCard, { marginTop: spacing.lg }]}>
+                  <View style={styles.statusRow}>
+                    <View style={styles.statusText}>
+                      <Text style={styles.statusTitle}>
+                        {isActive ? 'Active staff member' : 'Deactivated'}
+                      </Text>
+                      <Text style={styles.statusHint}>
+                        {isActive
+                          ? 'Visible on the kiosk and included in reports.'
+                          : 'Hidden from the kiosk. Attendance history is preserved.'}
+                      </Text>
+                    </View>
+                    <AppButton
+                      title={isActive ? 'Deactivate' : 'Reactivate'}
+                      onPress={toggleActive}
+                      variant={isActive ? 'danger' : 'success'}
+                      size="sm"
+                      fullWidth={false}
+                    />
+                  </View>
+                  <AppButton
+                    title="Reset fallback PIN"
+                    variant="ghost"
+                    size="sm"
+                    fullWidth={false}
+                    onPress={handleResetPin}
+                    icon={
+                      <Ionicons name="key-outline" size={18} color={colors.danger} />
+                    }
+                  />
+                </Card>
+              )}
             </Card>
           ) : null}
 
@@ -577,6 +630,14 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                   disabled={!photoUri}
                 />
               </View>
+              <View style={styles.note}>
+                <Ionicons name="scan-outline" size={16} color={colors.slate500} />
+                <Text style={styles.noteText}>
+                  Face matching runs entirely on this device. A clear,
+                  front-facing profile photo plus a guided scan with head
+                  movement gives the most reliable match.
+                </Text>
+              </View>
             </Card>
           ) : null}
 
@@ -652,47 +713,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
               </View>
             </Card>
           ) : null}
-
-          {isEditing ? (
-            <Card style={styles.statusCard}>
-              <View style={styles.statusRow}>
-                <View style={styles.statusText}>
-                  <Text style={styles.statusTitle}>
-                    {isActive ? 'Active staff member' : 'Deactivated'}
-                  </Text>
-                  <Text style={styles.statusHint}>
-                    {isActive
-                      ? 'Visible on the kiosk and included in reports.'
-                      : 'Hidden from the kiosk. Attendance history is preserved.'}
-                  </Text>
-                </View>
-                <AppButton
-                  title={isActive ? 'Deactivate' : 'Reactivate'}
-                  onPress={toggleActive}
-                  variant={isActive ? 'danger' : 'success'}
-                  size="sm"
-                  fullWidth={false}
-                />
-              </View>
-              <AppButton
-                title="Reset fallback PIN"
-                variant="ghost"
-                size="sm"
-                fullWidth={false}
-                onPress={handleResetPin}
-                icon={<Ionicons name="key-outline" size={18} color={colors.danger} />}
-              />
-            </Card>
-          ) : null}
-
-          <View style={styles.note}>
-            <Ionicons name="scan-outline" size={16} color={colors.slate500} />
-            <Text style={styles.noteText}>
-              Face matching runs entirely on this device. A clear, front-facing
-              profile photo plus a guided scan with head movement gives the most
-              reliable match.
-            </Text>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
@@ -804,5 +824,8 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.slate500,
     lineHeight: 18,
+  },
+  headerBack: {
+    paddingHorizontal: spacing.sm,
   },
 });
