@@ -366,3 +366,32 @@ export async function matchFaceToStaff(
   // legacy visual matcher so attendance still works, but matching is basic.
   return matchWithLegacyHashes(list[0], activeStaff);
 }
+
+/**
+ * Check whether a newly captured face signature already belongs to another
+ * staff member. Used during registration to prevent duplicate face profiles.
+ */
+export async function findDuplicateFace(
+  signature: string,
+  excludeId?: number,
+): Promise<Staff | null> {
+  const newEmbedding = parseFaceEmbedding(signature);
+  if (!newEmbedding) {
+    return null;
+  }
+  const staff = getActiveStaff().filter((member) => member.id !== excludeId);
+  for (const member of staff) {
+    if (!member.faceSignature) {
+      continue;
+    }
+    const existing = parseFaceEmbedding(member.faceSignature);
+    if (!existing) {
+      continue;
+    }
+    const similarity = compareFaceEmbeddings(newEmbedding, existing);
+    if (similarity >= AUTO_MATCH_SIMILARITY) {
+      return member;
+    }
+  }
+  return null;
+}

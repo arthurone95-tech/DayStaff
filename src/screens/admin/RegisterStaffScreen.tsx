@@ -29,6 +29,7 @@ import {
   updateStaff,
 } from '../../database/queries';
 import type { RootStackParamList } from '../../navigation/types';
+import type { Staff } from '../../types';
 import {
   FaceEngineUnavailableError,
   FacePhotoError,
@@ -40,6 +41,8 @@ import {
   captureStaffPhoto,
 } from '../../services/photoService';
 import { setStaffPinForStaff } from '../../services/staffPinService';
+import { isStaffPinTaken } from '../../services/staffPinService';
+import { findDuplicateFace } from '../../services/faceRecognitionService';
 import { colors, fontSize, radius, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RegisterStaff'>;
@@ -82,6 +85,9 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   const [faceBusy, setFaceBusy] = useState(false);
   const [faceError, setFaceError] = useState<string | null>(null);
   const [scanHint, setScanHint] = useState<string | null>(null);
+  const [pinCheckBusy, setPinCheckBusy] = useState(false);
+  const [faceCheckBusy, setFaceCheckBusy] = useState(false);
+  const [duplicateFaceStaff, setDuplicateFaceStaff] = useState<Staff | null>(null);
 
   const [isActive, setIsActive] = useState(true);
   const [loading, setLoading] = useState(isEditing);
@@ -207,6 +213,22 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       });
       setFaceSignature(enrollment.signature);
       setScanHint(null);
+
+      // Check whether this face is already registered to another staff member.
+      if (!isEditing) {
+        setFaceCheckBusy(true);
+        try {
+          const existing = await findDuplicateFace(enrollment.signature);
+          if (existing) {
+            setDuplicateFaceStaff(existing);
+            setFaceError(
+              `This face is already registered to ${existing.fullName}.`,
+            );
+          }
+        } finally {
+          setFaceCheckBusy(false);
+        }
+      }
     } catch (error) {
       const message =
         error instanceof FacePhotoError
@@ -254,6 +276,36 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       });
       setStep(3);
       return;
+    }
+
+    // Block save if this face is already registered to someone else.
+    if (duplicateFaceStaff) {
+      alert({
+        tone: 'danger',
+        title: 'Face already registered',
+        message: `This face matches ${duplicateFaceStaff.fullName}, who is already registered.`,
+      });
+      return;
+    }
+
+    // Final PIN uniqueness re-check before saving.
+    setPinCheckBusy(true);
+    try {
+      const taken = await isStaffPinTaken(
+        staffPin,
+        isEditing ? staffId : undefined,
+      );
+      if (taken) {
+        setErrors((prev) => ({
+          ...prev,
+          pin:
+            'This PIN is already assigned to another staff member. Please choose a different PIN.',
+        }));
+        setStep(1);
+        return;
+      }
+    } finally {
+      setPinCheckBusy(false);
     }
 
     setSaving(true);
@@ -401,12 +453,31 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
               />
               <AppButton
                 title="Next"
-                onPress={() => {
+                onPress={async () => {
                   const basicOk = validateBasic();
                   const pinOk = validatePin();
-                  if (basicOk && pinOk) setStep(2);
+                  if (!basicOk || !pinOk) return;
+                  setPinCheckBusy(true);
+                  try {
+                    const taken = await isStaffPinTaken(
+                      staffPin,
+                      isEditing ? staffId : undefined,
+                    );
+                    if (taken) {
+                      setErrors((prev) => ({
+                        ...prev,
+                        pin:
+                          'This PIN is already assigned to another staff member. Please choose a different PIN.',
+                      }));
+                      return;
+                    }
+                    setStep(2);
+                  } finally {
+                    setPinCheckBusy(false);
+                  }
                 }}
                 size="lg"
+                disabled={pinCheckBusy}
               />
             </Card>
           ) : null}
@@ -520,13 +591,18 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 </View>
               ) : null}
               {faceError ? <Text style={styles.photoError}>{faceError}</Text> : null}
+              {duplicateFaceStaff ? (
+                <Text style={styles.photoError}>
+                  This face matches {duplicateFaceStaff.fullName}, who is already registered.
+                </Text>
+              ) : null}
 
               <AppButton
                 title={faceBusy ? 'Scanning…' : 'Scan face'}
                 onPress={() => void handleFaceScan()}
                 loading={faceBusy}
                 size="lg"
-                disabled={!cameraPermission?.granted || faceBusy}
+                disabled={!cameraPermission?.granted || faceBusy || faceCheckBusy}
               />
               <Text style={styles.cardHint}>
                 The profile photo and the face profile are separate: the photo is
@@ -547,7 +623,9 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                   loading={saving}
                   size="sm"
                   fullWidth={false}
-                  disabled={!photoUri || !faceSignature}
+                  disabled={
+                    !photoUri || !faceSignature || !!duplicateFaceStaff || pinCheckBusy
+                  }
                 />
               </View>
             </Card>

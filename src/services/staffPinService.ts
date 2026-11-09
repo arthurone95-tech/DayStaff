@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 
 import {
+  getAllStaff,
   getStaffById,
   recordStaffPinFailure,
   resetStaffPinFailures,
@@ -92,4 +93,28 @@ export function isStaffPinLocked(staffId: number): boolean {
   const staff = getStaffById(staffId);
   if (!staff?.pinLockedUntil) return false;
   return Date.now() < new Date(staff.pinLockedUntil).getTime();
+}
+
+/**
+ * Checks whether a plain 6-digit PIN is already assigned to another staff
+ * member. Used during registration to prevent duplicate fallback PINs.
+ */
+export async function isStaffPinTaken(
+  pin: string,
+  excludeId?: number,
+): Promise<boolean> {
+  if (!isStaffPinFormatValid(pin)) {
+    return false;
+  }
+  const staff = getAllStaff().filter((member) => member.id !== excludeId);
+  for (const member of staff) {
+    if (!member.staffPinHash || !member.staffPinSalt) {
+      continue;
+    }
+    const hash = await hashStaffPin(pin, member.staffPinSalt);
+    if (hash === member.staffPinHash) {
+      return true;
+    }
+  }
+  return false;
 }

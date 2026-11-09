@@ -245,6 +245,14 @@ export function resetStaffPinFailures(id: number): void {
   );
 }
 
+/** Clear a staff member's fallback PIN so they must set a new one. */
+export function resetStaffPin(id: number): void {
+  getDb().runSync(
+    'UPDATE staff SET staff_pin_hash = NULL, staff_pin_salt = NULL, pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = ?',
+    [id]
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Schedule
 // ---------------------------------------------------------------------------

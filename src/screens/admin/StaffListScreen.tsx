@@ -9,13 +9,15 @@ import { Badge } from '../../components/Badge';
 import { EmptyState } from '../../components/EmptyState';
 import { Screen } from '../../components/Screen';
 import { StaffRow } from '../../components/StaffRow';
-import { getAllStaff } from '../../database/queries';
+import { useAppDialog } from '../../components/AppDialog';
+import { getAllStaff, resetStaffPin } from '../../database/queries';
 import type { RootNavigation } from '../../navigation/types';
 import { colors, fontSize, spacing } from '../../theme';
 import type { Staff } from '../../types';
 
 export function StaffListScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const { alert, confirm } = useAppDialog();
   const [staff, setStaff] = useState<Staff[]>([]);
 
   useFocusEffect(
@@ -25,6 +27,27 @@ export function StaffListScreen() {
   );
 
   const activeCount = staff.filter((member) => member.isActive === 1).length;
+
+  const handleResetPin = (member: Staff) => {
+    confirm({
+      tone: 'warning',
+      icon: 'key-outline',
+      title: 'Reset fallback PIN?',
+      message:
+        'This will remove the staff member’s fallback PIN. They will need to set a new PIN the next time they edit their profile.',
+      confirmLabel: 'Reset PIN',
+      destructive: true,
+      onConfirm: () => {
+        resetStaffPin(member.id);
+        setStaff(getAllStaff());
+        alert({
+          tone: 'success',
+          title: 'PIN reset',
+          message: `${member.fullName}’s fallback PIN has been cleared.`,
+        });
+      },
+    });
+  };
 
   return (
     <Screen>
@@ -84,6 +107,7 @@ export function StaffListScreen() {
             onPress={() =>
               navigation.navigate('RegisterStaff', { staffId: item.id })
             }
+            onResetPin={() => handleResetPin(item)}
           />
         )}
       />

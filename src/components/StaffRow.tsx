@@ -26,6 +26,7 @@ const HIGHLIGHTS: Record<
 interface StaffRowProps {
   staff: Staff;
   onPress?: () => void;
+  onResetPin?: () => void;
   badge?: ReactNode;
   detail?: string;
   caption?: string;
@@ -35,6 +36,7 @@ interface StaffRowProps {
 export function StaffRow({
   staff,
   onPress,
+  onResetPin,
   badge,
   detail,
   caption,
@@ -72,6 +74,19 @@ export function StaffRow({
           <Text style={styles.detail} numberOfLines={1}>
             {detail}
           </Text>
+        ) : null}
+        {onResetPin ? (
+          <Pressable
+            onPress={onResetPin}
+            accessibilityRole="button"
+            accessibilityLabel="Reset PIN"
+            style={styles.resetPinButton}
+          >
+            <Ionicons name="key-outline" size={16} color={colors.danger} />
+          </Pressable>
+        ) : null}
+        {onPress ? (
+          <Ionicons name="chevron-forward" size={16} color={colors.slate400} />
         ) : null}
       </View>
 
@@ -117,5 +132,9 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.slate500,
     fontVariant: ['tabular-nums'],
+  },
+  resetPinButton: {
+    marginLeft: spacing.md,
+    padding: spacing.xs,
   },
 });
