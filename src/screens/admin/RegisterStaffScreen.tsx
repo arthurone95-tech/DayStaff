@@ -493,34 +493,43 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 editable={pinEditable}
                 error={errors.pinConfirm}
               />
-              <AppButton
-                title="Next"
-                onPress={async () => {
-                  const basicOk = validateBasic();
-                  const pinOk = validatePin();
-                  if (!basicOk || !pinOk) return;
-                  setPinCheckBusy(true);
-                  try {
-                    const taken = await isStaffPinTaken(
-                      staffPin,
-                      isEditing ? staffId : undefined,
-                    );
-                    if (taken) {
-                      setErrors((prev) => ({
-                        ...prev,
-                        pin:
-                          'This PIN is already assigned to another staff member. Please choose a different PIN.',
-                      }));
-                      return;
+              <View style={styles.stepNav}>
+                <AppButton
+                  title="Back"
+                  onPress={handleBack}
+                  variant="ghost"
+                  size="sm"
+                  fullWidth={false}
+                />
+                <AppButton
+                  title="Next"
+                  onPress={async () => {
+                    const basicOk = validateBasic();
+                    const pinOk = validatePin();
+                    if (!basicOk || !pinOk) return;
+                    setPinCheckBusy(true);
+                    try {
+                      const taken = await isStaffPinTaken(
+                        staffPin,
+                        isEditing ? staffId : undefined,
+                      );
+                      if (taken) {
+                        setErrors((prev) => ({
+                          ...prev,
+                          pin:
+                            'This PIN is already assigned to another staff member. Please choose a different PIN.',
+                        }));
+                        return;
+                      }
+                      setStep(2);
+                    } finally {
+                      setPinCheckBusy(false);
                     }
-                    setStep(2);
-                  } finally {
-                    setPinCheckBusy(false);
-                  }
-                }}
-                size="lg"
-                disabled={pinCheckBusy}
-              />
+                  }}
+                  size="lg"
+                  disabled={pinCheckBusy}
+                />
+              </View>
               {isEditing && (
                 <>
                   <AppButton
