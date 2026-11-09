@@ -25,6 +25,7 @@ import {
   createStaff,
   getStaffById,
   isStaffCodeTaken,
+  resetStaffPin,
   setStaffActive,
   updateStaff,
 } from '../../database/queries';
@@ -366,6 +367,27 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
     });
   };
 
+  const handleResetPin = () => {
+    if (!staffId) return;
+    confirm({
+      tone: 'warning',
+      icon: 'key-outline',
+      title: 'Reset fallback PIN?',
+      message:
+        'This will remove this staff member’s fallback PIN. They will need to set a new PIN the next time they edit their profile.',
+      confirmLabel: 'Reset PIN',
+      destructive: true,
+      onConfirm: () => {
+        resetStaffPin(staffId);
+        alert({
+          tone: 'success',
+          title: 'PIN reset',
+          message: `${fullName}’s fallback PIN has been cleared.`,
+        });
+      },
+    });
+  };
+
   if (loading) {
     return (
       <Screen>
@@ -652,6 +674,14 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                   fullWidth={false}
                 />
               </View>
+              <AppButton
+                title="Reset fallback PIN"
+                variant="ghost"
+                size="sm"
+                fullWidth={false}
+                onPress={handleResetPin}
+                icon={<Ionicons name="key-outline" size={18} color={colors.danger} />}
+              />
             </Card>
           ) : null}
 
@@ -660,8 +690,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
             <Text style={styles.noteText}>
               Face matching runs entirely on this device. A clear, front-facing
               profile photo plus a guided scan with head movement gives the most
-              reliable match. The staff code is generated automatically and
-              shown on the staff list.
+              reliable match.
             </Text>
           </View>
         </ScrollView>
