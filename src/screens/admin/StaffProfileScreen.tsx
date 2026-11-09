@@ -23,6 +23,7 @@ import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { useAppDialog } from '../../components/AppDialog';
 import {
+  deleteStaffProfile,
   getStaffById,
   setStaffActive,
   setStaffPin,
@@ -266,6 +267,36 @@ export function StaffProfileScreen({ navigation, route }: Props) {
     });
   };
 
+  const handleDeleteStaff = () => {
+    if (!staffId || !staff) return;
+    confirm({
+      tone: 'danger',
+      icon: 'trash-outline',
+      title: `Delete staff profile?`,
+      message: `Are you sure you want to permanently delete ${staff.fullName}? This removes all facial data and photos, but keeps past clock-in records as archived history.`,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await deleteStaffProfile(staffId);
+          alert({
+            tone: 'success',
+            title: 'Staff profile deleted',
+            message: `${staff.fullName} has been deleted. Facial data and photos were removed; past clock-in records are kept as archived history.`,
+          });
+          navigation.goBack();
+        } catch (error) {
+          alert({
+            tone: 'danger',
+            title: 'Could not delete staff profile',
+            message: error instanceof Error ? error.message : 'Please try again.',
+          });
+        }
+      },
+    });
+  };
+
   const handleTakePhoto = async () => {
     setPhotoSheetOpen(false);
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -453,6 +484,13 @@ export function StaffProfileScreen({ navigation, route }: Props) {
                   }
                   onPress={handleToggleActive}
                   danger={isActive}
+                />
+                <ActionRow
+                  icon="trash-outline"
+                  title="Delete staff profile"
+                  subtitle="Permanently remove facial data and photo"
+                  onPress={handleDeleteStaff}
+                  danger
                   last
                 />
               </View>

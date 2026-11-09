@@ -1,5 +1,6 @@
 /** Typed data-access helpers. */
 
+import * as FileSystem from 'expo-file-system';
 import type {
   AttendanceLog,
   ClockInStatus,
@@ -266,6 +267,24 @@ export function resetStaffPinFailures(id: number): void {
 export function resetStaffPin(id: number): void {
   getDb().runSync(
     'UPDATE staff SET staff_pin_hash = NULL, staff_pin_salt = NULL, pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = ?',
+    [id]
+  );
+}
+
+/** Permanently deletes facial template/photo from the staff record and
+ *  removes the photo file from disk, while retaining past clock-in logs
+ *  under an archived (inactive) status. */
+export async function deleteStaffProfile(id: number): Promise<void> {
+  const staff = getStaffById(id);
+  if (staff?.photoUri) {
+    try {
+      await FileSystem.deleteAsync(staff.photoUri, { idempotent: true });
+    } catch {
+      // Photo cleanup is best-effort only.
+    }
+  }
+  getDb().runSync(
+    'UPDATE staff SET is_active = 0, faceSignature = NULL, photoUri = NULL WHERE id = ?',
     [id]
   );
 }
