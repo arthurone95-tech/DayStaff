@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { AppButton } from '../../components/AppButton';
+import { Linking } from 'react-native';
 import { useAppDialog } from '../../components/AppDialog';
 import { AuthMethodPicker } from '../../components/AuthMethodPicker';
 import { Card } from '../../components/Card';
@@ -393,6 +394,20 @@ export function AdminSettingsScreen() {
           <Text style={styles.biometricMessage}>
             {biometric?.message ?? 'Checking device biometrics…'}
           </Text>
+        </Card>
+
+        <Card style={styles.card}>
+          <Text style={styles.cardTitle}>Privacy & security</Text>
+          <View style={styles.statusRow}>
+            <Text style={styles.statusLabel}>Privacy Policy</Text>
+            <AppButton
+              title="View policy"
+              variant="ghost"
+              size="sm"
+              fullWidth={false}
+              onPress={() => Linking.openURL('https://daystaff.netlify.app/privacy/')}
+            />
+          </View>
         </Card>
 
           <Text style={styles.version}>DayStaff · v1.1.0 · Offline MVP</Text>

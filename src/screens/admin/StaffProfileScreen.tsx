@@ -44,14 +44,22 @@ function InfoRow({
   label,
   children,
   last,
+  compact,
 }: {
   icon: IconName;
   label: string;
   children: React.ReactNode;
   last?: boolean;
+  compact?: boolean;
 }) {
   return (
-    <View style={[styles.infoRow, !last && styles.rowDivider]}>
+    <View
+      style={[
+        styles.infoRow,
+        compact && styles.rowCompact,
+        !last && styles.rowDivider,
+      ]}
+    >
       <View style={[styles.rowIconWrap, styles.rowIconWrapPrimary]}>
         <Ionicons name={icon} size={18} color={colors.primary} />
       </View>
@@ -68,13 +76,15 @@ function ActionRow({
   onPress,
   danger,
   last,
+  compact,
 }: {
   icon: IconName;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   onPress: () => void;
   danger?: boolean;
   last?: boolean;
+  compact?: boolean;
 }) {
   const tint = danger ? colors.danger : colors.primary;
   return (
@@ -83,6 +93,7 @@ function ActionRow({
       accessibilityRole="button"
       style={({ pressed }) => [
         styles.actionRow,
+        compact && styles.rowCompact,
         !last && styles.rowDivider,
         pressed && styles.actionRowPressed,
       ]}
@@ -99,7 +110,9 @@ function ActionRow({
         <Text style={[styles.actionTitle, danger && { color: colors.danger }]}>
           {title}
         </Text>
-        <Text style={styles.actionSubtitle}>{subtitle}</Text>
+        {subtitle ? (
+          <Text style={styles.actionSubtitle}>{subtitle}</Text>
+        ) : null}
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.slate500} />
     </Pressable>
@@ -402,45 +415,47 @@ export function StaffProfileScreen({ navigation, route }: Props) {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          alwaysBounceVertical={false}
         >
           {!editing ? (
             <>
-              {/* ===== VIEW MODE: HERO ===== */}
-              <View style={styles.hero}>
+              {/* ===== VIEW MODE: COMPACT PROFILE HEADER ===== */}
+              <View style={styles.profileCard}>
                 <Avatar
                   name={staff.fullName}
                   photoUri={staff.photoUri}
-                  size={104}
+                  size={72}
                 />
-                <Text style={styles.profileName} numberOfLines={2}>
-                  {staff.fullName}
-                </Text>
-                <View style={styles.heroMetaRow}>
-                  <Badge
-                    label={isActive ? 'Active' : 'Inactive'}
-                    tone={isActive ? 'success' : 'neutral'}
-                  />
-                  <View style={styles.codeChip}>
-                    <Text style={styles.codeChipText}>
-                      {staff.staffCode ? `#${staff.staffCode}` : 'No staff code'}
-                    </Text>
+                <View style={styles.profileCardText}>
+                  <Text style={styles.profileName} numberOfLines={1}>
+                    {staff.fullName}
+                  </Text>
+                  <View style={styles.heroMetaRow}>
+                    <Badge
+                      label={isActive ? 'Active' : 'Inactive'}
+                      tone={isActive ? 'success' : 'neutral'}
+                    />
+                    <View style={styles.codeChip}>
+                      <Text style={styles.codeChipText}>
+                        {staff.staffCode ? `#${staff.staffCode}` : 'No staff code'}
+                      </Text>
+                    </View>
                   </View>
                 </View>
               </View>
 
               {/* ===== VIEW MODE: DETAILS ===== */}
-              <Text style={styles.sectionTitle}>Details</Text>
+              <Text style={[styles.sectionTitle, styles.sectionTitleTight]}>
+                Details
+              </Text>
               <View style={styles.card}>
-                <InfoRow icon="id-card-outline" label="Staff code">
-                  <Text style={styles.infoValue}>{staff.staffCode || '—'}</Text>
-                </InfoRow>
-                <InfoRow icon="scan-outline" label="Face profile">
+                <InfoRow icon="scan-outline" label="Face profile" compact>
                   <Badge
                     label={staff.faceSignature ? 'Enrolled' : 'Not enrolled'}
                     tone={staff.faceSignature ? 'success' : 'neutral'}
                   />
                 </InfoRow>
-                <InfoRow icon="key-outline" label="Fallback PIN" last>
+                <InfoRow icon="key-outline" label="Fallback PIN" last compact>
                   <Badge
                     label={staff.staffPinHash ? 'Set' : 'Not set'}
                     tone={staff.staffPinHash ? 'success' : 'neutral'}
@@ -460,35 +475,29 @@ export function StaffProfileScreen({ navigation, route }: Props) {
               </View>
 
               {/* ===== VIEW MODE: MANAGE ACCESS ===== */}
-              <Text style={styles.sectionTitle}>Manage access</Text>
+              <Text style={[styles.sectionTitle, styles.sectionTitleTight]}>
+                Manage access
+              </Text>
               <View style={styles.card}>
                 <ActionRow
+                  compact
                   icon="key-outline"
                   title={staff.staffPinHash ? 'Change fallback PIN' : 'Add fallback PIN'}
-                  subtitle={
-                    staff.staffPinHash
-                      ? 'Replace the current PIN with a new one'
-                      : 'Set a PIN to use if face scan fails'
-                  }
                   onPress={openPinSheet}
                 />
                 <ActionRow
+                  compact
                   icon={isActive ? 'person-remove-outline' : 'person-add-outline'}
                   title={
                     isActive ? 'Deactivate staff member' : 'Reactivate staff member'
-                  }
-                  subtitle={
-                    isActive
-                      ? 'Hide from the kiosk, keep attendance records'
-                      : 'Show on the kiosk again'
                   }
                   onPress={handleToggleActive}
                   danger={isActive}
                 />
                 <ActionRow
+                  compact
                   icon="trash-outline"
                   title="Delete staff profile"
-                  subtitle="Permanently remove facial data and photo"
                   onPress={handleDeleteStaff}
                   danger
                   last
@@ -691,24 +700,29 @@ const styles = StyleSheet.create({
   },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  /* Hero (view mode) */
-  hero: {
+  /* Compact profile header (view mode) */
+  profileCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
+    gap: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    ...shadow.card,
   },
+  profileCardText: { flex: 1 },
   profileName: {
-    marginTop: spacing.md,
     fontSize: fontSize.xl,
     fontWeight: '800',
     color: colors.slate900,
-    textAlign: 'center',
   },
   heroMetaRow: {
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
   codeChip: {
@@ -741,6 +755,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     overflow: 'hidden',
     ...shadow.card,
+  },
+  sectionTitleTight: {
+    marginTop: spacing.lg,
+  },
+  rowCompact: {
+    paddingVertical: spacing.sm + 2,
   },
   rowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -780,7 +800,7 @@ const styles = StyleSheet.create({
 
   /* Primary action */
   primaryAction: {
-    marginTop: spacing.xl,
+    marginTop: spacing.lg,
   },
 
   /* Action rows */

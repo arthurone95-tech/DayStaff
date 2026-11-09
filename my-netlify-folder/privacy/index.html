@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DayStaff - Privacy Policy</title>
+  <style>
+    :root {
+      --bg-color: #0B132B;
+      --card-bg: #1C2541;
+      --text-main: #FFFFFF;
+      --text-sub: #94A3B8;
+      --accent: #2563EB;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      line-height: 1.6;
+      margin: 0;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    }
+    h1 {
+      color: var(--text-main);
+      margin-top: 0;
+      font-size: 2rem;
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 10px;
+    }
+    h2 {
+      color: var(--text-main);
+      margin-top: 28px;
+      font-size: 1.25rem;
+    }
+    p, li {
+      color: var(--text-sub);
+      font-size: 0.98rem;
+    }
+    ul {
+      padding-left: 20px;
+    }
+    li {
+      margin-bottom: 8px;
+    }
+    .date {
+      font-size: 0.85rem;
+      color: var(--text-sub);
+      margin-bottom: 24px;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Privacy Policy for DayStaff</h1>
+    <div class="date"><strong>Effective Date:</strong> November 9, 2026 | <strong>Last Updated:</strong> November 9, 2026</div>
+
+    <p>DayStaff ("we", "our", or "us") provides a local, on-device kiosk attendance solution designed for workplace and organizational access management. We are committed to protecting your privacy and handling personal data with absolute transparency and security.</p>
+
+    <h2>1. Zero Cloud Architecture & Local Data Storage</h2>
+    <p>DayStaff operates entirely on-device:</p>
+    <ul>
+      <li><strong>No Remote Servers:</strong> All personal data, including employee profile names, photographs, fallback PINs, and attendance logs, are stored 100% locally on the device hosting the app using an encrypted SQLite database.</li>
+      <li><strong>No Cloud Transmission:</strong> DayStaff does not upload, sync, transfer, or back up any data to external cloud servers, databases, or third-party platforms.</li>
+      <li><strong>No Analytics or Tracking:</strong> DayStaff contains zero third-party telemetry, crash reporting, or user tracking SDKs.</li>
+    </ul>
+
+    <h2>2. Facial Biometric Data Collection & Processing</h2>
+    <p>DayStaff uses facial recognition strictly for real-time workplace attendance verification:</p>
+    <ul>
+      <li><strong>Biometric Processing:</strong> Using local machine learning libraries, the app converts facial features into encrypted mathematical representations (embeddings) directly on the device.</li>
+      <li><strong>Consent:</strong> Facial photos are captured strictly during the administrator-guided enrollment process with explicit employee knowledge and consent.</li>
+      <li><strong>Purpose:</strong> Facial embeddings are used solely to match registered employees during clock-in and clock-out operations on the local kiosk terminal. Biometric markers are never sold, rented, or shared under any circumstances.</li>
+    </ul>
+
+    <h2>3. Historical Data Retention & Employee Offboarding</h2>
+    <ul>
+      <li><strong>Retention:</strong> Attendance logs are retained locally on the device to satisfy workplace accounting, payroll, and labor compliance requirements.</li>
+      <li><strong>Employee Deletion / Biometric Purge:</strong> When an administrator deletes an employee profile from the system, all associated biometric face templates and stored profile photos are permanently purged from the device filesystem immediately. Historical clock-in/out timestamps are retained under an archived status for payroll record integrity.</li>
+    </ul>
+
+    <h2>4. Data Export & Sharing</h2>
+    <p>Administrators may generate CSV or Excel (.xlsx) reports directly on-device. When exported, files are transferred strictly via the native operating system share menu (e.g., local file save, admin email, or direct download). DayStaff does not independently send or route exported reports.</p>
+
+    <h2>5. Contact Us</h2>
+    <p>If you have questions regarding this Privacy Policy or DayStaff's data handling practices, please contact our support team at:<br />
+    <strong>Email:</strong> <a href="mailto:support@daystaff.app">support@daystaff.app</a></p>
+  </div>
+</body>
+</html>

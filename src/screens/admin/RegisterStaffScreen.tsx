@@ -420,6 +420,17 @@ export function RegisterStaffScreen() {
                 This picture appears on the staff list, reports and the match
                 confirmation. A clear head-and-shoulders photo works best.
               </Text>
+              <View style={styles.consentBox}>
+                <Text style={styles.consentNotice}>
+                  By capturing this photo, you confirm employee consent to generate and store a local biometric facial template.
+                  {'\n\n'}
+                  • Storage: 100% local on this device.
+                  {'\n'}
+                  • Purpose: Workplace attendance verification only.
+                  {'\n'}
+                  • Privacy: Biometric data is never uploaded to the cloud or shared with third parties, and can be permanently deleted by an administrator at any time.
+                </Text>
+              </View>
               {photoUri ? (
                 <View style={styles.previewRow}>
                   <Avatar
@@ -648,6 +659,19 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: fontSize.xs,
     color: colors.slate500,
+    lineHeight: 18,
+  },
+  consentBox: {
+    backgroundColor: colors.infoSoft,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.info,
+  },
+  consentNotice: {
+    fontSize: fontSize.xs,
+    color: colors.infoDark,
     lineHeight: 18,
   },
 });

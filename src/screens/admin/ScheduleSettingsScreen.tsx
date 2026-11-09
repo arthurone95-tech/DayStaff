@@ -226,6 +226,7 @@ export function ScheduleSettingsScreen() {
           title="Reset fields to defaults"
           onPress={handleReset}
           variant="ghost"
+          style={{ marginTop: spacing.xl }}
         />
       </ScrollView>
 
