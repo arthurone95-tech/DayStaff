@@ -522,7 +522,46 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 disabled={pinCheckBusy}
               />
               {isEditing && (
-                <Card style={[styles.statusCard, { marginTop: spacing.lg }]}>
+                <>
+                  <AppButton
+                    title="Save changes"
+                    onPress={async () => {
+                      const basicOk = validateBasic();
+                      if (!basicOk) return;
+                      setSaving(true);
+                      try {
+                        const normalizedCode = normalizeCode(staffCode);
+                        const existingCode =
+                          getStaffById(staffId)?.staffCode ?? '';
+                        updateStaff(staffId, {
+                          fullName,
+                          staffCode: normalizedCode || existingCode,
+                          photoUri,
+                          faceSignature,
+                        });
+                        alert({
+                          tone: 'success',
+                          title: 'Staff updated',
+                          message: `${fullName}'s details have been saved.`,
+                        });
+                        navigation.goBack();
+                      } catch (error) {
+                        alert({
+                          tone: 'danger',
+                          title: 'Could not save staff member',
+                          message:
+                            error instanceof Error
+                              ? error.message
+                              : 'Please try again.',
+                        });
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                    size="lg"
+                    disabled={saving}
+                  />
+                  <Card style={[styles.statusCard, { marginTop: spacing.lg }]}>
                   <View style={styles.statusRow}>
                     <View style={styles.statusText}>
                       <Text style={styles.statusTitle}>
@@ -553,6 +592,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                     }
                   />
                 </Card>
+                </>
               )}
             </Card>
           ) : null}
