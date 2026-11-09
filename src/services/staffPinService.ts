@@ -43,9 +43,7 @@ export async function setStaffPinForStaff(
   if (!isStaffPinFormatValid(pin)) {
     throw new Error('PIN must be exactly 6 digits.');
   }
-  const salt = await generatePinSalt();
-  const hash = await hashStaffPin(pin, salt);
-  setStaffPin(staffId, hash, salt);
+  await setStaffPin(staffId, pin);
 }
 
 export interface VerifyStaffPinOptions {

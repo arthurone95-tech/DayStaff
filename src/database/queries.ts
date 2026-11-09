@@ -211,14 +211,31 @@ export function setStaffFaceSignature(
   ]);
 }
 
-export function setStaffPin(
-  id: number,
-  pinHash: string | null,
-  pinSalt: string | null,
-): void {
+import * as Crypto from 'expo-crypto';
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function hashStaffPinWithSalt(pin: string): Promise<{ hash: string; salt: string }> {
+  const salt = bytesToHex(await Crypto.getRandomBytes(16));
+  let value = `${salt}:${pin}`;
+  for (let i = 0; i < 1000; i += 1) {
+    value = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      value,
+    );
+  }
+  return { hash: value, salt };
+}
+
+export async function setStaffPin(id: number, pin: string): Promise<void> {
+  const { hash, salt } = await hashStaffPinWithSalt(pin);
   getDb().runSync(
     'UPDATE staff SET staff_pin_hash = ?, staff_pin_salt = ?, pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = ?',
-    [pinHash, pinSalt, id],
+    [hash, salt, id],
   );
 }
 

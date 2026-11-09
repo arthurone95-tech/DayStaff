@@ -1,31 +1,31 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Alert } from 'react-native';
-import { useCallback, useState } from 'react';
-import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
+import { useCallback, useLayoutEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
-import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
 import { AppButton } from '../../components/AppButton';
 import { Avatar } from '../../components/Avatar';
 import { Badge } from '../../components/Badge';
-import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { useAppDialog } from '../../components/AppDialog';
 import {
   getStaffById,
-  resetStaffPin,
   setStaffActive,
+  setStaffPin,
   updateStaff,
 } from '../../database/queries';
 import type { RootStackParamList } from '../../navigation/types';
@@ -34,10 +34,80 @@ import { colors, fontSize, radius, shadow, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StaffProfile'>;
 
-export function StaffProfileScreen({
-  navigation,
-  route,
-}: Props) {
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+/* ---------- Small building blocks ---------- */
+
+function InfoRow({
+  icon,
+  label,
+  children,
+  last,
+}: {
+  icon: IconName;
+  label: string;
+  children: React.ReactNode;
+  last?: boolean;
+}) {
+  return (
+    <View style={[styles.infoRow, !last && styles.rowDivider]}>
+      <View style={[styles.rowIconWrap, styles.rowIconWrapPrimary]}>
+        <Ionicons name={icon} size={18} color={colors.primary} />
+      </View>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <View style={styles.infoValueWrap}>{children}</View>
+    </View>
+  );
+}
+
+function ActionRow({
+  icon,
+  title,
+  subtitle,
+  onPress,
+  danger,
+  last,
+}: {
+  icon: IconName;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+  danger?: boolean;
+  last?: boolean;
+}) {
+  const tint = danger ? colors.danger : colors.primary;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      style={({ pressed }) => [
+        styles.actionRow,
+        !last && styles.rowDivider,
+        pressed && styles.actionRowPressed,
+      ]}
+    >
+      <View
+        style={[
+          styles.rowIconWrap,
+          danger ? styles.rowIconWrapDanger : styles.rowIconWrapPrimary,
+        ]}
+      >
+        <Ionicons name={icon} size={18} color={tint} />
+      </View>
+      <View style={styles.actionTextWrap}>
+        <Text style={[styles.actionTitle, danger && { color: colors.danger }]}>
+          {title}
+        </Text>
+        <Text style={styles.actionSubtitle}>{subtitle}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.slate500} />
+    </Pressable>
+  );
+}
+
+/* ---------- Screen ---------- */
+
+export function StaffProfileScreen({ navigation, route }: Props) {
   const staffId = route.params?.staffId;
   const { alert, confirm } = useAppDialog();
 
@@ -50,6 +120,23 @@ export function StaffProfileScreen({
   const [fullName, setFullName] = useState('');
   const [staffCode, setStaffCode] = useState('');
   const [isActive, setIsActive] = useState(true);
+  const [photoUri, setPhotoUri] = useState<Staff['photoUri'] | undefined>(undefined);
+  const [photoSheetOpen, setPhotoSheetOpen] = useState(false);
+
+  // Fallback PIN sheet
+  const [pinSheetOpen, setPinSheetOpen] = useState(false);
+  const [pin, setPin] = useState('');
+  const [pinConfirm, setPinConfirm] = useState('');
+  const [pinError, setPinError] = useState('');
+
+  // Hide the header back button (and swipe-back) while editing
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerBackVisible: !editing,
+      headerLeft: editing ? () => null : undefined,
+      gestureEnabled: !editing,
+    });
+  }, [navigation, editing]);
 
   useFocusEffect(
     useCallback(() => {
@@ -66,6 +153,7 @@ export function StaffProfileScreen({
       setFullName(member.fullName);
       setStaffCode(member.staffCode);
       setIsActive(member.isActive === 1);
+      setPhotoUri(member.photoUri);
     }
     setLoading(false);
   };
@@ -86,8 +174,7 @@ export function StaffProfileScreen({
       tone: 'success',
       icon: 'checkmark-circle',
       title: 'Save changes?',
-      message:
-        'This will save the updated staff details. Continue?',
+      message: 'This will save the updated staff details. Continue?',
       confirmLabel: 'Save',
       cancelLabel: 'Cancel',
       onConfirm: async () => {
@@ -97,7 +184,7 @@ export function StaffProfileScreen({
           updateStaff(staffId, {
             fullName: fullName.trim(),
             staffCode: normalizedCode || undefined,
-            photoUri: staff.photoUri,
+            photoUri: photoUri ?? null,
             faceSignature: staff.faceSignature,
           });
           setStaff(getStaffById(staffId) ?? null);
@@ -120,27 +207,42 @@ export function StaffProfileScreen({
     });
   };
 
-  const handleResetPin = () => {
-    if (!staffId) return;
-    confirm({
-      tone: 'warning',
-      icon: 'key-outline',
-      title: 'Reset fallback PIN?',
-      message:
-        'This will remove this staff member’s fallback PIN. They will need to set a new PIN the next time they edit their profile.',
-      confirmLabel: 'Reset PIN',
-      cancelLabel: 'Cancel',
-      destructive: true,
-      onConfirm: () => {
-        resetStaffPin(staffId);
-        loadStaff(staffId);
-        alert({
-          tone: 'success',
-          title: 'PIN reset',
-          message: `${staff?.fullName}’s fallback PIN has been cleared.`,
-        });
-      },
-    });
+  const openPinSheet = () => {
+    setPin('');
+    setPinConfirm('');
+    setPinError('');
+    setPinSheetOpen(true);
+  };
+
+  const closePinSheet = () => {
+    setPinSheetOpen(false);
+    setPin('');
+    setPinConfirm('');
+    setPinError('');
+  };
+
+  const handleSavePin = async () => {
+    if (!staffId || !staff) return;
+    if (!/^\d{4,6}$/.test(pin)) {
+      setPinError('PIN must be 4 to 6 digits.');
+      return;
+    }
+    if (pin !== pinConfirm) {
+      setPinError('The two PINs do not match.');
+      return;
+    }
+    try {
+      await setStaffPin(staffId, pin);
+      loadStaff(staffId);
+      closePinSheet();
+      alert({
+        tone: 'success',
+        title: 'Fallback PIN saved',
+        message: `${staff.fullName}’s fallback PIN has been set.`,
+      });
+    } catch (error) {
+      setPinError(error instanceof Error ? error.message : 'Could not save PIN.');
+    }
   };
 
   const handleToggleActive = () => {
@@ -149,9 +251,7 @@ export function StaffProfileScreen({
     confirm({
       tone: nextActive ? 'question' : 'danger',
       icon: nextActive ? 'person-add-outline' : 'person-remove-outline',
-      title: nextActive
-        ? 'Reactivate staff member?'
-        : 'Deactivate staff member?',
+      title: nextActive ? 'Reactivate staff member?' : 'Deactivate staff member?',
       message: nextActive
         ? 'They will appear on the kiosk again.'
         : 'They will be hidden from the kiosk. Existing attendance records are kept.',
@@ -166,10 +266,75 @@ export function StaffProfileScreen({
     });
   };
 
+  const handleTakePhoto = async () => {
+    setPhotoSheetOpen(false);
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      alert({
+        tone: 'warning',
+        title: 'Camera access needed',
+        message: 'Allow camera access in your device settings to take a photo.',
+      });
+      return;
+    }
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setPhotoUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      alert({
+        tone: 'danger',
+        title: 'Could not open camera',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
+    }
+  };
+
+  const handlePickFromLibrary = async () => {
+    setPhotoSheetOpen(false);
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      alert({
+        tone: 'warning',
+        title: 'Photo access needed',
+        message: 'Allow photo library access in your device settings to choose a picture.',
+      });
+      return;
+    }
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setPhotoUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      alert({
+        tone: 'danger',
+        title: 'Could not open library',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    if (!staffId) return;
+    loadStaff(staffId);
+    setEditing(false);
+  };
+
   const hasChanges =
     fullName.trim() !== (staff?.fullName ?? '').trim() ||
     staffCode.toUpperCase() !== (staff?.staffCode ?? '').toUpperCase() ||
-    isActive !== (staff?.isActive === 1);
+    isActive !== (staff?.isActive === 1) ||
+    photoUri !== staff?.photoUri;
 
   if (loading) {
     return (
@@ -207,253 +372,495 @@ export function StaffProfileScreen({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* ===== HEADER SECTION ===== */}
-          <View style={styles.headerSection}>
-            <Avatar
-              name={staff.fullName}
-              photoUri={staff.photoUri}
-              size={88}
-            />
-            <View style={styles.headerContent}>
-              <View style={styles.nameRow}>
-                {editing ? (
-                  <View style={styles.nameInputWrap}>
-                    <TextField
-                      label="Full name"
-                      value={fullName}
-                      onChangeText={setFullName}
-                      autoCapitalize="words"
-                      maxLength={80}
-                    />
+          {!editing ? (
+            <>
+              {/* ===== VIEW MODE: HERO ===== */}
+              <View style={styles.hero}>
+                <Avatar
+                  name={staff.fullName}
+                  photoUri={staff.photoUri}
+                  size={104}
+                />
+                <Text style={styles.profileName} numberOfLines={2}>
+                  {staff.fullName}
+                </Text>
+                <View style={styles.heroMetaRow}>
+                  <Badge
+                    label={isActive ? 'Active' : 'Inactive'}
+                    tone={isActive ? 'success' : 'neutral'}
+                  />
+                  <View style={styles.codeChip}>
+                    <Text style={styles.codeChipText}>
+                      {staff.staffCode ? `#${staff.staffCode}` : 'No staff code'}
+                    </Text>
                   </View>
-                ) : (
-                  <Text style={styles.profileName}>{staff.fullName}</Text>
-                )}
+                </View>
               </View>
-              <View style={styles.statusBadgeWrap}>
-                <Badge
-                  label={isActive ? 'Active' : 'Inactive'}
-                  tone={isActive ? 'success' : 'neutral'}
+
+              {/* ===== VIEW MODE: DETAILS ===== */}
+              <Text style={styles.sectionTitle}>Details</Text>
+              <View style={styles.card}>
+                <InfoRow icon="id-card-outline" label="Staff code">
+                  <Text style={styles.infoValue}>{staff.staffCode || '—'}</Text>
+                </InfoRow>
+                <InfoRow icon="scan-outline" label="Face profile">
+                  <Badge
+                    label={staff.faceSignature ? 'Enrolled' : 'Not enrolled'}
+                    tone={staff.faceSignature ? 'success' : 'neutral'}
+                  />
+                </InfoRow>
+                <InfoRow icon="key-outline" label="Fallback PIN" last>
+                  <Badge
+                    label={staff.staffPinHash ? 'Set' : 'Not set'}
+                    tone={staff.staffPinHash ? 'success' : 'neutral'}
+                  />
+                </InfoRow>
+              </View>
+
+              {/* ===== VIEW MODE: PRIMARY ACTION ===== */}
+              <View style={styles.primaryAction}>
+                <AppButton
+                  title="Edit profile"
+                  onPress={() => setEditing(true)}
+                  icon={
+                    <Ionicons name="create-outline" size={18} color="#FFFFFF" />
+                  }
                 />
               </View>
-              <Text style={styles.profileCode}>
-                {staff.staffCode ? `#${staff.staffCode}` : 'No staff code'}
-              </Text>
-            </View>
-          </View>
 
-          {/* ===== INFO SECTION ===== */}
-          <View style={styles.infoSection}>
-            <Text style={styles.sectionTitle}>Staff profile</Text>
-            <View style={styles.infoCard}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Face profile</Text>
-                <Text style={styles.infoValue}>
-                  {staff.faceSignature ? 'Enrolled' : 'Not enrolled'}
-                </Text>
+              {/* ===== VIEW MODE: MANAGE ACCESS ===== */}
+              <Text style={styles.sectionTitle}>Manage access</Text>
+              <View style={styles.card}>
+                <ActionRow
+                  icon="key-outline"
+                  title={staff.staffPinHash ? 'Change fallback PIN' : 'Add fallback PIN'}
+                  subtitle={
+                    staff.staffPinHash
+                      ? 'Replace the current PIN with a new one'
+                      : 'Set a PIN to use if face scan fails'
+                  }
+                  onPress={openPinSheet}
+                />
+                <ActionRow
+                  icon={isActive ? 'person-remove-outline' : 'person-add-outline'}
+                  title={
+                    isActive ? 'Deactivate staff member' : 'Reactivate staff member'
+                  }
+                  subtitle={
+                    isActive
+                      ? 'Hide from the kiosk, keep attendance records'
+                      : 'Show on the kiosk again'
+                  }
+                  onPress={handleToggleActive}
+                  danger={isActive}
+                  last
+                />
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Fallback PIN</Text>
-                <Text style={styles.infoValue}>
-                  {staff.staffPinHash ? 'Set' : 'Not set'}
-                </Text>
+            </>
+          ) : (
+            <>
+              {/* ===== EDIT MODE: COMPACT HEADER ===== */}
+              <View style={styles.editHeader}>
+                <Pressable
+                  onPress={() => setPhotoSheetOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Change profile photo"
+                  style={styles.editAvatarWrap}
+                >
+                  <Avatar
+                    name={fullName || staff.fullName}
+                    photoUri={photoUri ?? null}
+                    size={88}
+                  />
+                  <View style={styles.cameraBadge}>
+                    <Ionicons name="camera" size={14} color="#FFFFFF" />
+                  </View>
+                </Pressable>
+                <View style={styles.editHeaderText}>
+                  <Text style={styles.editTitle}>Editing profile</Text>
+                  <Text style={styles.editSubtitle} numberOfLines={1}>
+                    Tap the photo to change it
+                  </Text>
+                </View>
               </View>
-            </View>
-          </View>
 
-          {/* ===== ACTIONS SECTION (view mode) ===== */}
-          {!editing && (
-            <View style={styles.actionsSection}>
-              <AppButton
-                title={isActive ? 'Deactivate' : 'Reactivate'}
-                onPress={handleToggleActive}
-                variant={isActive ? 'danger' : 'success'}
-                size="sm"
-                fullWidth={false}
-              />
-              <AppButton
-                title="Reset fallback PIN"
-                variant="ghost"
-                size="sm"
-                fullWidth={false}
-                onPress={handleResetPin}
-                icon={
-                  <Ionicons name="key-outline" size={18} color={colors.danger} />
-                }
-              />
-              <AppButton
-                title="Edit profile"
-                onPress={() => setEditing(true)}
-                size="sm"
-                fullWidth={false}
-              />
-            </View>
-          )}
-
-          {/* ===== EDIT SECTION (edit mode) ===== */}
-          {editing && (
-            <View style={styles.editSection}>
-              <View style={styles.editCard}>
-                <View style={styles.editRow}>
+              {/* ===== EDIT MODE: FORM ===== */}
+              <Text style={styles.sectionTitle}>Staff details</Text>
+              <View style={[styles.card, styles.formCard]}>
+                <View style={styles.fieldGap}>
                   <TextField
-                    label="Staff code"
-                    value={staffCode}
-                    onChangeText={setStaffCode}
-                    autoCapitalize="characters"
-                    maxLength={20}
+                    label="Full name"
+                    value={fullName}
+                    onChangeText={setFullName}
+                    autoCapitalize="words"
+                    maxLength={80}
                   />
                 </View>
-                <View style={styles.resetPinRow}>
-                  <AppButton
-                    title="Reset fallback PIN"
-                    variant="ghost"
-                    size="sm"
-                    fullWidth={false}
-                    onPress={handleResetPin}
-                    icon={
-                      <Ionicons
-                        name="key-outline"
-                        size={18}
-                        color={colors.danger}
-                      />
-                    }
-                  />
-                </View>
-                <View style={styles.saveCancelRow}>
+                <TextField
+                  label="Staff code"
+                  value={staffCode}
+                  onChangeText={setStaffCode}
+                  autoCapitalize="characters"
+                  maxLength={20}
+                />
+                <Text style={styles.helperText}>
+                  Letters and numbers only. Used to look this person up at the
+                  kiosk.
+                </Text>
+              </View>
+
+              {/* ===== EDIT MODE: FOOTER ACTIONS ===== */}
+              <View style={styles.editFooter}>
+                <View style={styles.footerButton}>
                   <AppButton
                     title="Cancel"
-                    onPress={() => {
-                      if (!staffId) return;
-                      loadStaff(staffId);
-                      setEditing(false);
-                    }}
                     variant="ghost"
-                    size="sm"
-                    fullWidth={false}
+                    onPress={handleCancelEdit}
+                    disabled={saving}
                   />
+                </View>
+                <View style={styles.footerButton}>
                   <AppButton
                     title="Save changes"
                     onPress={handleSave}
                     loading={saving}
-                    size="sm"
-                    fullWidth={false}
                     disabled={!hasChanges || saving}
                   />
                 </View>
               </View>
-            </View>
+            </>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* ===== PHOTO SOURCE SHEET ===== */}
+      <Modal
+        visible={photoSheetOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoSheetOpen(false)}
+      >
+        <Pressable
+          style={styles.sheetBackdrop}
+          onPress={() => setPhotoSheetOpen(false)}
+        >
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>Change profile photo</Text>
+            <ActionRow
+              icon="camera-outline"
+              title="Take a photo"
+              subtitle="Use the camera"
+              onPress={handleTakePhoto}
+            />
+            <ActionRow
+              icon="images-outline"
+              title="Choose from library"
+              subtitle="Pick an existing photo"
+              onPress={handlePickFromLibrary}
+              last
+            />
+            <View style={styles.sheetCancel}>
+              <AppButton
+                title="Cancel"
+                variant="ghost"
+                onPress={() => setPhotoSheetOpen(false)}
+              />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ===== FALLBACK PIN SHEET ===== */}
+      <Modal
+        visible={pinSheetOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={closePinSheet}
+      >
+        <KeyboardAvoidingView
+          style={styles.keyboardWrap}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={styles.sheetBackdrop} onPress={closePinSheet}>
+            <Pressable style={styles.sheet} onPress={() => {}}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>
+                {staff.staffPinHash ? 'Change fallback PIN' : 'Add fallback PIN'}
+              </Text>
+              <View style={styles.pinForm}>
+                <View style={styles.fieldGap}>
+                  <TextField
+                    label="New PIN"
+                    value={pin}
+                    onChangeText={(t: string) => {
+                      setPin(t.replace(/\D/g, ''));
+                      setPinError('');
+                    }}
+                    keyboardType="number-pad"
+                    secureTextEntry
+                    maxLength={6}
+                  />
+                </View>
+                <TextField
+                  label="Confirm PIN"
+                  value={pinConfirm}
+                  onChangeText={(t: string) => {
+                    setPinConfirm(t.replace(/\D/g, ''));
+                    setPinError('');
+                  }}
+                  keyboardType="number-pad"
+                  secureTextEntry
+                  maxLength={6}
+                />
+                {pinError ? (
+                  <Text style={styles.pinError}>{pinError}</Text>
+                ) : (
+                  <Text style={styles.helperText}>
+                    4 to 6 digits. Staff can use it if face scan fails.
+                  </Text>
+                )}
+                <View style={styles.pinButtons}>
+                  <View style={styles.footerButton}>
+                    <AppButton
+                      title="Cancel"
+                      variant="ghost"
+                      onPress={closePinSheet}
+                    />
+                  </View>
+                  <View style={styles.footerButton}>
+                    <AppButton
+                      title="Save PIN"
+                      onPress={handleSavePin}
+                      disabled={pin.length < 4 || pinConfirm.length < 4}
+                    />
+                  </View>
+                </View>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   keyboardWrap: { flex: 1 },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
+  content: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  headerSection: {
+
+  /* Hero (view mode) */
+  hero: {
     alignItems: 'center',
-    marginTop: spacing.lg,
-    paddingHorizontal: spacing.lg,
-  },
-  headerContent: {
-    alignItems: 'center',
-    marginTop: spacing.md,
-    width: '100%',
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: spacing.xs,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
   profileName: {
+    marginTop: spacing.md,
     fontSize: fontSize.xl,
     fontWeight: '800',
     color: colors.slate900,
     textAlign: 'center',
   },
-  nameInputWrap: {
-    width: 240,
+  heroMetaRow: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
   },
-  statusBadgeWrap: {
-    position: 'absolute',
-    right: spacing.md,
-    top: spacing.md,
+  codeChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(100,116,139,0.12)',
   },
-  profileCode: {
+  codeChipText: {
     fontSize: fontSize.sm,
+    fontWeight: '700',
     color: colors.slate500,
-    textAlign: 'center',
   },
-  infoSection: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.xl,
-  },
+
+  /* Shared */
   sectionTitle: {
+    marginTop: spacing.xl,
+    marginBottom: spacing.sm,
+    marginLeft: spacing.xs,
     fontSize: fontSize.sm,
     fontWeight: '800',
     color: colors.slate500,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-    marginBottom: spacing.md,
   },
-  infoCard: {
+  card: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
-    padding: spacing.md,
+    overflow: 'hidden',
     ...shadow.card,
   },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
+  rowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
+  rowIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowIconWrapPrimary: { backgroundColor: 'rgba(100,116,139,0.12)' },
+  rowIconWrapDanger: { backgroundColor: 'rgba(220,38,38,0.1)' },
+
+  /* Info rows */
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
   infoLabel: {
+    flex: 1,
     fontSize: fontSize.md,
     color: colors.slate500,
   },
-  infoValue: {
-    fontSize: fontSize.md,
-    fontWeight: '600',
-    color: colors.slate900,
-  },
-  actionsSection: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.xl,
-    flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'center',
-  },
-  editSection: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.xl,
-  },
-  editCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    ...shadow.card,
-  },
-  editRow: {
-    marginBottom: spacing.lg,
-  },
-  resetPinRow: {
-    marginBottom: spacing.lg,
+  infoValueWrap: {
     alignItems: 'flex-end',
   },
-  saveCancelRow: {
+  infoValue: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.slate900,
+  },
+
+  /* Primary action */
+  primaryAction: {
+    marginTop: spacing.xl,
+  },
+
+  /* Action rows */
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  actionRowPressed: { backgroundColor: 'rgba(0,0,0,0.03)' },
+  actionTextWrap: { flex: 1 },
+  actionTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.slate900,
+  },
+  actionSubtitle: {
+    marginTop: 2,
+    fontSize: fontSize.sm,
+    color: colors.slate500,
+  },
+
+  /* Edit mode */
+  editHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  editAvatarWrap: {
+    width: 88,
+    height: 88,
+  },
+  cameraBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  sheetBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15,23,42,0.45)',
+  },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    marginBottom: spacing.md,
+  },
+  sheetTitle: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    fontSize: fontSize.md,
+    fontWeight: '800',
+    color: colors.slate900,
+  },
+  sheetCancel: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.md,
+  },
+  pinForm: {
+    paddingHorizontal: spacing.lg,
+  },
+  pinError: {
+    marginTop: spacing.sm,
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.danger,
+  },
+  pinButtons: {
+    marginTop: spacing.lg,
     flexDirection: 'row',
     gap: spacing.md,
-    justifyContent: 'flex-end',
   },
+  editHeaderText: { flex: 1 },
+  editTitle: {
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    color: colors.slate900,
+  },
+  editSubtitle: {
+    marginTop: 2,
+    fontSize: fontSize.md,
+    color: colors.slate500,
+  },
+  formCard: {
+    padding: spacing.md,
+  },
+  fieldGap: {
+    marginBottom: spacing.md,
+  },
+  helperText: {
+    marginTop: spacing.sm,
+    fontSize: fontSize.sm,
+    color: colors.slate500,
+  },
+  editFooter: {
+    marginTop: spacing.xl,
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  footerButton: { flex: 1 },
 });

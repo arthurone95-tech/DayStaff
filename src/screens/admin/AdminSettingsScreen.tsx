@@ -41,8 +41,12 @@ export function AdminSettingsScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { alert } = useAppDialog();
 
+  const [savedCompanyName, setSavedCompanyName] = useState(getCompanyName());
   const [companyName, setCompanyNameState] = useState(getCompanyName());
+  const [editingName, setEditingName] = useState(false);
   const [savingName, setSavingName] = useState(false);
+
+  const nameChanged = companyName.trim() !== savedCompanyName.trim();
 
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
@@ -82,6 +86,8 @@ export function AdminSettingsScreen() {
     try {
       setCompanyName(value);
       setCompanyNameState(value);
+      setSavedCompanyName(value);
+      setEditingName(false);
       Keyboard.dismiss();
       alert({
         tone: 'success',
@@ -97,6 +103,12 @@ export function AdminSettingsScreen() {
     } finally {
       setSavingName(false);
     }
+  };
+
+  const handleCancelName = () => {
+    Keyboard.dismiss();
+    setCompanyNameState(savedCompanyName);
+    setEditingName(false);
   };
 
   const handleAuthMethodChange = (method: AuthMethod) => {
@@ -186,19 +198,67 @@ export function AdminSettingsScreen() {
             Shown on the kiosk and in exported reports.
           </Text>
           <View style={styles.field}>
-            <TextField
-              label="Company / school name"
-              value={companyName}
-              onChangeText={setCompanyNameState}
-              placeholder="e.g. Greenfield Academy"
-              maxLength={60}
-            />
+            {editingName ? (
+              <TextField
+                label="Company / school name"
+                value={companyName}
+                onChangeText={setCompanyNameState}
+                placeholder="e.g. Greenfield Academy"
+                maxLength={60}
+                autoFocus
+              />
+            ) : (
+              <>
+                <Text style={styles.pinLabel}>Company / school name</Text>
+                <View style={styles.nameReadOnly}>
+                  <Text
+                    style={[
+                      styles.nameReadOnlyText,
+                      !savedCompanyName && styles.nameReadOnlyEmpty,
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {savedCompanyName || 'Not set'}
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
-          <AppButton
-            title="Save company name"
-            onPress={handleSaveName}
-            loading={savingName}
-          />
+
+          {editingName ? (
+            <View style={styles.nameButtons}>
+              <View style={styles.nameButton}>
+                <AppButton
+                  title="Cancel"
+                  onPress={handleCancelName}
+                  variant="ghost"
+                  disabled={savingName}
+                />
+              </View>
+              <View style={styles.nameButton}>
+                <AppButton
+                  title="Save"
+                  onPress={handleSaveName}
+                  loading={savingName}
+                  disabled={!nameChanged || savingName}
+                />
+              </View>
+            </View>
+          ) : (
+            <AppButton
+              title="Edit"
+              onPress={() => setEditingName(true)}
+              variant="ghost"
+              icon={
+                <Ionicons
+                  name="create-outline"
+                  size={18}
+                  color={colors.primary}
+                />
+              }
+              style={styles.pinButton}
+            />
+          )}
         </Card>
 
         <Card style={styles.card}>
@@ -392,6 +452,31 @@ const styles = StyleSheet.create({
   },
   pinButton: {
     marginTop: spacing.lg,
+  },
+  nameReadOnly: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: spacing.sm,
+    backgroundColor: colors.slate50,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  nameReadOnlyText: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.slate900,
+  },
+  nameReadOnlyEmpty: {
+    color: colors.slate400,
+    fontWeight: '400',
+  },
+  nameButtons: {
+    marginTop: spacing.lg,
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  nameButton: {
+    flex: 1,
   },
   pinCancelButton: {
     marginTop: spacing.sm,
