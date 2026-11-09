@@ -50,7 +50,7 @@ export function StaffListScreen() {
               {staff.length} total · {activeCount} active · {staff.length - activeCount} deactivated
             </Text>
             <Text style={styles.hint}>
-              Tap a staff member to edit their details or deactivate them.
+              Tap a staff member to view their profile or edit their details.
             </Text>
           </View>
         }
@@ -82,7 +82,7 @@ export function StaffListScreen() {
             }
             detail={item.isActive ? 'Tap to edit' : 'Hidden from kiosk'}
             onPress={() =>
-              navigation.navigate('RegisterStaff', { staffId: item.id })
+              navigation.navigate('StaffProfile', { staffId: item.id })
             }
           />
         )}

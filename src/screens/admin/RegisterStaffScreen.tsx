@@ -1,12 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useCallback, useRef, useState } from 'react';
+import { useNavigation } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -24,13 +23,9 @@ import {
 } from '../../config/app';
 import {
   createStaff,
-  getStaffById,
   isStaffCodeTaken,
-  resetStaffPin,
-  setStaffActive,
-  updateStaff,
 } from '../../database/queries';
-import type { RootStackParamList } from '../../navigation/types';
+import type { RootNavigation } from '../../navigation/types';
 import type { Staff } from '../../types';
 import {
   FaceEngineUnavailableError,
@@ -47,15 +42,6 @@ import { isStaffPinTaken } from '../../services/staffPinService';
 import { findDuplicateFace } from '../../services/faceRecognitionService';
 import { colors, fontSize, radius, spacing } from '../../theme';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'RegisterStaff'>;
-
-function normalizeCode(value: string): string {
-  return value
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .slice(0, STAFF_CODE_MAX_LENGTH);
-}
-
 /**
  * Registration is now three distinct steps:
  *  1. Basic info + fallback PIN.
@@ -64,10 +50,9 @@ function normalizeCode(value: string): string {
  *  3. LIVE FACE SCAN — a guided multi-frame scan that builds the face
  *     profile used for recognition. This is NOT the profile photo.
  */
-export function RegisterStaffScreen({ route, navigation }: Props) {
-  const staffId = route.params?.staffId;
-  const isEditing = typeof staffId === 'number';
-  const { alert, confirm } = useAppDialog();
+export function RegisterStaffScreen() {
+  const navigation = useNavigation<RootNavigation>();
+  const { alert } = useAppDialog();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [fullName, setFullName] = useState('');
@@ -90,37 +75,18 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   const [pinCheckBusy, setPinCheckBusy] = useState(false);
   const [faceCheckBusy, setFaceCheckBusy] = useState(false);
   const [duplicateFaceStaff, setDuplicateFaceStaff] = useState<Staff | null>(null);
-  const [pinEditable, setPinEditable] = useState(!isEditing);
-
-  const [isActive, setIsActive] = useState(true);
-  const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
 
   const cameraRef = useRef<CameraView | null>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
-  useEffect(() => {
-    navigation.setOptions({
-      title: isEditing ? 'Edit staff' : 'Register staff',
-      headerLeft: () => (
-        <Pressable onPress={handleBack} style={styles.headerBack}>
-          <Ionicons name="chevron-back" size={20} color={colors.primary} />
-        </Pressable>
-      ),
-    });
-
-    if (isEditing && staffId) {
-      const existing = getStaffById(staffId);
-      if (existing) {
-        setFullName(existing.fullName);
-        setStaffCode(existing.staffCode);
-        setPhotoUri(existing.photoUri);
-        setFaceSignature(existing.faceSignature);
-        setIsActive(existing.isActive === 1);
-      }
-      setLoading(false);
+  const handleBack = () => {
+    if (step > 1) {
+      setStep(1);
+    } else {
+      navigation.goBack();
     }
-  }, [isEditing, staffId, navigation, step]);
+  };
 
   const validateBasic = (): boolean => {
     const next: { name?: string; code?: string } = {};
@@ -128,7 +94,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       next.name = 'Full name is required.';
     }
     const normalizedCode = normalizeCode(staffCode);
-    if (normalizedCode && isStaffCodeTaken(normalizedCode, staffId)) {
+    if (normalizedCode && isStaffCodeTaken(normalizedCode)) {
       next.code = 'That code is already assigned to another staff member.';
     }
     setErrors((prev) => ({
@@ -141,20 +107,16 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
 
   const validatePin = (): boolean => {
     const next: { pin?: string; pinConfirm?: string } = {};
-    // New staff must have a PIN. When editing, the PIN is optional, but if
-    // either field is filled both must be valid and must match.
-    if (!isEditing || staffPin || staffPinConfirm) {
-      if (!staffPin) {
-        next.pin = 'Enter a 6-digit PIN.';
-      } else if (!/^\d{6}$/.test(staffPin)) {
-        next.pin = 'PIN must be exactly 6 digits.';
-      }
+    if (!staffPin) {
+      next.pin = 'Enter a 6-digit PIN.';
+    } else if (!/^\d{6}$/.test(staffPin)) {
+      next.pin = 'PIN must be exactly 6 digits.';
+    }
 
-      if (!staffPinConfirm) {
-        next.pinConfirm = 'Re-enter the PIN to confirm.';
-      } else if (staffPin !== staffPinConfirm) {
-        next.pinConfirm = 'PINs do not match.';
-      }
+    if (!staffPinConfirm) {
+      next.pinConfirm = 'Re-enter the PIN to confirm.';
+    } else if (staffPin !== staffPinConfirm) {
+      next.pinConfirm = 'PINs do not match.';
     }
 
     setErrors((prev) => ({
@@ -166,7 +128,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   };
 
   // -------------------------------------------------------------------------
-  // Step 2 — profile photo (a plain picture, separate from the face profile)
+  // Step 2 — profile photo
   // -------------------------------------------------------------------------
 
   const handleTakePhoto = async () => {
@@ -196,7 +158,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   };
 
   // -------------------------------------------------------------------------
-  // Step 3 — live face scan (multi-frame guided capture builds the profile)
+  // Step 3 — live face scan
   // -------------------------------------------------------------------------
 
   const handleFaceScan = async () => {
@@ -223,19 +185,17 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       setScanHint(null);
 
       // Check whether this face is already registered to another staff member.
-      if (!isEditing) {
-        setFaceCheckBusy(true);
-        try {
-          const existing = await findDuplicateFace(enrollment.signature);
-          if (existing) {
-            setDuplicateFaceStaff(existing);
-            setFaceError(
-              `This face is already registered to ${existing.fullName}.`,
-            );
-          }
-        } finally {
-          setFaceCheckBusy(false);
+      setFaceCheckBusy(true);
+      try {
+        const existing = await findDuplicateFace(enrollment.signature);
+        if (existing) {
+          setDuplicateFaceStaff(existing);
+          setFaceError(
+            `This face is already registered to ${existing.fullName}.`,
+          );
         }
+      } finally {
+        setFaceCheckBusy(false);
       }
     } catch (error) {
       const message =
@@ -259,8 +219,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       return;
     }
 
-    // PIN validation. Step 1 already blocks with inline feedback, but re-check
-    // here so a stale/invalid PIN can never reach the save path.
     if (!validatePin()) {
       setStep(1);
       return;
@@ -299,10 +257,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
     // Final PIN uniqueness re-check before saving.
     setPinCheckBusy(true);
     try {
-      const taken = await isStaffPinTaken(
-        staffPin,
-        isEditing ? staffId : undefined,
-      );
+      const taken = await isStaffPinTaken(staffPin);
       if (taken) {
         setErrors((prev) => ({
           ...prev,
@@ -319,28 +274,20 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
     setSaving(true);
     try {
       const normalizedCode = normalizeCode(staffCode);
-      let savedId: number | null = null;
-      if (isEditing && staffId) {
-        const existingCode = getStaffById(staffId)?.staffCode ?? '';
-        updateStaff(staffId, {
-          fullName,
-          staffCode: normalizedCode || existingCode,
-          photoUri,
-          faceSignature,
-        });
-        savedId = staffId;
-      } else {
-        const created = createStaff({
-          fullName,
-          staffCode: normalizedCode,
-          photoUri,
-          faceSignature,
-        });
-        savedId = created.id;
+      const created = createStaff({
+        fullName,
+        staffCode: normalizedCode,
+        photoUri,
+        faceSignature,
+      });
+      if (created.id && staffPin) {
+        await setStaffPinForStaff(created.id, staffPin);
       }
-      if (savedId && staffPin) {
-        await setStaffPinForStaff(savedId, staffPin);
-      }
+      alert({
+        tone: 'success',
+        title: 'Staff registered',
+        message: `${fullName} has been registered.`,
+      });
       navigation.goBack();
     } catch (error) {
       alert({
@@ -353,60 +300,7 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
     }
   };
 
-  const toggleActive = () => {
-    if (!staffId) return;
-    const nextActive = !isActive;
-    confirm({
-      tone: nextActive ? 'question' : 'danger',
-      icon: nextActive ? 'person-add-outline' : 'person-remove-outline',
-      title: nextActive
-        ? 'Reactivate staff member?'
-        : 'Deactivate staff member?',
-      message: nextActive
-        ? 'They will appear on the kiosk again.'
-        : 'They will be hidden from the kiosk. Existing attendance records are kept.',
-      confirmLabel: nextActive ? 'Reactivate' : 'Deactivate',
-      destructive: !nextActive,
-      onConfirm: () => {
-        setStaffActive(staffId, nextActive);
-        setIsActive(nextActive);
-      },
-    });
-  };
-
-  const handleResetPin = () => {
-    if (!staffId) return;
-    confirm({
-      tone: 'warning',
-      icon: 'key-outline',
-      title: 'Reset fallback PIN?',
-      message:
-        'This will remove this staff member’s fallback PIN. They will need to set a new PIN the next time they edit their profile.',
-      confirmLabel: 'Reset PIN',
-      destructive: true,
-      onConfirm: () => {
-        resetStaffPin(staffId);
-        setStaffPin('');
-        setStaffPinConfirm('');
-        setPinEditable(true);
-        alert({
-          tone: 'success',
-          title: 'PIN reset',
-          message: `${fullName}’s fallback PIN has been cleared.`,
-        });
-      },
-    });
-  };
-
-  const handleBack = () => {
-    if (step > 1) {
-      setStep(1);
-    } else {
-      navigation.goBack();
-    }
-  };
-
-  if (loading) {
+  if (saving) {
     return (
       <Screen>
         <View style={styles.loading}>
@@ -475,7 +369,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 keyboardType="number-pad"
                 maxLength={6}
                 secureTextEntry
-                editable={pinEditable}
                 error={errors.pin}
                 hint="Used only when face recognition is ambiguous."
               />
@@ -490,110 +383,33 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 keyboardType="number-pad"
                 maxLength={6}
                 secureTextEntry
-                editable={pinEditable}
                 error={errors.pinConfirm}
               />
               <AppButton
                 title="Next"
-                  onPress={async () => {
-                    const basicOk = validateBasic();
-                    const pinOk = validatePin();
-                    if (!basicOk || !pinOk) return;
-                    setPinCheckBusy(true);
-                    try {
-                      const taken = await isStaffPinTaken(
-                        staffPin,
-                        isEditing ? staffId : undefined,
-                      );
-                      if (taken) {
-                        setErrors((prev) => ({
-                          ...prev,
-                          pin:
-                            'This PIN is already assigned to another staff member. Please choose a different PIN.',
-                        }));
-                        return;
-                      }
-                      setStep(2);
-                    } finally {
-                      setPinCheckBusy(false);
+                onPress={async () => {
+                  const basicOk = validateBasic();
+                  const pinOk = validatePin();
+                  if (!basicOk || !pinOk) return;
+                  setPinCheckBusy(true);
+                  try {
+                    const taken = await isStaffPinTaken(staffPin);
+                    if (taken) {
+                      setErrors((prev) => ({
+                        ...prev,
+                        pin:
+                          'This PIN is already assigned to another staff member. Please choose a different PIN.',
+                      }));
+                      return;
                     }
-                  }}
-                  size="lg"
-                  disabled={pinCheckBusy}
-                />
-              {isEditing && (
-                <>
-                  <AppButton
-                    title="Save changes"
-                    onPress={async () => {
-                      const basicOk = validateBasic();
-                      if (!basicOk) return;
-                      setSaving(true);
-                      try {
-                        const normalizedCode = normalizeCode(staffCode);
-                        const existingCode =
-                          getStaffById(staffId)?.staffCode ?? '';
-                        updateStaff(staffId, {
-                          fullName,
-                          staffCode: normalizedCode || existingCode,
-                          photoUri,
-                          faceSignature,
-                        });
-                        alert({
-                          tone: 'success',
-                          title: 'Staff updated',
-                          message: `${fullName}'s details have been saved.`,
-                        });
-                        navigation.goBack();
-                      } catch (error) {
-                        alert({
-                          tone: 'danger',
-                          title: 'Could not save staff member',
-                          message:
-                            error instanceof Error
-                              ? error.message
-                              : 'Please try again.',
-                        });
-                      } finally {
-                        setSaving(false);
-                      }
-                    }}
-                    size="lg"
-                    disabled={saving}
-                  />
-                  <Card style={[styles.statusCard, { marginTop: spacing.lg }]}>
-                  <View style={styles.statusRow}>
-                    <View style={styles.statusText}>
-                      <Text style={styles.statusTitle}>
-                        {isActive ? 'Active staff member' : 'Deactivated'}
-                      </Text>
-                      <Text style={styles.statusHint}>
-                        {isActive
-                          ? 'Visible on the kiosk and included in reports.'
-                          : 'Hidden from the kiosk. Attendance history is preserved.'}
-                      </Text>
-                    </View>
-                    <AppButton
-                      title={isActive ? 'Deactivate' : 'Reactivate'}
-                      onPress={toggleActive}
-                      variant={isActive ? 'danger' : 'success'}
-                      size="sm"
-                      fullWidth={false}
-                    />
-                  </View>
-                  <AppButton
-                    title="Reset fallback PIN"
-                    variant="ghost"
-                    size="sm"
-                    fullWidth={false}
-                    onPress={handleResetPin}
-                    icon={
-                      <Ionicons name="key-outline" size={18} color={colors.danger} />
-                    }
-                  />
-                </Card>
-                </>
-              )}
+                    setStep(2);
+                  } finally {
+                    setPinCheckBusy(false);
+                  }
+                }}
+                size="lg"
+                disabled={pinCheckBusy}
+              />
             </Card>
           ) : null}
 
@@ -724,21 +540,28 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
               </Text>
 
               <AppButton
-                title={isEditing ? 'Save changes' : 'Register staff member'}
-                  onPress={() => void handleSave()}
-                  loading={saving}
-                  size="sm"
-                  fullWidth={false}
-                  disabled={
-                    !photoUri || !faceSignature || !!duplicateFaceStaff || pinCheckBusy
-                  }
-                />
+                title="Register staff member"
+                onPress={() => void handleSave()}
+                loading={saving}
+                size="sm"
+                fullWidth={false}
+                disabled={
+                  !photoUri || !faceSignature || !!duplicateFaceStaff || pinCheckBusy
+                }
+              />
             </Card>
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
   );
+}
+
+function normalizeCode(value: string): string {
+  return value
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, STAFF_CODE_MAX_LENGTH);
 }
 
 const styles = StyleSheet.create({
@@ -760,20 +583,6 @@ const styles = StyleSheet.create({
   },
   cardHint: {
     marginTop: spacing.xs,
-    fontSize: fontSize.xs,
-    color: colors.slate500,
-    lineHeight: 18,
-  },
-  statusCard: { marginTop: spacing.lg },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  statusText: { flex: 1 },
-  statusTitle: {
-    fontSize: fontSize.md,
-    fontWeight: '700',
-    color: colors.slate800,
-  },
-  statusHint: {
-    marginTop: 2,
     fontSize: fontSize.xs,
     color: colors.slate500,
     lineHeight: 18,
@@ -829,12 +638,6 @@ const styles = StyleSheet.create({
     color: colors.danger,
     textAlign: 'center',
   },
-  stepNav: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: spacing.lg,
-    gap: spacing.sm,
-  },
   note: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -846,8 +649,5 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.slate500,
     lineHeight: 18,
-  },
-  headerBack: {
-    paddingHorizontal: spacing.sm,
   },
 });

@@ -12,7 +12,8 @@ export type RootStackParamList = {
   Kiosk: undefined;
   AdminDashboard: undefined;
   StaffList: undefined;
-  RegisterStaff: { staffId?: number } | undefined;
+  RegisterStaff: undefined;
+  StaffProfile: { staffId: number } | undefined;
   ScheduleSettings: undefined;
   AttendanceHistory: { filter?: AttendanceFilter } | undefined;
   ExportReports: undefined;

@@ -143,7 +143,7 @@ export function AdminDashboardScreen() {
                 }
                 detail="No clock-in recorded"
                 onPress={() =>
-                  navigation.navigate('RegisterStaff', {
+                  navigation.navigate('StaffProfile', {
                     staffId: record.staff.id,
                   })
                 }

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
@@ -51,6 +52,7 @@ export function FaceScanPanel({
   const [phase, setPhase] = useState<ScanPhase>('idle');
   const [stepIndex, setStepIndex] = useState(0);
   const [hint, setHint] = useState<string | null>(null);
+  const [cameraKey, setCameraKey] = useState(0);
 
   // Continuous scan-line animation across the camera frame.
   const scanProgress = useRef(new Animated.Value(0)).current;
@@ -72,6 +74,29 @@ export function FaceScanPanel({
   });
 
   const scanning = phase !== 'idle';
+
+  // Always release the torch when the component unmounts or scanning stops.
+  // The CameraView receives enableTorch={scanning}, so when scanning ends the
+  // torch is turned off. On unmount we reset phase so a remount starts fresh.
+  useEffect(() => {
+    return () => {
+      setPhase('idle');
+    };
+  }, [scanning]);
+
+  // When returning to the kiosk terminal (e.g. via the padlock), reset the
+  // camera state and remount the CameraView so the preview comes back bright
+  // instead of black. Forcing a remount re-applies enableTorch from scratch.
+  useFocusEffect(
+    useCallback(() => {
+      setPhase('idle');
+      setStepIndex(0);
+      setHint(null);
+      setCameraError(null);
+      setReady(false);
+      setCameraKey((k) => k + 1);
+    }, []),
+  );
 
   const handleScan = async () => {
     if (busy || scanning || !ready || !cameraRef.current) return;
@@ -202,6 +227,7 @@ export function FaceScanPanel({
     <View style={styles.wrap}>
       <View style={styles.cameraFrame}>
         <CameraView
+          key={cameraKey}
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
           facing="front"

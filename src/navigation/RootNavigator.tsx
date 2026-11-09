@@ -14,6 +14,7 @@ import { ExportReportsScreen } from '../screens/admin/ExportReportsScreen';
 import { RegisterStaffScreen } from '../screens/admin/RegisterStaffScreen';
 import { ScheduleSettingsScreen } from '../screens/admin/ScheduleSettingsScreen';
 import { StaffListScreen } from '../screens/admin/StaffListScreen';
+import { StaffProfileScreen } from '../screens/admin/StaffProfileScreen';
 import { KioskTerminalScreen } from '../screens/kiosk/KioskTerminalScreen';
 import { colors } from '../theme';
 import type { RootStackParamList } from './types';
@@ -132,7 +133,12 @@ export function RootNavigator() {
         <Stack.Screen
           name="RegisterStaff"
           component={RegisterStaffScreen}
-          options={{ title: 'Staff member' }}
+          options={{ title: 'Register staff', animation: 'none', headerLeft: () => null }}
+        />
+        <Stack.Screen
+          name="StaffProfile"
+          component={StaffProfileScreen}
+          options={{ title: 'Profile', animation: 'none' }}
         />
         <Stack.Screen
           name="ScheduleSettings"
