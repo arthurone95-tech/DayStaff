@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Alert } from 'react-native';
 import { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -29,10 +30,6 @@ import {
 } from '../../database/queries';
 import type { RootStackParamList } from '../../navigation/types';
 import type { Staff } from '../../types';
-import {
-  findDuplicateFace,
-} from '../../services/faceRecognitionService';
-import { isStaffPinTaken } from '../../services/staffPinService';
 import { colors, fontSize, radius, shadow, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StaffProfile'>;
@@ -48,7 +45,6 @@ export function StaffProfileScreen({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pinCheckBusy, setPinCheckBusy] = useState(false);
 
   // Editable fields
   const [fullName, setFullName] = useState('');
@@ -74,11 +70,10 @@ export function StaffProfileScreen({
     setLoading(false);
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!staff || !staffId) return;
 
-    const basicOk = !!fullName.trim();
-    if (!basicOk) {
+    if (!fullName.trim()) {
       alert({
         tone: 'warning',
         title: 'Name required',
@@ -87,31 +82,42 @@ export function StaffProfileScreen({
       return;
     }
 
-    setSaving(true);
-    try {
-      const normalizedCode = staffCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      updateStaff(staffId, {
-        fullName: fullName.trim(),
-        staffCode: normalizedCode || undefined,
-        photoUri: staff.photoUri,
-        faceSignature: staff.faceSignature,
-      });
-      setStaff(getStaffById(staffId) ?? null);
-      setEditing(false);
-      alert({
-        tone: 'success',
-        title: 'Staff updated',
-        message: `${fullName.trim()}'s details have been saved.`,
-      });
-    } catch (error) {
-      alert({
-        tone: 'danger',
-        title: 'Could not save staff member',
-        message: error instanceof Error ? error.message : 'Please try again.',
-      });
-    } finally {
-      setSaving(false);
-    }
+    confirm({
+      tone: 'success',
+      icon: 'checkmark-circle',
+      title: 'Save changes?',
+      message:
+        'This will save the updated staff details. Continue?',
+      confirmLabel: 'Save',
+      cancelLabel: 'Cancel',
+      onConfirm: async () => {
+        setSaving(true);
+        try {
+          const normalizedCode = staffCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+          updateStaff(staffId, {
+            fullName: fullName.trim(),
+            staffCode: normalizedCode || undefined,
+            photoUri: staff.photoUri,
+            faceSignature: staff.faceSignature,
+          });
+          setStaff(getStaffById(staffId) ?? null);
+          setEditing(false);
+          alert({
+            tone: 'success',
+            title: 'Staff updated',
+            message: `${fullName.trim()}'s details have been saved.`,
+          });
+        } catch (error) {
+          alert({
+            tone: 'danger',
+            title: 'Could not save staff member',
+            message: error instanceof Error ? error.message : 'Please try again.',
+          });
+        } finally {
+          setSaving(false);
+        }
+      },
+    });
   };
 
   const handleResetPin = () => {
@@ -123,6 +129,7 @@ export function StaffProfileScreen({
       message:
         'This will remove this staff member’s fallback PIN. They will need to set a new PIN the next time they edit their profile.',
       confirmLabel: 'Reset PIN',
+      cancelLabel: 'Cancel',
       destructive: true,
       onConfirm: () => {
         resetStaffPin(staffId);
@@ -149,6 +156,7 @@ export function StaffProfileScreen({
         ? 'They will appear on the kiosk again.'
         : 'They will be hidden from the kiosk. Existing attendance records are kept.',
       confirmLabel: nextActive ? 'Reactivate' : 'Deactivate',
+      cancelLabel: 'Cancel',
       destructive: !nextActive,
       onConfirm: () => {
         setStaffActive(staffId, nextActive);
@@ -199,93 +207,62 @@ export function StaffProfileScreen({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {/* ===== HEADER SECTION ===== */}
           <View style={styles.headerSection}>
             <Avatar
               name={staff.fullName}
               photoUri={staff.photoUri}
               size={88}
             />
-            <View style={styles.headerText}>
-              <Text style={styles.profileName}>
+            <View style={styles.headerContent}>
+              <View style={styles.nameRow}>
                 {editing ? (
-                  <TextField
-                    label="Full name"
-                    value={fullName}
-                    onChangeText={setFullName}
-                    autoCapitalize="words"
-                    maxLength={80}
-                  />
+                  <View style={styles.nameInputWrap}>
+                    <TextField
+                      label="Full name"
+                      value={fullName}
+                      onChangeText={setFullName}
+                      autoCapitalize="words"
+                      maxLength={80}
+                    />
+                  </View>
                 ) : (
-                  staff.fullName
+                  <Text style={styles.profileName}>{staff.fullName}</Text>
                 )}
-              </Text>
+              </View>
+              <View style={styles.statusBadgeWrap}>
+                <Badge
+                  label={isActive ? 'Active' : 'Inactive'}
+                  tone={isActive ? 'success' : 'neutral'}
+                />
+              </View>
               <Text style={styles.profileCode}>
                 {staff.staffCode ? `#${staff.staffCode}` : 'No staff code'}
               </Text>
-              <Badge
-                label={isActive ? 'Active' : 'Inactive'}
-                tone={isActive ? 'success' : 'neutral'}
-              />
             </View>
           </View>
 
+          {/* ===== INFO SECTION ===== */}
           <View style={styles.infoSection}>
             <Text style={styles.sectionTitle}>Staff profile</Text>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Face profile</Text>
-              <Text style={styles.infoValue}>
-                {staff.faceSignature ? 'Enrolled' : 'Not enrolled'}
-              </Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Fallback PIN</Text>
-              <Text style={styles.infoValue}>
-                {staff.staffPinHash ? 'Set' : 'Not set'}
-              </Text>
+            <View style={styles.infoCard}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Face profile</Text>
+                <Text style={styles.infoValue}>
+                  {staff.faceSignature ? 'Enrolled' : 'Not enrolled'}
+                </Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Fallback PIN</Text>
+                <Text style={styles.infoValue}>
+                  {staff.staffPinHash ? 'Set' : 'Not set'}
+                </Text>
+              </View>
             </View>
           </View>
 
-          {editing ? (
-            <>
-              <View style={styles.formSection}>
-                <TextField
-                  label="Staff code"
-                  value={staffCode}
-                  onChangeText={setStaffCode}
-                  autoCapitalize="characters"
-                  maxLength={20}
-                  error={undefined}
-                />
-                <View style={styles.pinSection}>
-                  <Text style={styles.pinLabel}>Fallback PIN (6 digits)</Text>
-                  <Text style={styles.pinHint}>
-                    Used only when face recognition is ambiguous.
-                  </Text>
-                  <AppButton
-                    title="Reset fallback PIN"
-                    variant="ghost"
-                    size="sm"
-                    fullWidth={false}
-                    onPress={handleResetPin}
-                    icon={
-                      <Ionicons
-                        name="key-outline"
-                        size={18}
-                        color={colors.danger}
-                      />
-                    }
-                  />
-                </View>
-                <AppButton
-                  title="Save changes"
-                  onPress={handleSave}
-                  loading={saving}
-                  size="lg"
-                  disabled={!hasChanges || saving || pinCheckBusy}
-                />
-              </View>
-            </>
-          ) : (
+          {/* ===== ACTIONS SECTION (view mode) ===== */}
+          {!editing && (
             <View style={styles.actionsSection}>
               <AppButton
                 title={isActive ? 'Deactivate' : 'Reactivate'}
@@ -304,28 +281,67 @@ export function StaffProfileScreen({
                   <Ionicons name="key-outline" size={18} color={colors.danger} />
                 }
               />
+              <AppButton
+                title="Edit profile"
+                onPress={() => setEditing(true)}
+                size="sm"
+                fullWidth={false}
+              />
             </View>
           )}
 
-          {editing ? (
-            <AppButton
-              title="Cancel"
-              onPress={() => {
-                if (!staffId) return;
-                loadStaff(staffId);
-                setEditing(false);
-              }}
-              variant="ghost"
-              size="sm"
-              fullWidth={false}
-            />
-          ) : (
-            <AppButton
-              title="Edit profile"
-              onPress={() => setEditing(true)}
-              size="sm"
-              fullWidth={false}
-            />
+          {/* ===== EDIT SECTION (edit mode) ===== */}
+          {editing && (
+            <View style={styles.editSection}>
+              <View style={styles.editCard}>
+                <View style={styles.editRow}>
+                  <TextField
+                    label="Staff code"
+                    value={staffCode}
+                    onChangeText={setStaffCode}
+                    autoCapitalize="characters"
+                    maxLength={20}
+                  />
+                </View>
+                <View style={styles.resetPinRow}>
+                  <AppButton
+                    title="Reset fallback PIN"
+                    variant="ghost"
+                    size="sm"
+                    fullWidth={false}
+                    onPress={handleResetPin}
+                    icon={
+                      <Ionicons
+                        name="key-outline"
+                        size={18}
+                        color={colors.danger}
+                      />
+                    }
+                  />
+                </View>
+                <View style={styles.saveCancelRow}>
+                  <AppButton
+                    title="Cancel"
+                    onPress={() => {
+                      if (!staffId) return;
+                      loadStaff(staffId);
+                      setEditing(false);
+                    }}
+                    variant="ghost"
+                    size="sm"
+                    fullWidth={false}
+                  />
+                  <AppButton
+                    title="Save changes"
+                    onPress={handleSave}
+                    loading={saving}
+                    size="sm"
+                    fullWidth={false}
+                    disabled={!hasChanges || saving}
+                  />
+                </View>
+              </View>
+            </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -340,17 +356,33 @@ const styles = StyleSheet.create({
   headerSection: {
     alignItems: 'center',
     marginTop: spacing.lg,
+    paddingHorizontal: spacing.lg,
   },
-  headerText: {
+  headerContent: {
     alignItems: 'center',
     marginTop: spacing.md,
-    gap: spacing.xs,
+    width: '100%',
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: spacing.xs,
   },
   profileName: {
     fontSize: fontSize.xl,
     fontWeight: '800',
     color: colors.slate900,
     textAlign: 'center',
+  },
+  nameInputWrap: {
+    width: 240,
+  },
+  statusBadgeWrap: {
+    position: 'absolute',
+    right: spacing.md,
+    top: spacing.md,
   },
   profileCode: {
     fontSize: fontSize.sm,
@@ -369,6 +401,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: spacing.md,
   },
+  infoCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    ...shadow.card,
+  },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -385,28 +425,35 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.slate900,
   },
-  formSection: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.xl,
-  },
-  pinSection: {
-    marginTop: spacing.lg,
-  },
-  pinLabel: {
-    fontSize: fontSize.md,
-    fontWeight: '700',
-    color: colors.slate800,
-    marginBottom: spacing.xs,
-  },
-  pinHint: {
-    fontSize: fontSize.xs,
-    color: colors.slate500,
-    marginBottom: spacing.sm,
-  },
   actionsSection: {
     marginHorizontal: spacing.lg,
     marginTop: spacing.xl,
     flexDirection: 'row',
     gap: spacing.md,
+    justifyContent: 'center',
+  },
+  editSection: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.xl,
+  },
+  editCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    ...shadow.card,
+  },
+  editRow: {
+    marginBottom: spacing.lg,
+  },
+  resetPinRow: {
+    marginBottom: spacing.lg,
+    alignItems: 'flex-end',
+  },
+  saveCancelRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'flex-end',
   },
 });
