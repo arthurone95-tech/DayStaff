@@ -493,16 +493,8 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 editable={pinEditable}
                 error={errors.pinConfirm}
               />
-              <View style={styles.stepNav}>
-                <AppButton
-                  title="Back"
-                  onPress={handleBack}
-                  variant="ghost"
-                  size="sm"
-                  fullWidth={false}
-                />
-                <AppButton
-                  title="Next"
+              <AppButton
+                title="Next"
                   onPress={async () => {
                     const basicOk = validateBasic();
                     const pinOk = validatePin();
@@ -529,7 +521,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                   size="lg"
                   disabled={pinCheckBusy}
                 />
-              </View>
               {isEditing && (
                 <>
                   <AppButton
@@ -652,33 +643,24 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                   fullWidth={false}
                 />
               </View>
-              <View style={styles.stepNav}>
-                <AppButton
-                  title="Back"
-                  onPress={() => setStep(1)}
-                  variant="ghost"
-                  size="sm"
-                  fullWidth={false}
-                />
-                <AppButton
-                  title="Next"
-                  onPress={() => {
-                    if (!photoUri) {
-                      alert({
-                        tone: 'warning',
-                        title: 'Photo required',
-                        message:
-                          'Add a profile photo (take one or pick from the library).',
-                      });
-                      return;
-                    }
-                    setStep(3);
-                  }}
-                  size="sm"
-                  fullWidth={false}
-                  disabled={!photoUri}
-                />
-              </View>
+              <AppButton
+                title="Next"
+                onPress={() => {
+                  if (!photoUri) {
+                    alert({
+                      tone: 'warning',
+                      title: 'Photo required',
+                      message:
+                        'Add a profile photo (take one or pick from the library).',
+                    });
+                    return;
+                  }
+                  setStep(3);
+                }}
+                size="sm"
+                fullWidth={false}
+                disabled={!photoUri}
+              />
               <View style={styles.note}>
                 <Ionicons name="scan-outline" size={16} color={colors.slate500} />
                 <Text style={styles.noteText}>
@@ -741,16 +723,8 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                 for display, the scan is what the kiosk matches against.
               </Text>
 
-              <View style={styles.stepNav}>
-                <AppButton
-                  title="Back"
-                  onPress={() => setStep(2)}
-                  variant="ghost"
-                  size="sm"
-                  fullWidth={false}
-                />
-                <AppButton
-                  title={isEditing ? 'Save changes' : 'Register staff member'}
+              <AppButton
+                title={isEditing ? 'Save changes' : 'Register staff member'}
                   onPress={() => void handleSave()}
                   loading={saving}
                   size="sm"
@@ -759,7 +733,6 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                     !photoUri || !faceSignature || !!duplicateFaceStaff || pinCheckBusy
                   }
                 />
-              </View>
             </Card>
           ) : null}
         </ScrollView>
