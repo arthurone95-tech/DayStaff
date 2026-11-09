@@ -4,7 +4,6 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  Alert,
   Animated,
   Easing,
   FlatList,
@@ -19,6 +18,7 @@ import {
 } from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
+import { useAppDialog } from '../../components/AppDialog';
 import { AuthMethodPicker } from '../../components/AuthMethodPicker';
 import { Card } from '../../components/Card';
 import { PinInput } from '../../components/PinInput';
@@ -331,6 +331,7 @@ interface AdminSetupScreenProps {
 
 export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
   const scrollRef = useRef<ComponentRef<typeof ScrollView> | null>(null);
+  const { alert } = useAppDialog();
 
   const [step, setStep] = useState(0);
   const [companyName, setCompanyNameState] = useState('');
@@ -435,12 +436,14 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
       setSetting(SETUP_COMPLETED_SETTING, new Date().toISOString());
       onComplete();
     } catch (setupError) {
-      Alert.alert(
-        'Setup could not be completed',
-        setupError instanceof Error
-          ? setupError.message
-          : 'Please check the details and try again.',
-      );
+      alert({
+        tone: 'danger',
+        title: 'Setup could not be completed',
+        message:
+          setupError instanceof Error
+            ? setupError.message
+            : 'Please check the details and try again.',
+      });
     } finally {
       setSaving(false);
     }

@@ -10,6 +10,9 @@ import { NativeModules, Platform } from 'react-native';
 
 const { KioskLockTask } = NativeModules;
 
+/** Tracks whether OS-level kiosk lock is currently active. */
+let kioskActive = false;
+
 /**
  * Enables Android lock task mode (kiosk lock). Requires a production/development
  * build with the withKioskLockTask config plugin applied.
@@ -32,6 +35,7 @@ export async function enableKiosk(): Promise<void> {
     throw new Error('Kiosk lock task native module is not available.');
   }
   await KioskLockTask.enableKiosk();
+  kioskActive = true;
 }
 
 /**
@@ -54,6 +58,39 @@ export async function disableKiosk(): Promise<void> {
     throw new Error('Kiosk lock task native module is not available.');
   }
   await KioskLockTask.disableKiosk();
+  kioskActive = false;
+}
+
+/**
+ * Temporarily leaves Android lock task mode so an external system activity
+ * (for example the system photo picker) can hand its result back to the app.
+ *
+ * @returns true when lock task mode was active and has been suspended.
+ */
+export async function suspendKioskLock(): Promise<boolean> {
+  if (!isKioskLockTaskAvailable()) {
+    return false;
+  }
+  try {
+    await disableKiosk();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Restores lock task mode after a successful `suspendKioskLock` call.
+ */
+export async function resumeKioskLock(wasSuspended: boolean): Promise<void> {
+  if (!wasSuspended) {
+    return;
+  }
+  try {
+    await enableKiosk();
+  } catch {
+    // Best effort. The kiosk screen will try again when it regains focus.
+  }
 }
 
 /**
@@ -61,4 +98,11 @@ export async function disableKiosk(): Promise<void> {
  */
 export function isKioskLockTaskAvailable(): boolean {
   return Platform.OS === 'android' && Boolean(KioskLockTask);
+}
+
+/**
+ * Whether OS-level kiosk lock is currently active (best-effort, in-memory).
+ */
+export function isKioskLockActive(): boolean {
+  return kioskActive;
 }

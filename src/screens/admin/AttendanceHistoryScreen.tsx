@@ -1,17 +1,19 @@
-import { useCallback, useMemo, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import {
-  Alert,
   FlatList,
   Modal,
   Pressable,
+  ScrollView,
+  ScrollViewInstance,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
 import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
+import { useAppDialog } from '../../components/AppDialog';
 import { AppButton } from '../../components/AppButton';
 import { Avatar } from '../../components/Avatar';
 import { Badge, type BadgeTone } from '../../components/Badge';
@@ -24,7 +26,7 @@ import {
   type AttendanceWithStaffRow,
 } from '../../database/queries';
 import { exportAttendanceReportForDate } from '../../services/exportService';
-import type { RootNavigation } from '../../navigation/types';
+import type { AttendanceFilter, RootNavigation } from '../../navigation/types';
 import { colors, fontSize, radius, spacing } from '../../theme';
 import {
   addDaysToKey,
@@ -35,7 +37,6 @@ import {
   parseDateKey,
   toDateKey,
   todayKey,
-  yesterdayKey,
 } from '../../utils/date';
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -48,15 +49,18 @@ function QuickChip({
   active = false,
   icon,
   onPress,
+  onLayout,
 }: {
   label: string;
   active?: boolean;
   icon?: ComponentProps<typeof Ionicons>['name'];
   onPress: () => void;
+  onLayout?: (e: any) => void;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      onLayout={onLayout}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       style={({ pressed }) => [
@@ -186,8 +190,11 @@ function AttendanceRecordRow({ record }: { record: AttendanceWithStaffRow }) {
 
 export function AttendanceHistoryScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const route = useRoute();
+  const routeFilter = (route.params as { filter?: AttendanceFilter } | undefined)
+    ?.filter;
+  const { alert } = useAppDialog();
   const today = todayKey();
-  const yesterday = yesterdayKey();
 
   const [selectedDateKey, setSelectedDateKey] = useState(today);
   const [records, setRecords] = useState<AttendanceWithStaffRow[]>([]);
@@ -202,6 +209,49 @@ export function AttendanceHistoryScreen() {
   const [exportVisible, setExportVisible] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('xlsx');
   const [exporting, setExporting] = useState(false);
+  const [filter, setFilter] = useState<AttendanceFilter>(routeFilter ?? 'all');
+  const scrollRef = useRef<ScrollViewInstance | null>(null);
+  const [chipWidths, setChipWidths] = useState<number[]>([]);
+
+  const FILTER_ORDER: AttendanceFilter[] = [
+    'all',
+    'present',
+    'late',
+    'clockedOut',
+    'earlyExit',
+    'absent',
+  ];
+
+  const chipOffsets = useMemo(() => {
+    const offsets: number[] = [];
+    let acc = 0;
+    for (const width of chipWidths) {
+      offsets.push(acc);
+      acc += width + spacing.sm;
+    }
+    return offsets;
+  }, [chipWidths]);
+
+  const handleChipLayout = useCallback(
+    (index: number) => (e: any) => {
+      setChipWidths((prev) => {
+        const next = [...prev];
+        next[index] = e.nativeEvent.layout.width;
+        return next;
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const activeIndex = FILTER_ORDER.indexOf(filter);
+    if (activeIndex >= 0 && scrollRef.current) {
+      scrollRef.current.scrollTo({
+        x: chipOffsets[activeIndex],
+        animated: true,
+      });
+    }
+  }, [filter, chipOffsets]);
 
   useFocusEffect(
     useCallback(() => {
@@ -283,25 +333,83 @@ export function AttendanceHistoryScreen() {
       });
       setExportVisible(false);
       const noun = result.rowCount === 1 ? 'record' : 'records';
-      Alert.alert(
-        'Report ready',
-        `${result.rowCount} ${noun} included.\n\n${
+      alert({
+        tone: 'success',
+        title: 'Report ready',
+        message: `${result.rowCount} ${noun} included.\n\n${
           result.shared
             ? 'The native share sheet is open — send it via WhatsApp, email or Files.'
             : `Sharing is unavailable, so the file was saved to:\n${result.uri}`
         }`,
-      );
+        buttonLabel: 'Done',
+      });
     } catch (error) {
-      Alert.alert(
-        'Export failed',
-        error instanceof Error ? error.message : 'Please try again.',
-      );
+      alert({
+        tone: 'danger',
+        title: 'Export failed',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
     } finally {
       setExporting(false);
     }
   };
 
+  const matchesFilter = (record: AttendanceWithStaffRow): boolean => {
+    const log = record.log;
+    switch (filter) {
+      case 'all':
+        return true;
+      case 'present':
+        return !!log && log.clockInStatus === 'on_time';
+      case 'late':
+        return !!log && log.clockInStatus === 'late';
+      case 'clockedOut':
+        return !!log && !!log.clockOutTime;
+      case 'earlyExit':
+        return !!log && !!log.clockOutTime && log.clockOutStatus === 'early';
+      case 'absent':
+        return !log;
+      default:
+        return true;
+    }
+  };
+
+  const filteredRecords = useMemo(
+    () => records.filter(matchesFilter),
+    [records, filter],
+  );
+
+  const filterCounts = useMemo(() => {
+    const counts: Record<AttendanceFilter, number> = {
+      all: records.length,
+      present: 0,
+      late: 0,
+      clockedOut: 0,
+      earlyExit: 0,
+      absent: 0,
+    };
+    for (const record of records) {
+      const log = record.log;
+      if (!log) {
+        counts.absent += 1;
+      } else {
+        if (log.clockInStatus === 'on_time') counts.present += 1;
+        if (log.clockInStatus === 'late') counts.late += 1;
+        if (log.clockOutTime) counts.clockedOut += 1;
+        if (log.clockOutTime && log.clockOutStatus === 'early')
+          counts.earlyExit += 1;
+      }
+    }
+    return counts;
+  }, [records]);
+
   const summary = formatStatusSummary(records);
+
+  useEffect(() => {
+    if (routeFilter) {
+      setFilter(routeFilter);
+    }
+  }, [routeFilter]);
 
   return (
     <Screen>
@@ -382,25 +490,35 @@ export function AttendanceHistoryScreen() {
               />
             </Pressable>
           </View>
-
-          <View style={styles.quickRow}>
-            <QuickChip
-              label="Today"
-              active={selectedDateKey === today}
-              onPress={() => selectDate(today)}
-            />
-            <QuickChip
-              label="Yesterday"
-              active={selectedDateKey === yesterday}
-              onPress={() => selectDate(yesterday)}
-            />
-            <QuickChip
-              label="Pick date"
-              icon="calendar-outline"
-              onPress={openCalendar}
-            />
-          </View>
         </Card>
+      </View>
+
+      <View style={styles.filterRow}>
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterContent}
+        >
+          {(
+            [
+              { key: 'all', label: 'All' },
+              { key: 'present', label: 'Present' },
+              { key: 'late', label: 'Late' },
+              { key: 'clockedOut', label: 'Clocked out' },
+              { key: 'earlyExit', label: 'Early exit' },
+              { key: 'absent', label: 'Absent' },
+            ] as { key: AttendanceFilter; label: string }[]
+          ).map((item, index) => (
+            <QuickChip
+              key={item.key}
+              label={`${item.label} (${filterCounts[item.key]})`}
+              active={filter === item.key}
+              onPress={() => setFilter(item.key)}
+              onLayout={handleChipLayout(index)}
+            />
+          ))}
+        </ScrollView>
       </View>
 
       {records.length === 0 ? (
@@ -410,15 +528,23 @@ export function AttendanceHistoryScreen() {
             title="No attendance records found"
             message={`No staff clocked in on ${formatDateMedium(
               selectedDateKey,
-            )}. Try another date.`}
-            actionLabel="Pick another date"
-            onAction={openCalendar}
+            )}. Use the date bar above to pick another day.`}
+          />
+        </Card>
+      ) : filteredRecords.length === 0 ? (
+        <Card padded={false} style={[styles.listCard, styles.emptyCard]}>
+          <EmptyState
+            icon="filter-outline"
+            title="No records match"
+            message={`No ${filter} records for ${formatDateMedium(
+              selectedDateKey,
+            )}.`}
           />
         </Card>
       ) : (
         <Card padded={false} style={styles.listCard}>
           <FlatList
-            data={records}
+            data={filteredRecords}
             keyExtractor={(item) => String(item.log.id)}
             renderItem={({ item }) => <AttendanceRecordRow record={item} />}
             style={styles.list}
@@ -835,12 +961,6 @@ const styles = StyleSheet.create({
     color: colors.slate500,
     textAlign: 'center',
   },
-  quickRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -866,6 +986,14 @@ const styles = StyleSheet.create({
   },
   chipLabelActive: {
     color: colors.white,
+  },
+  filterRow: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  filterContent: {
+    gap: spacing.sm,
+    paddingRight: spacing.lg,
   },
   listCard: {
     flex: 1,

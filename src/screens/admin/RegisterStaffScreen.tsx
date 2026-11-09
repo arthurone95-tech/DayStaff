@@ -4,7 +4,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -14,6 +13,7 @@ import {
 } from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
+import { useAppDialog } from '../../components/AppDialog';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
 import { Screen } from '../../components/Screen';
@@ -62,11 +62,17 @@ function normalizeCode(value: string): string {
 export function RegisterStaffScreen({ route, navigation }: Props) {
   const staffId = route.params?.staffId;
   const isEditing = typeof staffId === 'number';
+  const { alert, confirm } = useAppDialog();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [fullName, setFullName] = useState('');
   const [staffCode, setStaffCode] = useState('');
-  const [errors, setErrors] = useState<{ name?: string; code?: string }>({});
+  const [errors, setErrors] = useState<{
+    name?: string;
+    code?: string;
+    pin?: string;
+    pinConfirm?: string;
+  }>({});
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [faceSignature, setFaceSignature] = useState<string | null>(null);
@@ -111,7 +117,37 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
     if (normalizedCode && isStaffCodeTaken(normalizedCode, staffId)) {
       next.code = 'That code is already assigned to another staff member.';
     }
-    setErrors(next);
+    setErrors((prev) => ({
+      ...prev,
+      name: next.name,
+      code: next.code,
+    }));
+    return Object.keys(next).length === 0;
+  };
+
+  const validatePin = (): boolean => {
+    const next: { pin?: string; pinConfirm?: string } = {};
+    // New staff must have a PIN. When editing, the PIN is optional, but if
+    // either field is filled both must be valid and must match.
+    if (!isEditing || staffPin || staffPinConfirm) {
+      if (!staffPin) {
+        next.pin = 'Enter a 6-digit PIN.';
+      } else if (!/^\d{6}$/.test(staffPin)) {
+        next.pin = 'PIN must be exactly 6 digits.';
+      }
+
+      if (!staffPinConfirm) {
+        next.pinConfirm = 'Re-enter the PIN to confirm.';
+      } else if (staffPin !== staffPinConfirm) {
+        next.pinConfirm = 'PINs do not match.';
+      }
+    }
+
+    setErrors((prev) => ({
+      ...prev,
+      pin: next.pin,
+      pinConfirm: next.pinConfirm,
+    }));
     return Object.keys(next).length === 0;
   };
 
@@ -124,10 +160,11 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       const uri = await captureStaffPhoto();
       if (uri) setPhotoUri(uri);
     } catch (error) {
-      Alert.alert(
-        'Could not take photo',
-        error instanceof Error ? error.message : 'Please try again.',
-      );
+      alert({
+        tone: 'danger',
+        title: 'Could not take photo',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
     }
   };
 
@@ -136,10 +173,11 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       const uri = await chooseStaffPhoto();
       if (uri) setPhotoUri(uri);
     } catch (error) {
-      Alert.alert(
-        'Could not choose photo',
-        error instanceof Error ? error.message : 'Please try again.',
-      );
+      alert({
+        tone: 'danger',
+        title: 'Could not choose photo',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
     }
   };
 
@@ -191,38 +229,29 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       return;
     }
 
-    // PIN validation.
-    if (!isEditing) {
-      if (!/^\d{6}$/.test(staffPin)) {
-        Alert.alert('PIN required', 'Enter a 6-digit fallback PIN.');
-        return;
-      }
-      if (staffPin !== staffPinConfirm) {
-        Alert.alert('PIN mismatch', 'The PIN and confirmation do not match.');
-        return;
-      }
-    } else if (staffPin || staffPinConfirm) {
-      if (!/^\d{6}$/.test(staffPin)) {
-        Alert.alert('Invalid PIN', 'PIN must be exactly 6 digits.');
-        return;
-      }
-      if (staffPin !== staffPinConfirm) {
-        Alert.alert('PIN mismatch', 'The PIN and confirmation do not match.');
-        return;
-      }
+    // PIN validation. Step 1 already blocks with inline feedback, but re-check
+    // here so a stale/invalid PIN can never reach the save path.
+    if (!validatePin()) {
+      setStep(1);
+      return;
     }
 
     if (!photoUri) {
-      Alert.alert('Profile photo required', 'Add a profile photo before saving.');
+      alert({
+        tone: 'warning',
+        title: 'Profile photo required',
+        message: 'Add a profile photo before saving.',
+      });
       setStep(2);
       return;
     }
 
     if (!faceSignature) {
-      Alert.alert(
-        'Face scan required',
-        'Complete the live face scan before saving.',
-      );
+      alert({
+        tone: 'warning',
+        title: 'Face scan required',
+        message: 'Complete the live face scan before saving.',
+      });
       setStep(3);
       return;
     }
@@ -254,10 +283,11 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
       }
       navigation.goBack();
     } catch (error) {
-      Alert.alert(
-        'Could not save staff member',
-        error instanceof Error ? error.message : 'Please try again.',
-      );
+      alert({
+        tone: 'danger',
+        title: 'Could not save staff member',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
     } finally {
       setSaving(false);
     }
@@ -266,23 +296,22 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
   const toggleActive = () => {
     if (!staffId) return;
     const nextActive = !isActive;
-    Alert.alert(
-      nextActive ? 'Reactivate staff member?' : 'Deactivate staff member?',
-      nextActive
+    confirm({
+      tone: nextActive ? 'question' : 'danger',
+      icon: nextActive ? 'person-add-outline' : 'person-remove-outline',
+      title: nextActive
+        ? 'Reactivate staff member?'
+        : 'Deactivate staff member?',
+      message: nextActive
         ? 'They will appear on the kiosk again.'
         : 'They will be hidden from the kiosk. Existing attendance records are kept.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: nextActive ? 'Reactivate' : 'Deactivate',
-          style: nextActive ? 'default' : 'destructive',
-          onPress: () => {
-            setStaffActive(staffId, nextActive);
-            setIsActive(nextActive);
-          },
-        },
-      ],
-    );
+      confirmLabel: nextActive ? 'Reactivate' : 'Deactivate',
+      destructive: !nextActive,
+      onConfirm: () => {
+        setStaffActive(staffId, nextActive);
+        setIsActive(nextActive);
+      },
+    });
   };
 
   if (loading) {
@@ -342,26 +371,40 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
               <TextField
                 label="Fallback PIN (6 digits)"
                 value={staffPin}
-                onChangeText={setStaffPin}
+                onChangeText={(value) => {
+                  setStaffPin(value.replace(/\D/g, '').slice(0, 6));
+                  setErrors((prev) => ({
+                    ...prev,
+                    pin: undefined,
+                    pinConfirm: undefined,
+                  }));
+                }}
                 placeholder="e.g. 123456"
                 keyboardType="number-pad"
                 maxLength={6}
                 secureTextEntry
+                error={errors.pin}
                 hint="Used only when face recognition is ambiguous."
               />
               <TextField
                 label="Confirm PIN"
                 value={staffPinConfirm}
-                onChangeText={setStaffPinConfirm}
+                onChangeText={(value) => {
+                  setStaffPinConfirm(value.replace(/\D/g, '').slice(0, 6));
+                  setErrors((prev) => ({ ...prev, pinConfirm: undefined }));
+                }}
                 placeholder="e.g. 123456"
                 keyboardType="number-pad"
                 maxLength={6}
                 secureTextEntry
+                error={errors.pinConfirm}
               />
               <AppButton
                 title="Next"
                 onPress={() => {
-                  if (validateBasic()) setStep(2);
+                  const basicOk = validateBasic();
+                  const pinOk = validatePin();
+                  if (basicOk && pinOk) setStep(2);
                 }}
                 size="lg"
               />
@@ -426,10 +469,12 @@ export function RegisterStaffScreen({ route, navigation }: Props) {
                   title="Next"
                   onPress={() => {
                     if (!photoUri) {
-                      Alert.alert(
-                        'Photo required',
-                        'Add a profile photo (take one or pick from the library).',
-                      );
+                      alert({
+                        tone: 'warning',
+                        title: 'Photo required',
+                        message:
+                          'Add a profile photo (take one or pick from the library).',
+                      });
                       return;
                     }
                     setStep(3);

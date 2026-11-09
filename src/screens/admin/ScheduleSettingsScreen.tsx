@@ -1,20 +1,29 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import {
-  Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import DateTimePicker, {
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 
 import { AppButton } from '../../components/AppButton';
+import { useAppDialog } from '../../components/AppDialog';
 import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
 import { Card } from '../../components/Card';
 import { Screen } from '../../components/Screen';
-import { TimeField } from '../../components/TimeField';
+import {
+  TimePickerSheet,
+  TimeRow,
+  timeToDate,
+  dateToTime,
+} from '../../components/TimePickerSheet';
 import {
   DEFAULT_SCHEDULE,
   getSchedule,
@@ -25,6 +34,7 @@ import { colors, fontSize, radius, spacing } from '../../theme';
 
 export function ScheduleSettingsScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const { alert } = useAppDialog();
   const initial = useMemo(() => getSchedule(), []);
 
   const [startTime, setStartTime] = useState(initial.startTime);
@@ -32,6 +42,28 @@ export function ScheduleSettingsScreen() {
   const [grace, setGrace] = useState(initial.lateThresholdMinutes);
   const [saving, setSaving] = useState(false);
 
+  // Time-picker state (mirrors AdminSetupScreen).
+  const [editing, setEditing] = useState<'start' | 'end' | null>(null);
+  const lastEditing = useRef<'start' | 'end'>('start');
+  if (editing) {
+    lastEditing.current = editing;
+  }
+  const shown = editing ?? lastEditing.current;
+  const editingTitle =
+    shown === 'end' ? 'Official closing time' : 'Official start time';
+  const editingValue = shown === 'end' ? endTime : startTime;
+  const setEditingValue = shown === 'end' ? setEndTime : setStartTime;
+
+  const openEditor = (key: 'start' | 'end') => {
+    setEditing(key);
+  };
+
+  const handleAndroidPick = (event: DateTimePickerEvent, date?: Date) => {
+    setEditing(null);
+    if (event.type === 'set' && date) {
+      setEditingValue(dateToTime(date));
+    }
+  };
   const adjustGrace = (delta: number) => {
     setGrace((current) => Math.max(0, Math.min(120, current + delta)));
   };
@@ -44,12 +76,17 @@ export function ScheduleSettingsScreen() {
         endTime,
         lateThresholdMinutes: grace,
       });
-      Alert.alert('Schedule saved', 'The new official hours are now active.');
+      alert({
+        tone: 'success',
+        title: 'Schedule saved',
+        message: 'The new official hours are now active.',
+      });
     } catch (error) {
-      Alert.alert(
-        'Could not save schedule',
-        error instanceof Error ? error.message : 'Please try again.',
-      );
+      alert({
+        tone: 'danger',
+        title: 'Could not save schedule',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
     } finally {
       setSaving(false);
     }
@@ -59,10 +96,12 @@ export function ScheduleSettingsScreen() {
     setStartTime(DEFAULT_SCHEDULE.startTime);
     setEndTime(DEFAULT_SCHEDULE.endTime);
     setGrace(DEFAULT_SCHEDULE.lateThresholdMinutes);
-    Alert.alert(
-      'Fields reset',
-      'The form has been reset to the default hours. Tap Save schedule to apply them.',
-    );
+    alert({
+      tone: 'info',
+      title: 'Fields reset',
+      message:
+        'The form has been reset to the default hours. Tap Save schedule to apply them.',
+    });
   };
 
   return (
@@ -80,15 +119,15 @@ export function ScheduleSettingsScreen() {
           </Text>
 
           <View style={styles.fields}>
-            <TimeField
+            <TimeRow
               label="Official start time"
               value={startTime}
-              onChange={setStartTime}
+              onPress={() => openEditor('start')}
             />
-            <TimeField
+            <TimeRow
               label="Official closing time"
               value={endTime}
-              onChange={setEndTime}
+              onPress={() => openEditor('end')}
             />
           </View>
         </Card>
@@ -98,8 +137,8 @@ export function ScheduleSettingsScreen() {
             <View style={styles.graceText}>
               <Text style={styles.cardTitle}>Grace period</Text>
               <Text style={styles.cardHint}>
-                Minutes of leeway after the start time before a scan counts as
-                late.
+                How many minutes after the official time will a staff member be
+                marked late?
               </Text>
             </View>
             <View style={styles.graceControl}>
@@ -165,6 +204,25 @@ export function ScheduleSettingsScreen() {
           variant="ghost"
         />
       </ScrollView>
+
+      {Platform.OS === 'ios' ? (
+        <TimePickerSheet
+          visible={editing !== null}
+          title={editingTitle}
+          value={editingValue}
+          onChange={setEditingValue}
+          onClose={() => setEditing(null)}
+        />
+      ) : editing ? (
+        <DateTimePicker
+          value={timeToDate(editingValue)}
+          mode="time"
+          is24Hour={false}
+          display="default"
+          onChange={handleAndroidPick}
+        />
+      ) : null}
+
       <AdminBottomTabBar navigation={navigation} active="ScheduleSettings" />
     </Screen>
   );

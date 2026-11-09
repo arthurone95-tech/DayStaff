@@ -10,6 +10,7 @@ import {
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppButton } from './src/components/AppButton';
+import { AppDialogProvider } from './src/components/AppDialog';
 import { getDb } from './src/database/db';
 import { seedDatabase } from './src/database/seed';
 import { RootNavigator } from './src/navigation/RootNavigator';
@@ -48,7 +49,9 @@ export default function App() {
     return (
       <SafeAreaProvider>
         <StatusBar style="dark" />
-        <AdminSetupScreen onComplete={() => setState('ready')} />
+        <AppDialogProvider>
+          <AdminSetupScreen onComplete={() => setState('ready')} />
+        </AppDialogProvider>
       </SafeAreaProvider>
     );
   }
@@ -57,7 +60,9 @@ export default function App() {
     return (
       <SafeAreaProvider>
         <StatusBar style="light" />
-        <RootNavigator />
+        <AppDialogProvider>
+          <RootNavigator />
+        </AppDialogProvider>
       </SafeAreaProvider>
     );
   }

@@ -205,6 +205,7 @@ export function FaceScanPanel({
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
           facing="front"
+          enableTorch={scanning}
           onCameraReady={() => setReady(true)}
           onMountError={(event) =>
             setCameraError(event?.message ?? 'The camera could not start.')
@@ -295,10 +296,6 @@ export function FaceScanPanel({
           style={styles.useCodeButton}
         />
       ) : null}
-
-      <Text style={styles.disclaimer}>
-        Face matching runs entirely on this device.
-      </Text>
     </View>
   );
 }
@@ -471,11 +468,4 @@ const styles = StyleSheet.create({
   },
   scanButton: { marginTop: spacing.md },
   useCodeButton: { marginTop: spacing.xs },
-  disclaimer: {
-    marginTop: spacing.sm,
-    color: colors.kioskMuted,
-    fontSize: fontSize.xs,
-    lineHeight: 16,
-    textAlign: 'center',
-  },
 });

@@ -2,6 +2,9 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
+import { Platform } from 'react-native';
+
+import { resumeKioskLock, suspendKioskLock } from './kioskLockTask';
 
 const STAFF_PHOTO_DIR = `${FileSystem.documentDirectory}staff-photos/`;
 
@@ -32,6 +35,35 @@ const pickerOptions: ImagePicker.ImagePickerOptions = {
   quality: 0.9,
 };
 
+async function launchLibraryPicker(): Promise<ImagePicker.ImagePickerResult> {
+  if (Platform.OS !== 'android') {
+    return ImagePicker.launchImageLibraryAsync(pickerOptions);
+  }
+
+  // Android's new system photo picker can fail to pass its result back on
+  // some devices. Use the legacy ACTION_GET_CONTENT picker there instead.
+  const legacyOptions: ImagePicker.ImagePickerOptions = {
+    ...pickerOptions,
+    legacy: true,
+  };
+
+  try {
+    return await ImagePicker.launchImageLibraryAsync(legacyOptions);
+  } catch (error) {
+    // Lock task mode can also swallow results from external activities. If
+    // lock task is active, leave it briefly and retry once.
+    const suspendedKiosk = await suspendKioskLock();
+    if (!suspendedKiosk) {
+      throw error;
+    }
+    try {
+      return await ImagePicker.launchImageLibraryAsync(legacyOptions);
+    } finally {
+      await resumeKioskLock(true);
+    }
+  }
+}
+
 export async function captureStaffPhoto(): Promise<string | null> {
   const permission = await ImagePicker.requestCameraPermissionsAsync();
   if (!permission.granted) {
@@ -51,7 +83,7 @@ export async function chooseStaffPhoto(): Promise<string | null> {
     throw new Error('Photo library permission is required to choose a photo.');
   }
 
-  const result = await ImagePicker.launchImageLibraryAsync(pickerOptions);
+  const result = await launchLibraryPicker();
   if (result.canceled || result.assets.length === 0) {
     return null;
   }

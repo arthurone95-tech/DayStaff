@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import {
-  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -11,8 +10,8 @@ import {
   Text,
   View,
 } from 'react-native';
-
 import { AppButton } from '../../components/AppButton';
+import { useAppDialog } from '../../components/AppDialog';
 import { AuthMethodPicker } from '../../components/AuthMethodPicker';
 import { Card } from '../../components/Card';
 import { PinInput } from '../../components/PinInput';
@@ -35,12 +34,12 @@ import {
   changeAdminPin,
   isPinFormatValid,
 } from '../../services/pinService';
-import { disableKiosk, isKioskLockTaskAvailable } from '../../services/kioskLockTask';
 import { colors, fontSize, spacing } from '../../theme';
 import type { AuthMethod } from '../../types';
 
 export function AdminSettingsScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const { alert } = useAppDialog();
 
   const [companyName, setCompanyNameState] = useState(getCompanyName());
   const [savingName, setSavingName] = useState(false);
@@ -56,10 +55,6 @@ export function AdminSettingsScreen() {
     getAuthMethod(),
   );
   const [biometric, setBiometric] = useState<BiometricStatus | null>(null);
-  const [exitKioskVisible, setExitKioskVisible] = useState(false);
-  const [kioskLockAvailable, setKioskLockAvailable] = useState(
-    isKioskLockTaskAvailable(),
-  );
 
   useEffect(() => {
     let mounted = true;
@@ -76,19 +71,29 @@ export function AdminSettingsScreen() {
   const handleSaveName = () => {
     const value = companyName.trim();
     if (!value) {
-      Alert.alert('Company name required', 'Enter a company or school name.');
+      alert({
+        tone: 'warning',
+        title: 'Company name required',
+        message: 'Enter a company or school name.',
+      });
       return;
     }
     setSavingName(true);
     try {
       setCompanyName(value);
       setCompanyNameState(value);
-      Alert.alert('Saved', 'The company details have been updated.');
+      Keyboard.dismiss();
+      alert({
+        tone: 'success',
+        title: 'Saved',
+        message: 'The company details have been updated.',
+      });
     } catch (error) {
-      Alert.alert(
-        'Could not save',
-        error instanceof Error ? error.message : 'Please try again.',
-      );
+      alert({
+        tone: 'danger',
+        title: 'Could not save',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
     } finally {
       setSavingName(false);
     }
@@ -99,10 +104,11 @@ export function AdminSettingsScreen() {
       setAuthMethod(method);
       setAuthMethodState(method);
     } catch (error) {
-      Alert.alert(
-        'Could not change kiosk mode',
-        error instanceof Error ? error.message : 'Please try again.',
-      );
+      alert({
+        tone: 'danger',
+        title: 'Could not change kiosk mode',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
     }
   };
 
@@ -146,10 +152,11 @@ export function AdminSettingsScreen() {
       setNewPin('');
       setConfirmPin('');
       setPinEditorOpen(false);
-      Alert.alert(
-        'PIN updated',
-        'Use the new PIN the next time you unlock the admin area.',
-      );
+      alert({
+        tone: 'success',
+        title: 'PIN updated',
+        message: 'Use the new PIN the next time you unlock the admin area.',
+      });
     } catch (error) {
       setPinError(
         error instanceof Error ? error.message : 'Could not update the PIN.',
@@ -157,30 +164,6 @@ export function AdminSettingsScreen() {
     } finally {
       setSavingPin(false);
     }
-  };
-
-  const handleExitKiosk = async () => {
-    Alert.alert(
-      'Exit kiosk mode?',
-      'This will disable the OS-level kiosk lock and return the device to normal operation. You will need the admin PIN to re-enter the admin area.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Exit kiosk',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await disableKiosk();
-            } catch (error) {
-              Alert.alert(
-                'Could not exit kiosk mode',
-                error instanceof Error ? error.message : 'Unknown error.',
-              );
-            }
-          },
-        },
-      ],
-    );
   };
 
   return (
@@ -221,8 +204,7 @@ export function AdminSettingsScreen() {
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>Kiosk authentication</Text>
           <Text style={styles.cardHint}>
-            Choose how staff identify themselves. This takes effect the next
-            time the kiosk is shown.
+            Choose how staff identify themselves.
           </Text>
           <View style={styles.authPicker}>
             <AuthMethodPicker
@@ -240,8 +222,7 @@ export function AdminSettingsScreen() {
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>Administrator PIN</Text>
           <Text style={styles.cardHint}>
-            The master PIN unlocks the admin dashboard from the kiosk. Change it
-            only when necessary — you will need the current PIN to confirm.
+            The master PIN unlocks the admin dashboard from the kiosk.
           </Text>
 
           {pinEditorOpen ? (
@@ -354,30 +335,6 @@ export function AdminSettingsScreen() {
           </Text>
         </Card>
 
-        <Card style={styles.card}>
-          <Text style={styles.cardTitle}>Admin session</Text>
-          <Text style={styles.cardHint}>
-            Return to the locked kiosk immediately. The PIN will be required
-            again next time.
-          </Text>
-          <AppButton
-            title="Lock admin area"
-            onPress={() => navigation.popToTop()}
-            variant="danger"
-            style={styles.lockButton}
-            icon={<Ionicons name="lock-closed" size={18} color={colors.white} />}
-          />
-          {kioskLockAvailable && (
-            <AppButton
-              title="Exit kiosk mode"
-              onPress={handleExitKiosk}
-              variant="ghost"
-              style={styles.exitKioskButton}
-              icon={<Ionicons name="lock-open" size={18} color={colors.danger} />}
-            />
-          )}
-        </Card>
-
           <Text style={styles.version}>DayStaff · v1.1.0 · Offline MVP</Text>
         </ScrollView>
         <AdminBottomTabBar navigation={navigation} active="AdminSettings" />
@@ -469,11 +426,25 @@ const styles = StyleSheet.create({
     color: colors.slate500,
     lineHeight: 18,
   },
-  lockButton: {
-    marginTop: spacing.lg,
-  },
-  exitKioskButton: {
+  kioskToggleRow: {
     marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  kioskToggleText: {
+    flex: 1,
+  },
+  kioskToggleLabel: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.slate900,
+  },
+  kioskStatus: {
+    marginTop: spacing.xs,
+    fontSize: fontSize.sm,
+    fontWeight: '600',
   },
   version: {
     marginTop: spacing.xl,

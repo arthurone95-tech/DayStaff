@@ -3,7 +3,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -15,6 +14,7 @@ import {
 
 import { DEFAULT_AUTH_METHOD, DEFAULT_COMPANY_NAME } from '../../config/app';
 import { AppButton } from '../../components/AppButton';
+import { useAppDialog } from '../../components/AppDialog';
 import { FeedbackModal } from '../../components/FeedbackModal';
 import { Screen } from '../../components/Screen';
 import { getActiveStaff } from '../../database/queries';
@@ -48,6 +48,7 @@ const KIOSK_BG = '#06142B';
 export function KioskTerminalScreen() {
   const navigation = useNavigation<RootNavigation>();
   const now = useNow(1000);
+  const { alert } = useAppDialog();
 
   const [staff, setStaff] = useState<Staff[]>([]);
   const [companyName, setCompanyName] = useState(DEFAULT_COMPANY_NAME);
@@ -74,8 +75,6 @@ export function KioskTerminalScreen() {
   const [simulated, setSimulated] = useState(false);
   const [pinVisible, setPinVisible] = useState(false);
   const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
-
-  const mode = 'FACE' as const;
 
   useFocusEffect(
     useCallback(() => {
@@ -222,16 +221,19 @@ export function KioskTerminalScreen() {
       setSimulated(false);
       setFeedbackVisible(true);
     } catch (error) {
-      Alert.alert(
-        'Could not sign out',
-        error instanceof Error
-          ? error.message
-          : 'An unexpected error occurred.',
-      );
+      setFeedbackVisible(false);
+      alert({
+        tone: 'danger',
+        title: 'Could not sign out',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'An unexpected error occurred.',
+      });
     } finally {
       operationRef.current = false;
     }
-  }, [feedback]);
+  }, [feedback, alert]);
 
   const handleFaceCapture = async (
     frames: string[],
@@ -266,23 +268,24 @@ export function KioskTerminalScreen() {
 
       setPendingMatch(null);
       setCapturedPhotoUri(null);
-      Alert.alert(
-        'Face not recognized',
-        'We could not match that face to a staff profile. Face the camera straight on with good light and try again.',
-        [
-          { text: 'Try again', style: 'cancel' },
-        ],
-      );
+      alert({
+        tone: 'warning',
+        title: 'Face not recognized',
+        message:
+          'We could not match that face to a staff profile. Face the camera straight on with good light and try again.',
+        buttonLabel: 'Try again',
+      });
     } catch (error) {
       setPendingMatch(null);
       setCapturedPhotoUri(null);
-      Alert.alert(
-        'Face check unavailable',
-        error instanceof Error
-          ? error.message
-          : 'The face check could not be completed. Please try again.',
-        [{ text: 'OK' }],
-      );
+      alert({
+        tone: 'danger',
+        title: 'Face check unavailable',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'The face check could not be completed. Please try again.',
+      });
     } finally {
       operationRef.current = false;
       setFaceBusy(false);
@@ -299,12 +302,16 @@ export function KioskTerminalScreen() {
       setSimulated(false);
       setFeedbackVisible(true);
     } catch (error) {
-      Alert.alert(
-        'Could not record attendance',
-        error instanceof Error
-          ? error.message
-          : 'An unexpected error occurred.',
-      );
+      setPendingMatch(null);
+      setCapturedPhotoUri(null);
+      alert({
+        tone: 'danger',
+        title: 'Could not record attendance',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'An unexpected error occurred.',
+      });
     } finally {
       setPendingMatch(null);
       setCapturedPhotoUri(null);
@@ -437,11 +444,6 @@ export function KioskTerminalScreen() {
               Face recognition
             </Text>
           </View>
-          {mode === 'FACE' ? (
-            <Text style={styles.instruction}>
-              Look at the camera and tap scan
-            </Text>
-          ) : null}
         </View>
 
         <View
@@ -677,12 +679,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-  },
-  instruction: {
-    color: colors.kioskText,
-    fontSize: fontSize.md,
-    fontWeight: '600',
-    textAlign: 'center',
   },
   body: {
     flex: 1,

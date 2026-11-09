@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
 } from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
+import { useAppDialog } from '../../components/AppDialog';
 import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
 import { Card } from '../../components/Card';
 import { Screen } from '../../components/Screen';
@@ -59,6 +59,7 @@ function Segmented({
 
 export function ExportReportsScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const { alert } = useAppDialog();
   const now = new Date();
   const [range, setRange] = useState<ExportRange>('today');
   const [format, setFormat] = useState<'xlsx' | 'csv'>('xlsx');
@@ -105,19 +106,22 @@ export function ExportReportsScreen() {
         format,
       });
       const noun = result.rowCount === 1 ? 'record' : 'records';
-      Alert.alert(
-        'Report ready',
-        `${result.rowCount} ${noun} included.\n\n${
+      alert({
+        tone: 'success',
+        title: 'Report ready',
+        message: `${result.rowCount} ${noun} included.\n\n${
           result.shared
             ? 'The native share sheet is open — send it via WhatsApp, email or Files.'
             : `Sharing is unavailable, so the file was saved to:\n${result.uri}`
         }`,
-      );
+        buttonLabel: 'Done',
+      });
     } catch (error) {
-      Alert.alert(
-        'Export failed',
-        error instanceof Error ? error.message : 'Please try again.',
-      );
+      alert({
+        tone: 'danger',
+        title: 'Export failed',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
     } finally {
       setBusy(false);
     }

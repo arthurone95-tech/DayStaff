@@ -74,20 +74,38 @@ export function AdminDashboardScreen() {
             label="Total staff"
             value={summary.totalStaff}
             tone="neutral"
+            onPress={() => navigation.navigate('AttendanceHistory', { filter: 'all' })}
           />
-          <StatTile label="Present" value={summary.present} tone="success" />
-          <StatTile label="Late" value={summary.late} tone="warning" />
+          <StatTile
+            label="Present"
+            value={summary.present}
+            tone="success"
+            onPress={() => navigation.navigate('AttendanceHistory', { filter: 'present' })}
+          />
+          <StatTile
+            label="Late"
+            value={summary.late}
+            tone="warning"
+            onPress={() => navigation.navigate('AttendanceHistory', { filter: 'late' })}
+          />
           <StatTile
             label="Clocked out"
             value={summary.clockedOut}
             tone="info"
+            onPress={() => navigation.navigate('AttendanceHistory', { filter: 'clockedOut' })}
           />
           <StatTile
             label="Early exit"
             value={summary.earlyExit}
             tone="danger"
+            onPress={() => navigation.navigate('AttendanceHistory', { filter: 'earlyExit' })}
           />
-          <StatTile label="Absent" value={summary.absent} tone="neutral" />
+          <StatTile
+            label="Absent"
+            value={summary.absent}
+            tone="neutral"
+            onPress={() => navigation.navigate('AttendanceHistory', { filter: 'absent' })}
+          />
         </View>
 
         <View style={styles.listHeader}>

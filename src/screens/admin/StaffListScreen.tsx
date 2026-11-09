@@ -47,7 +47,7 @@ export function StaffListScreen() {
               }
             />
             <Text style={styles.summary}>
-              {activeCount} active · {staff.length - activeCount} deactivated
+              {staff.length} total · {activeCount} active · {staff.length - activeCount} deactivated
             </Text>
             <Text style={styles.hint}>
               Tap a staff member to edit their details or deactivate them.
