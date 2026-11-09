@@ -7,6 +7,7 @@ interface Tab {
   key: string;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
+  iconActive: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
   active?: boolean;
 }
@@ -22,6 +23,7 @@ export function AdminBottomTabBar({ navigation, active }: AdminBottomTabBarProps
       key: 'AdminDashboard',
       label: 'Home',
       icon: 'home-outline',
+      iconActive: 'home',
       onPress: () => navigation.navigate('AdminDashboard'),
       active: active === 'AdminDashboard',
     },
@@ -29,6 +31,7 @@ export function AdminBottomTabBar({ navigation, active }: AdminBottomTabBarProps
       key: 'StaffList',
       label: 'Staff',
       icon: 'people-outline',
+      iconActive: 'people',
       onPress: () => navigation.navigate('StaffList'),
       active: active === 'StaffList',
     },
@@ -36,6 +39,7 @@ export function AdminBottomTabBar({ navigation, active }: AdminBottomTabBarProps
       key: 'ScheduleSettings',
       label: 'Schedule',
       icon: 'time-outline',
+      iconActive: 'time',
       onPress: () => navigation.navigate('ScheduleSettings'),
       active: active === 'ScheduleSettings',
     },
@@ -43,6 +47,7 @@ export function AdminBottomTabBar({ navigation, active }: AdminBottomTabBarProps
       key: 'AttendanceHistory',
       label: 'Attendance',
       icon: 'calendar-outline',
+      iconActive: 'calendar',
       onPress: () => navigation.navigate('AttendanceHistory'),
       active: active === 'AttendanceHistory',
     },
@@ -50,6 +55,7 @@ export function AdminBottomTabBar({ navigation, active }: AdminBottomTabBarProps
       key: 'AdminSettings',
       label: 'Settings',
       icon: 'settings-outline',
+      iconActive: 'settings',
       onPress: () => navigation.navigate('AdminSettings'),
       active: active === 'AdminSettings',
     },
@@ -69,7 +75,7 @@ export function AdminBottomTabBar({ navigation, active }: AdminBottomTabBarProps
           accessibilityLabel={tab.label}
         >
           <Ionicons
-            name={tab.icon}
+            name={tab.active ? tab.iconActive : tab.icon}
             size={20}
             color={tab.active ? colors.primary : colors.slate500}
           />

@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "scheme": "daystaff",
     "splash": {
-      "image": "./assets/splash-content.png",
+      "image": "./assets/splash-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#0B132B"
     },

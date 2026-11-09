@@ -34,7 +34,7 @@ import { colors, fontSize, radius, spacing } from '../../theme';
 
 export function ScheduleSettingsScreen() {
   const navigation = useNavigation<RootNavigation>();
-  const { alert } = useAppDialog();
+  const { alert, confirm } = useAppDialog();
   const initial = useMemo(() => getSchedule(), []);
 
   const [startTime, setStartTime] = useState(initial.startTime);
@@ -68,7 +68,29 @@ export function ScheduleSettingsScreen() {
     setGrace((current) => Math.max(0, Math.min(120, current + delta)));
   };
 
+  const currentSchedule = getSchedule();
+  const isChanging =
+    currentSchedule.startTime !== startTime ||
+    currentSchedule.endTime !== endTime ||
+    currentSchedule.lateThresholdMinutes !== grace;
+
   const handleSave = () => {
+    confirm({
+      tone: 'warning',
+      icon: 'alert-circle',
+      title: 'Change official hours?',
+      message:
+        'The new closing time applies immediately to staff clocking in or ' +
+        'out today. Existing records won’t change, and from tomorrow, ' +
+        'everyone follows the new hours.',
+      confirmLabel: 'Save anyway',
+      cancelLabel: 'Cancel',
+      destructive: false,
+      onConfirm: applyScheduleSave,
+    });
+  };
+
+  const applyScheduleSave = () => {
     setSaving(true);
     try {
       saveSchedule({
@@ -191,13 +213,15 @@ export function ScheduleSettingsScreen() {
           </View>
         </Card>
 
-        <AppButton
-          title="Save schedule"
-          onPress={handleSave}
-          loading={saving}
-          size="lg"
-          style={styles.saveButton}
-        />
+        {isChanging && (
+          <AppButton
+            title="Save schedule"
+            onPress={handleSave}
+            loading={saving}
+            size="lg"
+            style={styles.saveButton}
+          />
+        )}
         <AppButton
           title="Reset fields to defaults"
           onPress={handleReset}
