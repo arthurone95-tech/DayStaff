@@ -80,12 +80,8 @@ export function RegisterStaffScreen() {
   const cameraRef = useRef<CameraView | null>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
-  const handleBack = () => {
-    if (step > 1) {
-      setStep(1);
-    } else {
-      navigation.goBack();
-    }
+  const goToPreviousStep = () => {
+    setStep((current) => (current > 1 ? ((current - 1) as 1 | 2 | 3) : current));
   };
 
   const validateBasic = (): boolean => {
@@ -312,16 +308,18 @@ export function RegisterStaffScreen() {
 
   const stepTitle =
     step === 1
-      ? 'Step 1: Basic info'
+      ? 'Basic info'
       : step === 2
-        ? 'Step 2: Profile photo'
-        : 'Step 3: Face scan';
+        ? 'Profile photo'
+        : 'Face scan';
   const stepSubtitle =
     step === 1
       ? 'Name and fallback PIN.'
       : step === 2
         ? 'A normal photo for the staff list and reports.'
         : 'A guided live scan that builds the recognition profile.';
+
+  const faceReady = !!faceSignature && !duplicateFaceStaff;
 
   return (
     <Screen>
@@ -336,6 +334,18 @@ export function RegisterStaffScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.stepHeader}>
+            <View style={styles.progressRow}>
+              {[1, 2, 3].map((n) => (
+                <View
+                  key={n}
+                  style={[
+                    styles.progressSegment,
+                    n <= step && styles.progressSegmentActive,
+                  ]}
+                />
+              ))}
+            </View>
+            <Text style={styles.stepCount}>Step {step} of 3</Text>
             <Text style={styles.stepTitle}>{stepTitle}</Text>
             <Text style={styles.stepSubtitle}>{stepSubtitle}</Text>
           </View>
@@ -385,109 +395,103 @@ export function RegisterStaffScreen() {
                 secureTextEntry
                 error={errors.pinConfirm}
               />
-              <AppButton
-                title="Next"
-                onPress={async () => {
-                  const basicOk = validateBasic();
-                  const pinOk = validatePin();
-                  if (!basicOk || !pinOk) return;
-                  setPinCheckBusy(true);
-                  try {
-                    const taken = await isStaffPinTaken(staffPin);
-                    if (taken) {
-                      setErrors((prev) => ({
-                        ...prev,
-                        pin:
-                          'This PIN is already assigned to another staff member. Please choose a different PIN.',
-                      }));
-                      return;
+              <View style={styles.footerSingle}>
+                <AppButton
+                  title="Next"
+                  onPress={async () => {
+                    const basicOk = validateBasic();
+                    const pinOk = validatePin();
+                    if (!basicOk || !pinOk) return;
+                    setPinCheckBusy(true);
+                    try {
+                      const taken = await isStaffPinTaken(staffPin);
+                      if (taken) {
+                        setErrors((prev) => ({
+                          ...prev,
+                          pin:
+                            'This PIN is already assigned to another staff member. Please choose a different PIN.',
+                        }));
+                        return;
+                      }
+                      setStep(2);
+                    } finally {
+                      setPinCheckBusy(false);
                     }
-                    setStep(2);
-                  } finally {
-                    setPinCheckBusy(false);
-                  }
-                }}
-                size="lg"
-                disabled={pinCheckBusy}
-              />
+                  }}
+                  size="lg"
+                  loading={pinCheckBusy}
+                  disabled={pinCheckBusy}
+                />
+              </View>
             </Card>
           ) : null}
 
           {step === 2 ? (
             <Card style={styles.formCard}>
-              <Text style={styles.cardTitle}>Profile photo</Text>
-              <Text style={styles.cardHint}>
-                This picture appears on the staff list, reports and the match
-                confirmation. A clear head-and-shoulders photo works best.
-              </Text>
               <View style={styles.consentBox}>
+                <View style={styles.consentHeader}>
+                  <Ionicons
+                    name="shield-checkmark-outline"
+                    size={18}
+                    color={colors.infoDark}
+                  />
+                  <Text style={styles.consentTitle}>Biometric consent</Text>
+                </View>
                 <Text style={styles.consentNotice}>
                   By capturing this photo, you confirm employee consent to generate and store a local biometric facial template.
-                  {'\n\n'}
+                </Text>
+                <Text style={styles.consentLine}>
                   • Storage: 100% local on this device.
-                  {'\n'}
+                </Text>
+                <Text style={styles.consentLine}>
                   • Purpose: Workplace attendance verification only.
-                  {'\n'}
+                </Text>
+                <Text style={styles.consentLine}>
                   • Privacy: Biometric data is never uploaded to the cloud or shared with third parties, and can be permanently deleted by an administrator at any time.
                 </Text>
               </View>
-              {photoUri ? (
-                <View style={styles.previewRow}>
+
+              <View style={styles.previewColumn}>
+                {photoUri ? (
                   <Avatar
                     name={fullName || 'New staff'}
                     photoUri={photoUri}
-                    size={72}
+                    size={96}
                   />
-                  <Text style={styles.cardHint}>Photo set.</Text>
-                </View>
-              ) : (
-                <View style={styles.previewRow}>
+                ) : (
                   <View style={styles.avatarPlaceholder}>
                     <Ionicons
                       name="person-outline"
-                      size={28}
+                      size={36}
                       color={colors.slate400}
                     />
                   </View>
-                  <Text style={styles.cardHint}>No photo yet.</Text>
-                </View>
-              )}
-              <View style={styles.photoButtons}>
-                <AppButton
-                  title="Take photo"
-                  onPress={() => void handleTakePhoto()}
-                  size="sm"
-                  fullWidth={false}
-                  icon={
-                    <Ionicons name="camera-outline" size={18} color={colors.white} />
-                  }
-                />
-                <AppButton
-                  title="Choose from library"
-                  onPress={() => void handleChoosePhoto()}
-                  variant="secondary"
-                  size="sm"
-                  fullWidth={false}
-                />
+                )}
+                <Text style={styles.previewCaption}>
+                  {photoUri
+                    ? 'Photo set. You can replace it below.'
+                    : 'A clear head-and-shoulders photo works best.'}
+                </Text>
               </View>
-              <AppButton
-                title="Next"
-                onPress={() => {
-                  if (!photoUri) {
-                    alert({
-                      tone: 'warning',
-                      title: 'Photo required',
-                      message:
-                        'Add a profile photo (take one or pick from the library).',
-                    });
-                    return;
-                  }
-                  setStep(3);
-                }}
-                size="sm"
-                fullWidth={false}
-                disabled={!photoUri}
-              />
+
+              <View style={styles.photoButtons}>
+                <View style={styles.photoButtonCell}>
+                  <AppButton
+                    title="Take photo"
+                    onPress={() => void handleTakePhoto()}
+                    size="sm"
+                  />
+                </View>
+                <View style={styles.photoButtonCell}>
+                  <AppButton
+                    title="From library"
+                    onPress={() => void handleChoosePhoto()}
+                    variant="secondary"
+                    size="sm"
+                  />
+                </View>
+              </View>
+
               <View style={styles.note}>
                 <Ionicons name="scan-outline" size={16} color={colors.slate500} />
                 <Text style={styles.noteText}>
@@ -496,12 +500,30 @@ export function RegisterStaffScreen() {
                   movement gives the most reliable match.
                 </Text>
               </View>
+
+              <View style={styles.footerRow}>
+                <View style={styles.footerBack}>
+                  <AppButton
+                    title="Back"
+                    onPress={goToPreviousStep}
+                    variant="secondary"
+                    size="lg"
+                  />
+                </View>
+                <View style={styles.footerPrimary}>
+                  <AppButton
+                    title="Next"
+                    onPress={() => setStep(3)}
+                    size="lg"
+                    disabled={!photoUri}
+                  />
+                </View>
+              </View>
             </Card>
           ) : null}
 
           {step === 3 ? (
             <Card style={styles.formCard}>
-              <Text style={styles.cardTitle}>Live face scan</Text>
               <Text style={styles.cardHint}>
                 {scanHint ??
                   'Tap “Scan face” and follow the prompts. Three frames are captured and combined into the face profile.'}
@@ -520,46 +542,76 @@ export function RegisterStaffScreen() {
                       title="Grant permission"
                       onPress={() => requestCameraPermission()}
                       size="sm"
+                      fullWidth={false}
                     />
                   </View>
                 )}
               </View>
 
-              {faceSignature ? (
+              {faceSignature && !duplicateFaceStaff ? (
                 <View style={styles.enrolledRow}>
                   <Ionicons name="checkmark-circle" size={20} color={colors.success} />
                   <Text style={styles.enrolledText}>Face profile captured.</Text>
                 </View>
               ) : null}
               {faceError ? <Text style={styles.photoError}>{faceError}</Text> : null}
-              {duplicateFaceStaff ? (
+              {duplicateFaceStaff && !faceError ? (
                 <Text style={styles.photoError}>
                   This face matches {duplicateFaceStaff.fullName}, who is already registered.
                 </Text>
               ) : null}
 
-              <AppButton
-                title={faceBusy ? 'Scanning…' : 'Scan face'}
-                onPress={() => void handleFaceScan()}
-                loading={faceBusy}
-                size="lg"
-                disabled={!cameraPermission?.granted || faceBusy || faceCheckBusy}
-              />
-              <Text style={styles.cardHint}>
-                The profile photo and the face profile are separate: the photo is
-                for display, the scan is what the kiosk matches against.
-              </Text>
+              <View style={styles.scanButtonWrap}>
+                <AppButton
+                  title={
+                    faceBusy
+                      ? 'Scanning…'
+                      : faceSignature
+                        ? 'Scan again'
+                        : 'Scan face'
+                  }
+                  onPress={() => void handleFaceScan()}
+                  loading={faceBusy}
+                  variant={faceReady ? 'secondary' : undefined}
+                  size="lg"
+                  disabled={!cameraPermission?.granted || faceBusy || faceCheckBusy}
+                />
+              </View>
 
-              <AppButton
-                title="Register staff member"
-                onPress={() => void handleSave()}
-                loading={saving}
-                size="sm"
-                fullWidth={false}
-                disabled={
-                  !photoUri || !faceSignature || !!duplicateFaceStaff || pinCheckBusy
-                }
-              />
+              <View style={styles.note}>
+                <Ionicons name="information-circle-outline" size={16} color={colors.slate500} />
+                <Text style={styles.noteText}>
+                  The profile photo and the face profile are separate: the photo
+                  is for display, the scan is what the kiosk matches against.
+                </Text>
+              </View>
+
+              <View style={styles.footerRow}>
+                <View style={styles.footerBack}>
+                  <AppButton
+                    title="Back"
+                    onPress={goToPreviousStep}
+                    variant="secondary"
+                    size="lg"
+                    disabled={faceBusy}
+                  />
+                </View>
+                <View style={styles.footerPrimary}>
+                  <AppButton
+                    title="Register staff"
+                    onPress={() => void handleSave()}
+                    loading={saving}
+                    size="lg"
+                    disabled={
+                      !photoUri ||
+                      !faceSignature ||
+                      !!duplicateFaceStaff ||
+                      pinCheckBusy ||
+                      faceBusy
+                    }
+                  />
+                </View>
+              </View>
             </Card>
           ) : null}
         </ScrollView>
@@ -579,35 +631,57 @@ const styles = StyleSheet.create({
   keyboardWrap: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  // Step header + progress bar
   stepHeader: { marginBottom: spacing.lg },
+  progressRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  progressSegment: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.slate200,
+  },
+  progressSegmentActive: { backgroundColor: colors.primary },
+  stepCount: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: colors.slate500,
+  },
   stepTitle: {
+    marginTop: 2,
     fontSize: fontSize.lg,
     fontWeight: '700',
     color: colors.slate800,
   },
   stepSubtitle: { marginTop: 2, fontSize: fontSize.xs, color: colors.slate500 },
+
+  // Cards + text
   formCard: { marginTop: spacing.sm },
-  cardTitle: {
-    fontSize: fontSize.md,
-    fontWeight: '700',
-    color: colors.slate800,
-  },
   cardHint: {
-    marginTop: spacing.xs,
     fontSize: fontSize.xs,
     color: colors.slate500,
     lineHeight: 18,
   },
-  previewRow: {
-    flexDirection: 'row',
+
+  // Step 2 — photo
+  previewColumn: {
     alignItems: 'center',
-    gap: spacing.md,
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+  },
+  previewCaption: {
+    fontSize: fontSize.xs,
+    color: colors.slate500,
+    textAlign: 'center',
   },
   avatarPlaceholder: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: colors.slate100,
     alignItems: 'center',
     justifyContent: 'center',
@@ -616,11 +690,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     marginTop: spacing.md,
-    flexWrap: 'wrap',
   },
+  photoButtonCell: { flex: 1 },
+
+  // Step 3 — scan
   cameraWrap: {
     marginTop: spacing.md,
-    height: 280,
+    height: 300,
     borderRadius: radius.md,
     overflow: 'hidden',
     backgroundColor: colors.slate200,
@@ -635,6 +711,7 @@ const styles = StyleSheet.create({
   enrolledRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: spacing.xs,
     marginTop: spacing.md,
   },
@@ -649,11 +726,24 @@ const styles = StyleSheet.create({
     color: colors.danger,
     textAlign: 'center',
   },
+  scanButtonWrap: { marginTop: spacing.md },
+
+  // Footer buttons (Back + primary action)
+  footerSingle: { marginTop: spacing.sm },
+  footerRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  footerBack: { flex: 1 },
+  footerPrimary: { flex: 2 },
+
+  // Notes + consent
   note: {
     flexDirection: 'row',
     gap: spacing.sm,
     marginTop: spacing.lg,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.xs,
   },
   noteText: {
     flex: 1,
@@ -665,11 +755,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.infoSoft,
     borderRadius: radius.md,
     padding: spacing.md,
-    marginTop: spacing.sm,
     borderWidth: 1,
     borderColor: colors.info,
+    gap: spacing.xs,
+  },
+  consentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  consentTitle: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.infoDark,
   },
   consentNotice: {
+    fontSize: fontSize.xs,
+    color: colors.infoDark,
+    lineHeight: 18,
+  },
+  consentLine: {
     fontSize: fontSize.xs,
     color: colors.infoDark,
     lineHeight: 18,
