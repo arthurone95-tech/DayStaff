@@ -30,7 +30,7 @@ import {
   prepareFaceEngine,
   serializeFaceEmbedding,
 } from './faceEngine';
-import { averageEmbeddings } from './faceLiveness';
+import { averageEmbeddings, scanTimerMark } from './faceLiveness';
 import {
   compareFaceHashes,
   createFaceHashes,
@@ -80,6 +80,32 @@ export const MIN_AUTO_MARGIN = 0.05;
 export const AUTO_MATCH_DISTANCE = 12;
 export const SUGGEST_MATCH_DISTANCE = 30;
 export const MIN_LEGACY_AUTO_MARGIN = 6;
+
+/**
+ * Parsed embeddings kept in memory. Without this, every scan re-parsed a
+ * 512-number JSON string for every staff member. An entry is reused only while
+ * the stored signature is unchanged, so re-enrolled faces are picked up.
+ */
+const embeddingCache = new Map<number, { signature: string; embedding: number[] }>();
+
+function getCachedEmbedding(member: Staff): number[] | null {
+  const signature = member.faceSignature;
+  if (!signature) {
+    return null;
+  }
+  const hit = embeddingCache.get(member.id);
+  if (hit && hit.signature === signature) {
+    return hit.embedding;
+  }
+  const parsed = parseFaceEmbedding(signature);
+  if (parsed) {
+    embeddingCache.set(member.id, { signature, embedding: parsed });
+  }
+  return parsed;
+}
+
+/** The first model run is slow; one throwaway run at kiosk start hides that. */
+let engineWarmed = false;
 
 function clamp(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -210,6 +236,15 @@ export async function prepareStaffFaceProfiles(): Promise<FaceProfileSummary> {
     }
   }
 
+  if (engineAvailable && !engineWarmed) {
+    const sample = activeStaff.find((member) => member.photoUri);
+    if (sample?.photoUri) {
+      engineWarmed = true;
+      // Fire and forget: the scan queue runs it in order, nothing waits on it.
+      void extractFaceEmbedding(sample.photoUri).catch(() => undefined);
+    }
+  }
+
   return {
     engineAvailable,
     total: activeStaff.length,
@@ -233,7 +268,7 @@ async function matchWithEmbeddings(
   for (const member of activeStaff) {
     if (!member.photoUri) continue;
 
-    let embedding = parseFaceEmbedding(member.faceSignature);
+    let embedding = getCachedEmbedding(member);
     if (!embedding) {
       // Upgrade a legacy profile lazily if the kiosk has not prepared it yet.
       try {
@@ -359,7 +394,13 @@ export async function matchFaceToStaff(
   const engineAvailable = await prepareFaceEngine();
 
   if (engineAvailable) {
-    return matchWithEmbeddings(list, activeStaff, scanEmbedding ?? null);
+    const result = await matchWithEmbeddings(
+      list,
+      activeStaff,
+      scanEmbedding ?? null,
+    );
+    scanTimerMark('matched against staff');
+    return result;
   }
 
   // Native engine missing (e.g. a broken build or Expo Go): fall back to the

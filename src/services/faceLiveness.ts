@@ -43,10 +43,23 @@ export interface LivenessStep {
 
 /** Prompts shown during the live scan. Adjust wording freely. */
 export const LIVENESS_STEPS: LivenessStep[] = [
-  { key: 'center', hint: 'Hold still and look straight at the camera…', delayMs: 900 },
-  { key: 'left', hint: 'Now turn your head to the LEFT…', delayMs: 1300 },
-  { key: 'right', hint: 'Now turn your head to the RIGHT…', delayMs: 1300 },
+  { key: 'center', hint: 'Hold still and look straight at the camera…', delayMs: 500 },
+  { key: 'left', hint: 'Now turn your head to the LEFT…', delayMs: 700 },
+  { key: 'right', hint: 'Now turn your head to the RIGHT…', delayMs: 700 },
 ];
+
+/**
+ * Lightweight scan timing. Lines are printed as "[scan-timing] label: N ms"
+ * (N = milliseconds since the scan button was tapped). Read them with
+ * `adb logcat | grep scan-timing` on Android.
+ */
+let scanStartedAt = 0;
+export function scanTimerStart(): void {
+  scanStartedAt = Date.now();
+}
+export function scanTimerMark(label: string): void {
+  console.log(`[scan-timing] ${label}: ${Date.now() - scanStartedAt} ms`);
+}
 
 /** Same-person floor for frames taken ~1s apart (same face, moved head). */
 const SAME_FACE_MIN_SIMILARITY = 0.45;
@@ -83,6 +96,8 @@ export async function captureChallengeFrames(
   capture: () => Promise<{ uri?: string } | null>,
   steps: LivenessStep[],
   onStep?: (index: number) => void,
+  /** Called right after each frame is saved, so work can start immediately. */
+  onFrame?: (uri: string, index: number) => void,
 ): Promise<string[]> {
   const frames: string[] = [];
   for (let index = 0; index < steps.length; index += 1) {
@@ -96,6 +111,7 @@ export async function captureChallengeFrames(
       throw new Error('The camera did not return a photo. Try again.');
     }
     frames.push(photo.uri);
+    onFrame?.(photo.uri, index);
   }
   return frames;
 }
@@ -104,7 +120,14 @@ export async function captureChallengeFrames(
  * Verify that the captured frames show ONE live, moving face.
  * When ok, returns the averaged embedding ready for profile matching.
  */
-export async function verifyLiveness(frames: string[]): Promise<LivenessResult> {
+export async function verifyLiveness(
+  frames: string[],
+  /**
+   * Embeddings that were already started while capturing (one per frame, same
+   * order). When given, they are reused instead of extracting again.
+   */
+  precomputed?: Promise<number[]>[],
+): Promise<LivenessResult> {
   const engineReady = await prepareFaceEngine();
   if (!engineReady || frames.length === 0) {
     return {
@@ -120,7 +143,9 @@ export async function verifyLiveness(frames: string[]): Promise<LivenessResult> 
   let embeddings: number[][];
   try {
     embeddings = await Promise.all(
-      frames.map((uri) => extractFaceEmbedding(uri)),
+      precomputed && precomputed.length === frames.length
+        ? precomputed
+        : frames.map((uri) => extractFaceEmbedding(uri)),
     );
   } catch (error) {
     return {

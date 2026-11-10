@@ -6,21 +6,32 @@ import {
   ActivityIndicator,
   Animated,
   Linking,
+  Platform,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
-import { prepareFaceEngine } from '../../services/faceEngine';
+import { extractFaceEmbedding, prepareFaceEngine } from '../../services/faceEngine';
 import {
   captureChallengeFrames,
   LIVENESS_STEPS,
+  scanTimerMark,
+  scanTimerStart,
   verifyLiveness,
 } from '../../services/faceLiveness';
 import { colors, fontSize, radius, spacing } from '../../theme';
 
 const FRAME_SIZE = 320;
+
+/**
+ * Android only: the smallest camera picture size whose shorter side is at
+ * least this many pixels. Face recognition does not need a 12 MP photo, and
+ * smaller photos save and decode much faster. Raise it (e.g. 720) if
+ * recognition gets less accurate.
+ */
+const MIN_PICTURE_SHORT_SIDE = 480;
 
 type ScanPhase = 'idle' | 'capturing' | 'verifying';
 
@@ -53,6 +64,24 @@ export function FaceScanPanel({
   const [stepIndex, setStepIndex] = useState(0);
   const [hint, setHint] = useState<string | null>(null);
   const [cameraKey, setCameraKey] = useState(0);
+  const [pictureSize, setPictureSize] = useState<string | undefined>(undefined);
+
+  const choosePictureSize = async () => {
+    if (Platform.OS !== 'android' || pictureSize || !cameraRef.current) return;
+    try {
+      const sizes = await cameraRef.current.getAvailablePictureSizesAsync();
+      let best: { label: string; area: number } | null = null;
+      for (const label of sizes) {
+        const [w, h] = label.split('x').map(Number);
+        if (!w || !h || Math.min(w, h) < MIN_PICTURE_SHORT_SIDE) continue;
+        const area = w * h;
+        if (!best || area < best.area) best = { label, area };
+      }
+      if (best) setPictureSize(best.label);
+    } catch {
+      // Keep the default size if the device cannot list picture sizes.
+    }
+  };
 
   // Continuous scan-line animation across the camera frame.
   const scanProgress = useRef(new Animated.Value(0)).current;
@@ -101,16 +130,20 @@ export function FaceScanPanel({
   const handleScan = async () => {
     if (busy || scanning || !ready || !cameraRef.current) return;
     setCameraError(null);
+    scanTimerStart();
     setPhase('capturing');
     setStepIndex(0);
     setHint(LIVENESS_STEPS[0]?.hint ?? null);
     try {
       const shutter = () =>
         cameraRef.current!.takePictureAsync({
-          quality: 0.9,
+          quality: 0.5,
           base64: false,
           skipProcessing: false,
         });
+      // Start reading each frame as soon as it is saved, while the user is
+      // still turning for the next one.
+      const embeddingJobs: Promise<number[]>[] = [];
       const frames = await captureChallengeFrames(
         shutter,
         LIVENESS_STEPS,
@@ -118,7 +151,14 @@ export function FaceScanPanel({
           setStepIndex(index);
           setHint(LIVENESS_STEPS[index]?.hint ?? null);
         },
+        (uri, index) => {
+          scanTimerMark(`frame ${index + 1} captured`);
+          const job = extractFaceEmbedding(uri);
+          job.catch(() => undefined); // errors are handled when awaited below
+          embeddingJobs.push(job);
+        },
       );
+      scanTimerMark('all frames captured');
 
       setPhase('verifying');
       setHint('Verifying it is a live scan…');
@@ -133,7 +173,8 @@ export function FaceScanPanel({
         return;
       }
 
-      const liveness = await verifyLiveness(frames);
+      const liveness = await verifyLiveness(frames, embeddingJobs);
+      scanTimerMark('liveness verified');
       if (!liveness.ok) {
         setPhase('idle');
         setHint(null);
@@ -232,7 +273,11 @@ export function FaceScanPanel({
           style={StyleSheet.absoluteFill}
           facing="front"
           enableTorch={scanning}
-          onCameraReady={() => setReady(true)}
+          pictureSize={pictureSize}
+          onCameraReady={() => {
+            setReady(true);
+            void choosePictureSize();
+          }}
           onMountError={(event) =>
             setCameraError(event?.message ?? 'The camera could not start.')
           }
