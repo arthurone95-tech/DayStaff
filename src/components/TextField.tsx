@@ -20,6 +20,7 @@ interface TextFieldProps {
   editable?: boolean;
   hint?: string;
   secureTextEntry?: boolean;
+  autoFocus?: boolean;
 }
 
 export function TextField({
@@ -34,6 +35,7 @@ export function TextField({
   editable = true,
   hint,
   secureTextEntry = false,
+  autoFocus = false,
 }: TextFieldProps) {
   return (
     <View style={styles.container}>
@@ -49,6 +51,7 @@ export function TextField({
         maxLength={maxLength}
         editable={editable}
         secureTextEntry={secureTextEntry}
+        autoFocus={autoFocus}
         style={[styles.input, error ? styles.inputError : null, !editable && styles.disabled]}
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}

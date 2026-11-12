@@ -7,6 +7,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from 'react-native';
@@ -21,10 +22,17 @@ import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import type { RootNavigation } from '../../navigation/types';
 import {
+  type FaceStrictness,
   getAuthMethod,
   getCompanyName,
+  getFaceStrictness,
+  getScanLightEnabled,
+  getShowFaceScores,
   setAuthMethod,
   setCompanyName,
+  setFaceStrictness,
+  setScanLightEnabled,
+  setShowFaceScores,
 } from '../../services/appSettings';
 import {
   type BiometricStatus,
@@ -55,6 +63,11 @@ export function AdminSettingsScreen() {
   const [pinError, setPinError] = useState<string | undefined>();
   const [savingPin, setSavingPin] = useState(false);
   const [pinEditorOpen, setPinEditorOpen] = useState(false);
+
+  const [scanLight, setScanLightState] = useState(getScanLightEnabled());
+  const [showScores, setShowScoresState] = useState(getShowFaceScores());
+  const [strictness, setStrictnessState] =
+    useState<FaceStrictness>(getFaceStrictness());
 
   const [authMethod, setAuthMethodState] = useState<AuthMethod>(
     getAuthMethod(),
@@ -278,6 +291,80 @@ export function AdminSettingsScreen() {
             enrolled staff photos. A personal 6-digit PIN is requested only when
             the face match is ambiguous.
           </Text>
+        </Card>
+
+        <Card style={styles.card}>
+          <Text style={styles.cardTitle}>Face scanner</Text>
+          <Text style={styles.cardHint}>
+            Lighting and matching options for the kiosk face scan.
+          </Text>
+
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleText}>
+              <Text style={styles.statusLabel}>Screen light while scanning</Text>
+              <Text style={styles.cardHint}>
+                Lights up the screen around the camera while the three scan
+                photos are taken, then switches off. Useful in the evening or
+                in dim rooms.
+              </Text>
+            </View>
+            <Switch
+              value={scanLight}
+              onValueChange={(value) => {
+                setScanLightState(value);
+                setScanLightEnabled(value);
+              }}
+              trackColor={{ false: colors.slate300, true: colors.primaryLight }}
+              thumbColor={colors.white}
+            />
+          </View>
+
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleText}>
+              <Text style={styles.statusLabel}>Show match scores</Text>
+              <Text style={styles.cardHint}>
+                Adds the similarity percentage to “face not recognized” and
+                “already registered” messages. Keep on while testing, turn
+                off for daily use.
+              </Text>
+            </View>
+            <Switch
+              value={showScores}
+              onValueChange={(value) => {
+                setShowScoresState(value);
+                setShowFaceScores(value);
+              }}
+              trackColor={{ false: colors.slate300, true: colors.primaryLight }}
+              thumbColor={colors.white}
+            />
+          </View>
+
+          <Text style={[styles.statusLabel, styles.strictTitle]}>
+            Match strictness
+          </Text>
+          <Text style={styles.cardHint}>
+            Stricter means fewer wrong matches but more “not recognized”
+            messages. Balanced is recommended; use Relaxed only if real staff
+            keep failing.
+          </Text>
+          <View style={styles.strictRow}>
+            {(['relaxed', 'balanced', 'strict'] as FaceStrictness[]).map(
+              (level) => (
+                <AppButton
+                  key={level}
+                  title={level.charAt(0).toUpperCase() + level.slice(1)}
+                  size="sm"
+                  fullWidth={false}
+                  variant={strictness === level ? 'primary' : 'ghost'}
+                  style={styles.strictButton}
+                  onPress={() => {
+                    setStrictnessState(level);
+                    setFaceStrictness(level);
+                  }}
+                />
+              ),
+            )}
+          </View>
         </Card>
 
         <Card style={styles.card}>
@@ -514,6 +601,29 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.slate700,
     fontWeight: '600',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  toggleText: {
+    flex: 1,
+  },
+  strictTitle: {
+    marginTop: spacing.md,
+  },
+  strictRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  strictButton: {
+    flex: 1,
   },
   statusValue: {
     fontSize: fontSize.sm,

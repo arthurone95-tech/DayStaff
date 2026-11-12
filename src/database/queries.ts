@@ -276,6 +276,13 @@ export function resetStaffPin(id: number): void {
  *  under an archived (inactive) status. */
 export async function deleteStaffProfile(id: number): Promise<void> {
   const staff = getStaffById(id);
+  // Update the database first (the columns are face_signature / photo_uri;
+  // the old camelCase names made this statement fail every time), then remove
+  // the photo file, which is best-effort only.
+  getDb().runSync(
+    'UPDATE staff SET is_active = 0, face_signature = NULL, photo_uri = NULL WHERE id = ?',
+    [id]
+  );
   if (staff?.photoUri) {
     try {
       await FileSystem.deleteAsync(staff.photoUri, { idempotent: true });
@@ -283,10 +290,6 @@ export async function deleteStaffProfile(id: number): Promise<void> {
       // Photo cleanup is best-effort only.
     }
   }
-  getDb().runSync(
-    'UPDATE staff SET is_active = 0, faceSignature = NULL, photoUri = NULL WHERE id = ?',
-    [id]
-  );
 }
 
 // ---------------------------------------------------------------------------

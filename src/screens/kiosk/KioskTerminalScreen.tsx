@@ -20,9 +20,14 @@ import { Screen } from '../../components/Screen';
 import { getActiveStaff } from '../../database/queries';
 import { useNow } from '../../hooks/useNow';
 import type { RootNavigation } from '../../navigation/types';
-import { getAuthMethod, getCompanyName } from '../../services/appSettings';
+import {
+  getAuthMethod,
+  getCompanyName,
+  getShowFaceScores,
+} from '../../services/appSettings';
 import { clockOutStaff, recordAttendance } from '../../services/attendanceLogic';
 import {
+  getFaceThresholds,
   matchFaceToStaff,
   prepareStaffFaceProfiles,
   type FaceCandidate,
@@ -250,7 +255,15 @@ export function KioskTerminalScreen() {
 
       if (match.autoConfirm && match.best) {
         const result = recordAttendance(match.best.staff);
-        setFeedback(result);
+        // While tuning (Settings > Face scanner), show how strong the match was.
+        setFeedback(
+          getShowFaceScores()
+            ? {
+                ...result,
+                message: `${result.message} (face match ${Math.round(match.best.similarity * 100)}%)`,
+              }
+            : result,
+        );
         setSimulated(false);
         setFeedbackVisible(true);
         setPendingMatch(null);
@@ -268,11 +281,16 @@ export function KioskTerminalScreen() {
 
       setPendingMatch(null);
       setCapturedPhotoUri(null);
+      // While tuning (Settings > Face scanner), show how close the best match was.
+      const scoreNote =
+        getShowFaceScores() && match.best
+          ? ` (best match ${Math.round(match.best.similarity * 100)}%, needs ${Math.round(getFaceThresholds().auto * 100)}%)`
+          : '';
       alert({
         tone: 'warning',
         title: 'Face not recognized',
         message:
-          'We could not match that face to a staff profile. Face the camera straight on with good light and try again.',
+          `We could not match that face to a staff profile. Face the camera straight on with good light and try again.${scoreNote}`,
         buttonLabel: 'Try again',
       });
     } catch (error) {

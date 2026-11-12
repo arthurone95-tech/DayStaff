@@ -28,18 +28,31 @@ import {
 import type { RootNavigation } from '../../navigation/types';
 import type { Staff } from '../../types';
 import {
+  analyzeFace,
   FaceEngineUnavailableError,
   FacePhotoError,
+  prepareFaceEngine,
+  serializeFaceEmbedding,
+  type FaceAnalysis,
 } from '../../services/faceEngine';
-import { captureChallengeFrames, LIVENESS_STEPS } from '../../services/faceLiveness';
-import { createStaffFaceSignature } from '../../services/faceRecognitionService';
+import {
+  captureChallengeFrames,
+  LIVENESS_STEPS,
+  verifyLiveness,
+} from '../../services/faceLiveness';
+import {
+  createStaffFaceSignature,
+  findClosestFace,
+  getFaceThresholds,
+} from '../../services/faceRecognitionService';
+import { getShowFaceScores } from '../../services/appSettings';
+import { FACE_PHOTO_QUALITY, useFacePictureSize } from '../../hooks/useFacePictureSize';
 import {
   chooseStaffPhoto,
   captureStaffPhoto,
 } from '../../services/photoService';
 import { setStaffPinForStaff } from '../../services/staffPinService';
 import { isStaffPinTaken } from '../../services/staffPinService';
-import { findDuplicateFace } from '../../services/faceRecognitionService';
 import { colors, fontSize, radius, spacing } from '../../theme';
 
 /**
@@ -78,6 +91,7 @@ export function RegisterStaffScreen() {
   const [saving, setSaving] = useState(false);
 
   const cameraRef = useRef<CameraView | null>(null);
+  const { pictureSize, chooseSize } = useFacePictureSize(cameraRef);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   const goToPreviousStep = () => {
@@ -161,33 +175,63 @@ export function RegisterStaffScreen() {
     if (!cameraRef.current || faceBusy) return;
     setFaceBusy(true);
     setFaceError(null);
+    // Every scan starts clean. Before, a previous "already registered" result
+    // stayed set forever, so Save stayed blocked until the screen was closed.
+    setFaceSignature(null);
+    setDuplicateFaceStaff(null);
     try {
+      const engineReady = await prepareFaceEngine();
       const shutter = () =>
         cameraRef.current!.takePictureAsync({
-          quality: 0.9,
+          quality: FACE_PHOTO_QUALITY,
           base64: false,
           skipProcessing: false,
         });
+      // Read each photo as soon as it is saved, while the next prompt is shown.
+      const jobs: Promise<FaceAnalysis>[] = [];
       const frames = await captureChallengeFrames(
         shutter,
         LIVENESS_STEPS,
         (index) => setScanHint(LIVENESS_STEPS[index]?.hint ?? null),
+        (uri) => {
+          if (!engineReady) return;
+          const job = analyzeFace(uri);
+          job.catch(() => undefined); // errors are handled when awaited below
+          jobs.push(job);
+        },
       );
       setScanHint('Building face profile…');
-      const enrollment = await createStaffFaceSignature(frames, {
-        allowLegacy: true,
-      });
-      setFaceSignature(enrollment.signature);
+
+      let signature: string;
+      if (engineReady) {
+        // Same head-turn check as the kiosk, so a photo cannot be enrolled.
+        const liveness = await verifyLiveness(frames, jobs);
+        if (!liveness.ok || !liveness.embedding) {
+          throw new FacePhotoError(
+            liveness.message ?? 'The head-turn check failed. Please try again.',
+          );
+        }
+        signature = serializeFaceEmbedding(liveness.embedding);
+      } else {
+        const enrollment = await createStaffFaceSignature(frames, {
+          allowLegacy: true,
+        });
+        signature = enrollment.signature;
+      }
+      setFaceSignature(signature);
       setScanHint(null);
 
       // Check whether this face is already registered to another staff member.
       setFaceCheckBusy(true);
       try {
-        const existing = await findDuplicateFace(enrollment.signature);
-        if (existing) {
-          setDuplicateFaceStaff(existing);
+        const closest = await findClosestFace(signature);
+        if (closest && closest.similarity >= getFaceThresholds().auto) {
+          setDuplicateFaceStaff(closest.staff);
+          const score = getShowFaceScores()
+            ? ` (match ${Math.round(closest.similarity * 100)}%)`
+            : '';
           setFaceError(
-            `This face is already registered to ${existing.fullName}.`,
+            `This face is already registered to ${closest.staff.fullName}${score}.`,
           );
         }
       } finally {
@@ -526,7 +570,7 @@ export function RegisterStaffScreen() {
             <Card style={styles.formCard}>
               <Text style={styles.cardHint}>
                 {scanHint ??
-                  'Tap “Scan face” and follow the prompts. Three frames are captured and combined into the face profile.'}
+                  'Tap “Scan face”, look straight at the camera, then turn your head to one side and then the other. The face profile is built from the straight-on photo.'}
               </Text>
               <View style={styles.cameraWrap}>
                 {cameraPermission?.granted ? (
@@ -534,6 +578,8 @@ export function RegisterStaffScreen() {
                     ref={cameraRef}
                     style={styles.camera}
                     facing="front"
+                    pictureSize={pictureSize}
+                    onCameraReady={() => void chooseSize()}
                   />
                 ) : (
                   <View style={styles.cameraPlaceholder}>

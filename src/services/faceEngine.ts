@@ -25,7 +25,35 @@ import type {
  * its preprocessing changes so old vectors are re-enrolled instead of compared
  * against incompatible vectors.
  */
-export const FACE_EMBEDDING_PREFIX = 'mf2:';
+export const FACE_EMBEDDING_PREFIX = 'mf3:';
+
+/**
+ * mf3 = frontal-face embeddings from a straightened, square, margin-padded
+ * crop (see the patched native module). mf2 profiles were averages of three
+ * head poses from stretched crops, so they are not comparable and are rebuilt.
+ */
+const EMBEDDING_DIM = 512;
+/** Extra numbers the patched native module appends to every embedding. */
+const POSE_VALUE_COUNT = 6;
+
+/** Head pose and quality numbers reported by ML Kit for the detected face. */
+export interface FacePose {
+  /** Left/right turn in degrees (sign depends on camera mirroring). */
+  yaw: number;
+  pitch: number;
+  roll: number;
+  /** 0..1, or null when ML Kit did not report it. */
+  leftEyeOpen: number | null;
+  rightEyeOpen: number | null;
+  /** Face box width divided by photo width (0..1). */
+  faceWidthRatio: number;
+}
+
+export interface FaceAnalysis {
+  embedding: number[];
+  /** null when the installed native module has no pose patch. */
+  pose: FacePose | null;
+}
 
 const MODEL_ASSET = require('../../assets/models/facenet512.tflite');
 
@@ -188,8 +216,8 @@ export function parseFaceEmbedding(
   }
 }
 
-/** Extract the embedding of the largest face in an image. */
-export async function extractFaceEmbedding(uri: string): Promise<number[]> {
+/** Raw native vector: embedding, plus 6 pose numbers when the patch is present. */
+async function extractRawVector(uri: string): Promise<number[]> {
   const ready = await prepareFaceEngine();
   if (!ready) {
     throw new FaceEngineUnavailableError(
@@ -233,6 +261,31 @@ export async function extractFaceEmbedding(uri: string): Promise<number[]> {
     }
     throw new FacePhotoError(`Could not read that photo: ${message}`);
   }
+}
+
+/** Embedding and head pose of the largest face in an image. */
+export async function analyzeFace(uri: string): Promise<FaceAnalysis> {
+  const raw = await extractRawVector(uri);
+  if (raw.length === EMBEDDING_DIM + POSE_VALUE_COUNT) {
+    const [yaw, pitch, roll, left, right, widthRatio] = raw.slice(EMBEDDING_DIM);
+    return {
+      embedding: raw.slice(0, EMBEDDING_DIM),
+      pose: {
+        yaw,
+        pitch,
+        roll,
+        leftEyeOpen: left >= 0 ? left : null,
+        rightEyeOpen: right >= 0 ? right : null,
+        faceWidthRatio: widthRatio,
+      },
+    };
+  }
+  return { embedding: raw, pose: null };
+}
+
+/** Extract the embedding of the largest face in an image. */
+export async function extractFaceEmbedding(uri: string): Promise<number[]> {
+  return (await analyzeFace(uri)).embedding;
 }
 
 /** Cosine similarity in the 0..1 range used by the candidate UI. */

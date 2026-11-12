@@ -5,17 +5,18 @@
  * frames (see faceLiveness.ts). Scans are verified as live, moving faces and
  * matched by cosine similarity against every active profile.
  *
- * TUNING (FaceNet512 on-device, front camera, indoor lighting):
- *  - same person, different session: similarity ~0.45 – 0.75
- *  - different people:                similarity ~0.20 – 0.42
- * Auto-confirm is set at 0.58 with a top-1/top-2 margin of 0.05. If two
- * profiles both score at least 0.45 and the margin is under 0.05, the kiosk
- * asks for the staff PIN. Lower-confidence single candidates are rejected
- * rather than confirmed by name, so a photo cannot claim someone else's
- * identity.
- * Do NOT raise AUTO_MATCH_SIMILARITY toward 0.7 — that range only fires for
- * near-identical photos and makes every real scan fail with
- * "face not recognized".
+ * Identity comes from ONE straight-on photo (see faceLiveness.ts), cut as a
+ * straightened square crop by the patched native module. Averaging turned-head
+ * photos made different people look alike, and the old low cut-offs (0.45 /
+ * 0.58) then let strangers through.
+ *
+ * Cut-offs now depend on the admin "Match strictness" setting (see
+ * FACE_THRESHOLDS below). FaceNet512's usual same-person cut-off is about
+ * 0.70 cosine similarity. Turn on "Show match scores" in Settings, scan real
+ * staff and strangers, and pick the level that separates them in your light.
+ * If two profiles both reach the "suggest" score and are too close together,
+ * the kiosk asks for the staff PIN. Anything below the "auto" score is never
+ * confirmed by name, so a look-alike photo cannot claim someone's identity.
  */
 
 import { getActiveStaff, setStaffFaceSignature } from '../database/queries';
@@ -30,7 +31,8 @@ import {
   prepareFaceEngine,
   serializeFaceEmbedding,
 } from './faceEngine';
-import { averageEmbeddings, scanTimerMark } from './faceLiveness';
+import { getFaceStrictness, type FaceStrictness } from './appSettings';
+import { scanTimerMark } from './faceLiveness';
 import {
   compareFaceHashes,
   createFaceHashes,
@@ -72,9 +74,24 @@ export interface FaceProfileSummary {
   message?: string;
 }
 
-export const AUTO_MATCH_SIMILARITY = 0.58;
-export const SUGGEST_MATCH_SIMILARITY = 0.45;
-export const MIN_AUTO_MARGIN = 0.05;
+export interface FaceThresholds {
+  /** Minimum similarity to accept a match automatically (and to flag a duplicate). */
+  auto: number;
+  /** Minimum similarity for a candidate to be considered at all. */
+  suggest: number;
+  /** Required gap between the best and second-best candidate. */
+  margin: number;
+}
+
+export const FACE_THRESHOLDS: Record<FaceStrictness, FaceThresholds> = {
+  relaxed: { auto: 0.62, suggest: 0.52, margin: 0.06 },
+  balanced: { auto: 0.7, suggest: 0.58, margin: 0.08 },
+  strict: { auto: 0.76, suggest: 0.64, margin: 0.1 },
+};
+
+export function getFaceThresholds(): FaceThresholds {
+  return FACE_THRESHOLDS[getFaceStrictness()];
+}
 
 // Legacy dHash fallback — dev builds only (native engine missing).
 export const AUTO_MATCH_DISTANCE = 12;
@@ -103,6 +120,9 @@ function getCachedEmbedding(member: Staff): number[] | null {
   }
   return parsed;
 }
+
+/** Staff whose profile photo could not be read; not retried on every scan. */
+const upgradeFailed = new Set<number>();
 
 /** The first model run is slow; one throwaway run at kiosk start hides that. */
 let engineWarmed = false;
@@ -134,8 +154,8 @@ function legacyCandidate(staff: Staff, distance: number): FaceCandidate {
 
 export function confidenceLabel(candidate: FaceCandidate): string {
   if (candidate.method === 'embedding') {
-    if (candidate.similarity >= 0.65) return 'Strong face match';
-    if (candidate.similarity >= 0.52) return 'Likely face match';
+    if (candidate.similarity >= 0.78) return 'Strong face match';
+    if (candidate.similarity >= 0.7) return 'Likely face match';
     return 'Possible face match';
   }
   if (candidate.distance <= AUTO_MATCH_DISTANCE + 3) return 'Strong visual match';
@@ -170,15 +190,10 @@ export async function createStaffFaceSignature(
   const engineAvailable = await prepareFaceEngine();
 
   if (engineAvailable) {
-    const embeddings = await Promise.all(
-      list.map((uri) => extractFaceEmbedding(uri)),
-    );
-    const averaged = averageEmbeddings(embeddings);
-    if (!averaged) {
-      throw new Error('Could not build a face profile from these frames.');
-    }
+    // Identity uses only the first (straight-on) frame.
+    const vector = await extractFaceEmbedding(list[0]);
     return {
-      signature: serializeFaceEmbedding(averaged),
+      signature: serializeFaceEmbedding(vector),
       method: 'embedding',
     };
   }
@@ -271,10 +286,12 @@ async function matchWithEmbeddings(
     let embedding = getCachedEmbedding(member);
     if (!embedding) {
       // Upgrade a legacy profile lazily if the kiosk has not prepared it yet.
+      if (upgradeFailed.has(member.id)) continue;
       try {
         embedding = await extractFaceEmbedding(member.photoUri);
         setStaffFaceSignature(member.id, serializeFaceEmbedding(embedding));
       } catch {
+        upgradeFailed.add(member.id);
         continue;
       }
     }
@@ -288,11 +305,8 @@ async function matchWithEmbeddings(
   }
 
   let captureEmbedding = scanEmbedding;
-  if (!captureEmbedding) {
-    const extracted = await Promise.all(
-      captureUris.map((uri) => extractFaceEmbedding(uri)),
-    );
-    captureEmbedding = averageEmbeddings(extracted);
+  if (!captureEmbedding && captureUris.length > 0) {
+    captureEmbedding = await extractFaceEmbedding(captureUris[0]);
   }
   if (!captureEmbedding) {
     throw new Error('The scan could not be converted into a face signature.');
@@ -307,20 +321,27 @@ async function matchWithEmbeddings(
     )
     .sort((a, b) => b.similarity - a.similarity);
 
+  const limits = getFaceThresholds();
   const best = ranked[0] ?? null;
   const second = ranked[1];
   const margin = second ? (best?.similarity ?? 0) - second.similarity : 1;
-  const suggested = best && best.similarity >= SUGGEST_MATCH_SIMILARITY ? best : null;
+  const suggested = best && best.similarity >= limits.suggest ? best : null;
   const autoConfirm =
     best !== null &&
-    best.similarity >= AUTO_MATCH_SIMILARITY &&
-    margin >= MIN_AUTO_MARGIN;
+    best.similarity >= limits.auto &&
+    margin >= limits.margin;
   const ambiguous =
     best !== null &&
-    best.similarity >= SUGGEST_MATCH_SIMILARITY &&
+    best.similarity >= limits.suggest &&
     second !== undefined &&
-    second.similarity >= SUGGEST_MATCH_SIMILARITY &&
-    margin < MIN_AUTO_MARGIN;
+    second.similarity >= limits.suggest &&
+    margin < limits.margin;
+  console.log(
+    `[face-score] top: ${ranked
+      .slice(0, 3)
+      .map((c) => `#${c.staff.id} ${c.similarity.toFixed(2)}`)
+      .join(' | ')} | auto>=${limits.auto} margin>=${limits.margin}`,
+  );
 
   return {
     candidates: ranked.slice(0, 3),
@@ -408,6 +429,41 @@ export async function matchFaceToStaff(
   return matchWithLegacyHashes(list[0], activeStaff);
 }
 
+export interface ClosestFace {
+  staff: Staff;
+  /** Cosine similarity, 0..1. */
+  similarity: number;
+}
+
+/**
+ * The enrolled staff member whose face is most similar to this signature
+ * (excluding `excludeId`), or null when nobody has a face profile.
+ */
+export async function findClosestFace(
+  signature: string,
+  excludeId?: number,
+): Promise<ClosestFace | null> {
+  const newEmbedding = parseFaceEmbedding(signature);
+  if (!newEmbedding) {
+    return null;
+  }
+  let closest: ClosestFace | null = null;
+  for (const member of getActiveStaff()) {
+    if (member.id === excludeId) {
+      continue;
+    }
+    const existing = getCachedEmbedding(member);
+    if (!existing) {
+      continue;
+    }
+    const similarity = compareFaceEmbeddings(newEmbedding, existing);
+    if (!closest || similarity > closest.similarity) {
+      closest = { staff: member, similarity };
+    }
+  }
+  return closest;
+}
+
 /**
  * Check whether a newly captured face signature already belongs to another
  * staff member. Used during registration to prevent duplicate face profiles.
@@ -416,23 +472,8 @@ export async function findDuplicateFace(
   signature: string,
   excludeId?: number,
 ): Promise<Staff | null> {
-  const newEmbedding = parseFaceEmbedding(signature);
-  if (!newEmbedding) {
-    return null;
-  }
-  const staff = getActiveStaff().filter((member) => member.id !== excludeId);
-  for (const member of staff) {
-    if (!member.faceSignature) {
-      continue;
-    }
-    const existing = parseFaceEmbedding(member.faceSignature);
-    if (!existing) {
-      continue;
-    }
-    const similarity = compareFaceEmbeddings(newEmbedding, existing);
-    if (similarity >= AUTO_MATCH_SIMILARITY) {
-      return member;
-    }
-  }
-  return null;
+  const closest = await findClosestFace(signature, excludeId);
+  return closest && closest.similarity >= getFaceThresholds().auto
+    ? closest.staff
+    : null;
 }

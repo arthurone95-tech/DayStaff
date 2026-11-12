@@ -1,26 +1,37 @@
 /**
  * Guided liveness challenge (spoof resistance) and multi-frame capture.
  *
- * A printed photo cannot respond to prompts, so the kiosk asks the user to
- * move their head between captures. Three frames are taken with different
- * prompts; the frames must all belong to the SAME face (high pairwise
- * similarity) yet be far enough apart to prove real motion. The averaged
- * embedding of the frames is what gets matched against staff profiles.
+ * The kiosk asks the person to look straight, then turn their head to one
+ * side, then to the other. ML Kit measures the real head angle (yaw) of the
+ * face in every photo, so the check requires:
+ *   1. the first photo to be facing the camera,
+ *   2. the other two photos to be clearly turned, in OPPOSITE directions,
+ *   3. all three photos to be the same person.
  *
- * This replaces the old two-frame heuristic, which rejected live users who
- * simply held still (their frame-to-frame embedding similarity exceeded
- * 0.985 and was misclassified as a photo).
+ * Moving a phone or a printed photo in front of the camera changes the
+ * picture but does not rotate the face inside it, so it no longer passes
+ * (the old check only asked "did the pictures change?", which a shaken photo
+ * satisfied).
+ *
+ * Identity is taken ONLY from the straight-on photo. Averaging turned-head
+ * photos made different people look alike.
  */
 
+import { getShowFaceScores } from './appSettings';
 import {
+  analyzeFace,
   compareFaceEmbeddings,
-  extractFaceEmbedding,
   prepareFaceEngine,
+  type FaceAnalysis,
+  type FacePose,
 } from './faceEngine';
 
 export type LivenessFailure =
   | 'engine_unavailable'
+  | 'pose_unavailable'
   | 'capture_failed'
+  | 'no_face'
+  | 'bad_pose'
   | 'no_motion'
   | 'face_changed';
 
@@ -28,9 +39,9 @@ export interface LivenessResult {
   ok: boolean;
   failure?: LivenessFailure;
   message?: string;
-  /** Captured frames, in challenge order (last frame = reference photo). */
+  /** Captured frames, in challenge order (first frame = straight-on photo). */
   frames: string[];
-  /** Averaged embedding of the frames (null when the engine was unavailable). */
+  /** Embedding of the straight-on frame (null when the check failed). */
   embedding: number[] | null;
 }
 
@@ -41,12 +52,26 @@ export interface LivenessStep {
   delayMs: number;
 }
 
-/** Prompts shown during the live scan. Adjust wording freely. */
+/** Prompts shown during the live scan. Adjust wording and timing freely. */
 export const LIVENESS_STEPS: LivenessStep[] = [
-  { key: 'center', hint: 'Hold still and look straight at the camera…', delayMs: 500 },
-  { key: 'left', hint: 'Now turn your head to the LEFT…', delayMs: 700 },
-  { key: 'right', hint: 'Now turn your head to the RIGHT…', delayMs: 700 },
+  { key: 'center', hint: 'Hold still and look straight at the camera…', delayMs: 600 },
+  { key: 'left', hint: 'Now turn your head to one side…', delayMs: 900 },
+  { key: 'right', hint: 'Now turn your head to the OTHER side…', delayMs: 900 },
 ];
+
+/** First photo: the face must be within this many degrees of straight on. */
+const CENTER_MAX_YAW = 15;
+const CENTER_MAX_PITCH = 25;
+/** Each turned photo must be at least this many degrees away from straight. */
+const TURN_MIN_YAW = 15;
+/** Total swing between the two turned photos (they must be on opposite sides). */
+const TURN_MIN_SWING = 30;
+/** Face must fill at least this share of the photo width (not too far away). */
+const MIN_FACE_WIDTH_RATIO = 0.2;
+/** Eyes must look open in the straight-on photo (0..1). */
+const MIN_EYE_OPEN = 0.3;
+/** Same-person floor between the three photos. */
+const SAME_FACE_MIN_SIMILARITY = 0.45;
 
 /**
  * Lightweight scan timing. Lines are printed as "[scan-timing] label: N ms"
@@ -60,13 +85,6 @@ export function scanTimerStart(): void {
 export function scanTimerMark(label: string): void {
   console.log(`[scan-timing] ${label}: ${Date.now() - scanStartedAt} ms`);
 }
-
-/** Same-person floor for frames taken ~1s apart (same face, moved head). */
-const SAME_FACE_MIN_SIMILARITY = 0.45;
-/** Minimum cosine distance between consecutive poses; proves real motion. */
-const MOTION_MIN_DISTANCE = 0.08;
-/** If ALL frames are closer than this, it is a static photo / screen. */
-const STATIC_MAX_DISTANCE = 0.03;
 
 function normalize(vector: number[]): number[] {
   const magnitude = Math.sqrt(vector.reduce((sum, v) => sum + v * v, 0));
@@ -90,13 +108,13 @@ export function averageEmbeddings(vectors: number[][]): number[] | null {
  * Capture one photo per step using the provided shutter callback, waiting
  * `step.delayMs` before each frame so the user can react to the prompt.
  * `onStep(index)` is invoked right before each capture so the UI can update
- * the hint text.
+ * the hint text; `onFrame(uri, index)` right after each photo is saved so
+ * work on it can start immediately.
  */
 export async function captureChallengeFrames(
   capture: () => Promise<{ uri?: string } | null>,
   steps: LivenessStep[],
   onStep?: (index: number) => void,
-  /** Called right after each frame is saved, so work can start immediately. */
   onFrame?: (uri: string, index: number) => void,
 ): Promise<string[]> {
   const frames: string[] = [];
@@ -116,95 +134,122 @@ export async function captureChallengeFrames(
   return frames;
 }
 
+function fail(
+  frames: string[],
+  failure: LivenessFailure,
+  message: string,
+): LivenessResult {
+  return { ok: false, failure, message, frames, embedding: null };
+}
+
+function describeAngles(poses: FacePose[]): string {
+  if (!getShowFaceScores()) return '';
+  const angles = poses.map((pose) => `${Math.round(pose.yaw)}°`).join(', ');
+  return ` (head angles: ${angles})`;
+}
+
 /**
- * Verify that the captured frames show ONE live, moving face.
- * When ok, returns the averaged embedding ready for profile matching.
+ * Verify that the captured frames show ONE live face that really turned its
+ * head. When ok, returns the straight-on embedding ready for profile matching.
+ *
+ * `precomputed` are analyses already started while the photos were being
+ * taken (one per frame, same order); they are reused instead of repeated.
  */
 export async function verifyLiveness(
   frames: string[],
-  /**
-   * Embeddings that were already started while capturing (one per frame, same
-   * order). When given, they are reused instead of extracting again.
-   */
-  precomputed?: Promise<number[]>[],
+  precomputed?: Promise<FaceAnalysis>[],
 ): Promise<LivenessResult> {
   const engineReady = await prepareFaceEngine();
   if (!engineReady || frames.length === 0) {
-    return {
-      ok: false,
-      failure: 'engine_unavailable',
-      message:
-        'Face recognition is not available in this build. Install the latest DayStaff build.',
+    return fail(
       frames,
-      embedding: null,
-    };
+      'engine_unavailable',
+      'Face recognition is not available in this build. Install the latest DayStaff build.',
+    );
   }
 
-  let embeddings: number[][];
+  let analyses: FaceAnalysis[];
   try {
-    embeddings = await Promise.all(
+    analyses = await Promise.all(
       precomputed && precomputed.length === frames.length
         ? precomputed
-        : frames.map((uri) => extractFaceEmbedding(uri)),
+        : frames.map((uri) => analyzeFace(uri)),
     );
   } catch (error) {
-    return {
-      ok: false,
-      failure: 'face_changed',
-      message:
-        error instanceof Error
-          ? error.message
-          : 'A clear face was not visible in every frame. Face the camera and try again.',
+    return fail(
       frames,
-      embedding: null,
-    };
+      'no_face',
+      error instanceof Error
+        ? error.message
+        : 'A clear face was not visible in every photo. Face the camera and try again.',
+    );
   }
 
-  // All frames must be the same person.
-  let minPairSimilarity = 1;
-  for (let i = 0; i < embeddings.length; i += 1) {
-    for (let j = i + 1; j < embeddings.length; j += 1) {
-      minPairSimilarity = Math.min(
-        minPairSimilarity,
-        compareFaceEmbeddings(embeddings[i], embeddings[j]),
+  if (analyses.length < 3) {
+    return fail(frames, 'capture_failed', 'Not enough photos were captured. Try again.');
+  }
+
+  const poses: FacePose[] = [];
+  for (const analysis of analyses) {
+    if (!analysis.pose) {
+      return fail(
+        frames,
+        'pose_unavailable',
+        'This build cannot measure head turns. Install the latest DayStaff build.',
+      );
+    }
+    poses.push(analysis.pose);
+  }
+  const [straight, sideA, sideB] = poses;
+  const angles = describeAngles(poses);
+
+  // 1. The first photo: close enough, facing the camera, eyes open.
+  if (straight.faceWidthRatio < MIN_FACE_WIDTH_RATIO) {
+    return fail(frames, 'bad_pose', `Move a little closer to the camera and try again.${angles}`);
+  }
+  if (
+    Math.abs(straight.yaw) > CENTER_MAX_YAW ||
+    Math.abs(straight.pitch) > CENTER_MAX_PITCH
+  ) {
+    return fail(frames, 'bad_pose', `Look straight at the camera for the first photo.${angles}`);
+  }
+  const eyes = [straight.leftEyeOpen, straight.rightEyeOpen].filter(
+    (value): value is number => value !== null,
+  );
+  if (eyes.length > 0 && Math.min(...eyes) < MIN_EYE_OPEN) {
+    return fail(frames, 'bad_pose', `Keep your eyes open for the first photo.${angles}`);
+  }
+
+  // 2. A real head turn: two clear turns, to opposite sides.
+  const turnedEnough =
+    Math.abs(sideA.yaw) >= TURN_MIN_YAW && Math.abs(sideB.yaw) >= TURN_MIN_YAW;
+  const oppositeSides = sideA.yaw * sideB.yaw < 0;
+  const swing = Math.abs(sideA.yaw - sideB.yaw);
+  if (!turnedEnough || !oppositeSides || swing < TURN_MIN_SWING) {
+    return fail(
+      frames,
+      'no_motion',
+      `Please turn your head clearly to one side, then to the other side.${angles}`,
+    );
+  }
+
+  // 3. All photos must show the same person.
+  let minSimilarity = 1;
+  for (let i = 0; i < analyses.length; i += 1) {
+    for (let j = i + 1; j < analyses.length; j += 1) {
+      minSimilarity = Math.min(
+        minSimilarity,
+        compareFaceEmbeddings(analyses[i].embedding, analyses[j].embedding),
       );
     }
   }
-  if (minPairSimilarity < SAME_FACE_MIN_SIMILARITY) {
-    return {
-      ok: false,
-      failure: 'face_changed',
-      message: 'The face changed between frames. One person must complete the scan.',
+  if (minSimilarity < SAME_FACE_MIN_SIMILARITY) {
+    return fail(
       frames,
-      embedding: null,
-    };
+      'face_changed',
+      'The face changed between photos. One person must complete the scan.',
+    );
   }
 
-  // A real head turn moves the embedding; a photo stays identical.
-  const distances: number[] = [];
-  for (let i = 1; i < embeddings.length; i += 1) {
-    distances.push(1 - compareFaceEmbeddings(embeddings[i - 1], embeddings[i]));
-  }
-  const maxDistance = Math.max(...distances);
-  if (maxDistance <= STATIC_MAX_DISTANCE) {
-    return {
-      ok: false,
-      failure: 'no_motion',
-      message:
-        'No head movement was detected. Please turn your head as prompted and try again.',
-      frames,
-      embedding: null,
-    };
-  }
-  if (maxDistance < MOTION_MIN_DISTANCE) {
-    return {
-      ok: false,
-      failure: 'no_motion',
-      message: 'Please move your head further between prompts and try again.',
-      frames,
-      embedding: null,
-    };
-  }
-
-  return { ok: true, frames, embedding: averageEmbeddings(embeddings) };
+  return { ok: true, frames, embedding: analyses[0].embedding };
 }

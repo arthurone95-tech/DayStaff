@@ -16,5 +16,10 @@ export const STAFF_CODE_MIN_LENGTH = 2;
 export const STAFF_CODE_MAX_LENGTH = 2;
 export const STAFF_CODE_PATTERN = /^[A-Z0-9]+$/;
 
+/** Admin settings for the face scanner (stored in the settings table). */
+export const SCAN_LIGHT_SETTING = 'scan_light_enabled';
+export const SHOW_FACE_SCORES_SETTING = 'show_face_scores';
+export const FACE_STRICTNESS_SETTING = 'face_strictness';
+
 /** Camera mode profiles are matched against a 64-bit visual fingerprint. */
 export const FACE_SIGNATURE_VERSION = 1;

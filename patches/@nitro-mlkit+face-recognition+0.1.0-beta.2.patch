@@ -1,0 +1,209 @@
+diff --git a/node_modules/@nitro-mlkit/face-recognition/android/src/main/kotlin/com/margelo/nitro/nitromlkit/recognition/HybridFaceRecognizer.kt b/node_modules/@nitro-mlkit/face-recognition/android/src/main/kotlin/com/margelo/nitro/nitromlkit/recognition/HybridFaceRecognizer.kt
+index e021b93..254ad80 100644
+--- a/node_modules/@nitro-mlkit/face-recognition/android/src/main/kotlin/com/margelo/nitro/nitromlkit/recognition/HybridFaceRecognizer.kt
++++ b/node_modules/@nitro-mlkit/face-recognition/android/src/main/kotlin/com/margelo/nitro/nitromlkit/recognition/HybridFaceRecognizer.kt
+@@ -2,7 +2,9 @@ package com.margelo.nitro.nitromlkit.recognition
+ 
+ import android.graphics.Bitmap
+ import android.graphics.BitmapFactory
++import android.graphics.Matrix
+ import android.graphics.Rect
++import android.media.ExifInterface
+ import com.google.mlkit.vision.common.InputImage
+ import com.google.mlkit.vision.face.Face
+ import com.google.mlkit.vision.face.FaceDetection
+@@ -31,7 +33,8 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
+   private val detector: FaceDetector by lazy {
+     FaceDetection.getClient(
+       FaceDetectorOptions.Builder()
+-        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
++        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
++        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
+         .build(),
+     )
+   }
+@@ -168,8 +171,10 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
+ 
+   override fun extractEmbedding(faceUri: String): Promise<FaceEmbedding> {
+     return Promise.async {
+-      val emb = embedPrimaryFace(faceUri) ?: throw IllegalStateException("No face found")
+-      FaceEmbedding(emb.map { it.toDouble() }.toDoubleArray())
++      val analysis = analyzePrimaryFace(faceUri) ?: throw IllegalStateException("No face found")
++      // DayStaff patch: the vector is the embedding followed by 6 extra numbers
++      // [yaw, pitch, roll, leftEyeOpen, rightEyeOpen, faceWidthRatio].
++      FaceEmbedding(analysis.first + analysis.second)
+     }
+   }
+ 
+@@ -197,6 +202,23 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
+     return embedFace(bitmap, largest)
+   }
+ 
++  /** Embedding of the largest face plus its head pose (DayStaff liveness patch). */
++  private suspend fun analyzePrimaryFace(imageUri: String): Pair<DoubleArray, DoubleArray>? {
++    val bitmap = loadBitmap(imageUri) ?: return null
++    val faces = detector.process(InputImage.fromBitmap(bitmap, 0)).await()
++    val largest = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: return null
++    val embedding = embedFace(bitmap, largest) ?: return null
++    val pose = doubleArrayOf(
++      largest.headEulerAngleY.toDouble(),
++      largest.headEulerAngleX.toDouble(),
++      largest.headEulerAngleZ.toDouble(),
++      (largest.leftEyeOpenProbability ?: -1f).toDouble(),
++      (largest.rightEyeOpenProbability ?: -1f).toDouble(),
++      largest.boundingBox.width().toDouble() / bitmap.width.toDouble(),
++    )
++    return Pair(embedding, pose)
++  }
++
+   private fun embedFace(bitmap: Bitmap, face: Face): DoubleArray? {
+     val itp = interpreter ?: throw IllegalStateException(
+       "No embedding model loaded. Call downloadModel(url) or loadModel(uri) first.",
+@@ -220,13 +242,43 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
+     return l2normalize(DoubleArray(embDim) { output[0][it].toDouble() })
+   }
+ 
++  /**
++   * DayStaff patch: crop a SQUARE around the face with a small margin. The old
++   * code cut the raw (non-square) box and then stretched it to the model's
++   * square input, which distorted faces differently for every head pose.
++   */
+   private fun cropFace(bitmap: Bitmap, box: Rect): Bitmap? {
+-    val x = box.left.coerceAtLeast(0)
+-    val y = box.top.coerceAtLeast(0)
+-    val w = box.width().coerceAtMost(bitmap.width - x)
+-    val h = box.height().coerceAtMost(bitmap.height - y)
+-    if (w <= 0 || h <= 0) return null
+-    return Bitmap.createBitmap(bitmap, x, y, w, h)
++    val limit = minOf(bitmap.width, bitmap.height)
++    val side = minOf((maxOf(box.width(), box.height()) * 1.25f).toInt(), limit)
++    if (side <= 0) return null
++    val x = (box.centerX() - side / 2).coerceIn(0, bitmap.width - side)
++    val y = (box.centerY() - side / 2).coerceIn(0, bitmap.height - side)
++    return Bitmap.createBitmap(bitmap, x, y, side, side)
++  }
++
++  /** DayStaff patch: honour the photo's EXIF rotation (iOS already does). */
++  private fun applyExifOrientation(bitmap: Bitmap, path: String): Bitmap {
++    val orientation = try {
++      ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
++    } catch (e: Exception) {
++      ExifInterface.ORIENTATION_NORMAL
++    }
++    val m = Matrix()
++    when (orientation) {
++      ExifInterface.ORIENTATION_ROTATE_90 -> m.postRotate(90f)
++      ExifInterface.ORIENTATION_ROTATE_180 -> m.postRotate(180f)
++      ExifInterface.ORIENTATION_ROTATE_270 -> m.postRotate(270f)
++      ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> m.postScale(-1f, 1f)
++      ExifInterface.ORIENTATION_FLIP_VERTICAL -> m.postScale(1f, -1f)
++      ExifInterface.ORIENTATION_TRANSPOSE -> { m.postRotate(90f); m.postScale(-1f, 1f) }
++      ExifInterface.ORIENTATION_TRANSVERSE -> { m.postRotate(270f); m.postScale(-1f, 1f) }
++      else -> return bitmap
++    }
++    return try {
++      Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
++    } catch (e: Exception) {
++      bitmap
++    }
+   }
+ 
+   private fun l2normalize(v: DoubleArray): DoubleArray {
+@@ -281,7 +333,13 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
+         val longest = maxOf(bounds.outWidth, bounds.outHeight)
+         while (longest / (sample * 2) >= targetSize) sample *= 2
+       }
+-      decode(BitmapFactory.Options().apply { inSampleSize = sample })
++      val decoded = decode(BitmapFactory.Options().apply { inSampleSize = sample })
++      val exifPath = when {
++        uri.startsWith("file://") -> uri.removePrefix("file://")
++        uri.startsWith("/") -> uri
++        else -> null
++      }
++      if (decoded != null && exifPath != null) applyExifOrientation(decoded, exifPath) else decoded
+     } catch (e: Exception) {
+       null
+     }
+diff --git a/node_modules/@nitro-mlkit/face-recognition/ios/HybridFaceRecognizer.swift b/node_modules/@nitro-mlkit/face-recognition/ios/HybridFaceRecognizer.swift
+index e90a1e6..b3f7680 100644
+--- a/node_modules/@nitro-mlkit/face-recognition/ios/HybridFaceRecognizer.swift
++++ b/node_modules/@nitro-mlkit/face-recognition/ios/HybridFaceRecognizer.swift
+@@ -192,9 +192,9 @@ class HybridFaceRecognizer: HybridFaceRecognizerSpec {
+     /// Recognition only ever needs the box.
+     private lazy var detector: MLKitFaceDetection.FaceDetector = {
+         let opts = FaceDetectorOptions()
+-        opts.performanceMode = .fast
++        opts.performanceMode = .accurate
+         opts.landmarkMode = .none
+-        opts.classificationMode = .none
++        opts.classificationMode = .all
+         return MLKitFaceDetection.FaceDetector.faceDetector(options: opts)
+     }()
+ 
+@@ -406,10 +406,12 @@ class HybridFaceRecognizer: HybridFaceRecognizerSpec {
+ 
+     func extractEmbedding(faceUri: String) throws -> Promise<FaceEmbedding> {
+         return Promise.async {
+-            guard let embedding = try await self.embedPrimaryFace(faceUri) else {
++            // DayStaff patch: embedding followed by 6 extra numbers
++            // [yaw, pitch, roll, leftEyeOpen, rightEyeOpen, faceWidthRatio].
++            guard let analysis = try await self.analyzePrimaryFace(faceUri) else {
+                 throw RuntimeError.error(withMessage: "No face found")
+             }
+-            return FaceEmbedding(vector: embedding)
++            return FaceEmbedding(vector: analysis.0 + analysis.1)
+         }
+     }
+ 
+@@ -436,6 +438,30 @@ class HybridFaceRecognizer: HybridFaceRecognizerSpec {
+         return try embedFace(cgImage: cgImage, box: largest.frame)
+     }
+ 
++    /// Embedding of the largest face plus its head pose (DayStaff liveness patch).
++    private func analyzePrimaryFace(_ imageUri: String) async throws -> ([Double], [Double])? {
++        guard case .image(let image) = loadImage(from: imageUri, spec: .single),
++              let cgImage = image.cgImage else {
++            throw RuntimeError.error(withMessage: "Failed to load image: \(imageUri)")
++        }
++        let faces = try await detect(image)
++        guard let largest = faces.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else {
++            return nil
++        }
++        guard let embedding = try embedFace(cgImage: cgImage, box: largest.frame) else { return nil }
++        let leftEye: Double = largest.hasLeftEyeOpenProbability ? Double(largest.leftEyeOpenProbability) : -1.0
++        let rightEye: Double = largest.hasRightEyeOpenProbability ? Double(largest.rightEyeOpenProbability) : -1.0
++        let pose: [Double] = [
++            Double(largest.headEulerAngleY),
++            Double(largest.headEulerAngleX),
++            Double(largest.headEulerAngleZ),
++            leftEye,
++            rightEye,
++            Double(largest.frame.width) / Double(cgImage.width),
++        ]
++        return (embedding, pose)
++    }
++
+     private func embedFace(cgImage: CGImage, box: CGRect) throws -> [Double]? {
+         let (width, height) = try modelShape()
+         guard let crop = Self.crop(cgImage, to: box) else { return nil }
+@@ -470,12 +496,14 @@ class HybridFaceRecognizer: HybridFaceRecognizerSpec {
+     }
+ 
+     private static func crop(_ cgImage: CGImage, to box: CGRect) -> CGImage? {
+-        let x = max(0, box.origin.x)
+-        let y = max(0, box.origin.y)
+-        let w = min(CGFloat(cgImage.width) - x, box.width)
+-        let h = min(CGFloat(cgImage.height) - y, box.height)
+-        guard w > 0, h > 0 else { return nil }
+-        return cgImage.cropping(to: CGRect(x: x, y: y, width: w, height: h))
++        // DayStaff patch: square crop with a small margin (no stretching).
++        let imageWidth = CGFloat(cgImage.width)
++        let imageHeight = CGFloat(cgImage.height)
++        let side = min(max(box.width, box.height) * 1.25, min(imageWidth, imageHeight))
++        guard side > 0 else { return nil }
++        let x = max(0, min(box.midX - side / 2, imageWidth - side))
++        let y = max(0, min(box.midY - side / 2, imageHeight - side))
++        return cgImage.cropping(to: CGRect(x: x, y: y, width: side, height: side))
+     }
+ 
+     /// Face crop → the tensor the model wants: RGB, `(px − 127.5) / 128`,

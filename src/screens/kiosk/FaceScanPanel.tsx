@@ -6,14 +6,19 @@ import {
   ActivityIndicator,
   Animated,
   Linking,
-  Platform,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
-import { extractFaceEmbedding, prepareFaceEngine } from '../../services/faceEngine';
+import { useFacePictureSize, FACE_PHOTO_QUALITY } from '../../hooks/useFacePictureSize';
+import { getScanLightEnabled } from '../../services/appSettings';
+import {
+  analyzeFace,
+  prepareFaceEngine,
+  type FaceAnalysis,
+} from '../../services/faceEngine';
 import {
   captureChallengeFrames,
   LIVENESS_STEPS,
@@ -24,14 +29,6 @@ import {
 import { colors, fontSize, radius, spacing } from '../../theme';
 
 const FRAME_SIZE = 320;
-
-/**
- * Android only: the smallest camera picture size whose shorter side is at
- * least this many pixels. Face recognition does not need a 12 MP photo, and
- * smaller photos save and decode much faster. Raise it (e.g. 720) if
- * recognition gets less accurate.
- */
-const MIN_PICTURE_SHORT_SIDE = 480;
 
 type ScanPhase = 'idle' | 'capturing' | 'verifying';
 
@@ -64,24 +61,9 @@ export function FaceScanPanel({
   const [stepIndex, setStepIndex] = useState(0);
   const [hint, setHint] = useState<string | null>(null);
   const [cameraKey, setCameraKey] = useState(0);
-  const [pictureSize, setPictureSize] = useState<string | undefined>(undefined);
-
-  const choosePictureSize = async () => {
-    if (Platform.OS !== 'android' || pictureSize || !cameraRef.current) return;
-    try {
-      const sizes = await cameraRef.current.getAvailablePictureSizesAsync();
-      let best: { label: string; area: number } | null = null;
-      for (const label of sizes) {
-        const [w, h] = label.split('x').map(Number);
-        if (!w || !h || Math.min(w, h) < MIN_PICTURE_SHORT_SIDE) continue;
-        const area = w * h;
-        if (!best || area < best.area) best = { label, area };
-      }
-      if (best) setPictureSize(best.label);
-    } catch {
-      // Keep the default size if the device cannot list picture sizes.
-    }
-  };
+  const { pictureSize, chooseSize } = useFacePictureSize(cameraRef);
+  // Admin setting: bright screen light around the camera while photos are taken.
+  const [lightEnabled, setLightEnabled] = useState(getScanLightEnabled());
 
   // Continuous scan-line animation across the camera frame.
   const scanProgress = useRef(new Animated.Value(0)).current;
@@ -103,6 +85,8 @@ export function FaceScanPanel({
   });
 
   const scanning = phase !== 'idle';
+  // Light is on from the tap until the third photo is taken, then off.
+  const lightOn = lightEnabled && phase === 'capturing';
 
   // Always release the torch when the component unmounts or scanning stops.
   // The CameraView receives enableTorch={scanning}, so when scanning ends the
@@ -123,6 +107,7 @@ export function FaceScanPanel({
       setHint(null);
       setCameraError(null);
       setReady(false);
+      setLightEnabled(getScanLightEnabled());
       setCameraKey((k) => k + 1);
     }, []),
   );
@@ -137,13 +122,13 @@ export function FaceScanPanel({
     try {
       const shutter = () =>
         cameraRef.current!.takePictureAsync({
-          quality: 0.5,
+          quality: FACE_PHOTO_QUALITY,
           base64: false,
           skipProcessing: false,
         });
       // Start reading each frame as soon as it is saved, while the user is
       // still turning for the next one.
-      const embeddingJobs: Promise<number[]>[] = [];
+      const embeddingJobs: Promise<FaceAnalysis>[] = [];
       const frames = await captureChallengeFrames(
         shutter,
         LIVENESS_STEPS,
@@ -153,13 +138,14 @@ export function FaceScanPanel({
         },
         (uri, index) => {
           scanTimerMark(`frame ${index + 1} captured`);
-          const job = extractFaceEmbedding(uri);
+          const job = analyzeFace(uri);
           job.catch(() => undefined); // errors are handled when awaited below
           embeddingJobs.push(job);
         },
       );
       scanTimerMark('all frames captured');
 
+      // The scan light goes off here: it is only on while photos are taken.
       setPhase('verifying');
       setHint('Verifying it is a live scan…');
 
@@ -266,17 +252,21 @@ export function FaceScanPanel({
 
   return (
     <View style={styles.wrap}>
+      <View style={styles.lightWrap}>
+        {lightOn ? (
+          <View pointerEvents="none" style={styles.lightGlow} />
+        ) : null}
       <View style={styles.cameraFrame}>
         <CameraView
           key={cameraKey}
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
           facing="front"
-          enableTorch={scanning}
+          enableTorch={lightOn}
           pictureSize={pictureSize}
           onCameraReady={() => {
             setReady(true);
-            void choosePictureSize();
+            void chooseSize();
           }}
           onMountError={(event) =>
             setCameraError(event?.message ?? 'The camera could not start.')
@@ -321,6 +311,7 @@ export function FaceScanPanel({
             </Text>
           </View>
         ) : null}
+      </View>
       </View>
 
       {/* Step dots */}
@@ -410,6 +401,27 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: colors.slate500,
     textAlign: 'center',
+  },
+  lightWrap: {
+    width: '100%',
+    maxWidth: FRAME_SIZE,
+    alignSelf: 'center',
+  },
+  // Bright white area behind and around the camera preview: lights the face
+  // while the photos are taken. Positioned outside the frame, so the layout
+  // (and the one-screen fit) does not change.
+  lightGlow: {
+    position: 'absolute',
+    top: -26,
+    left: -26,
+    right: -26,
+    bottom: -26,
+    borderRadius: radius.xl + 20,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.9,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 0 },
   },
   cameraFrame: {
     width: '100%',
