@@ -64,13 +64,18 @@ async function launchLibraryPicker(): Promise<ImagePicker.ImagePickerResult> {
   }
 }
 
-export async function captureStaffPhoto(): Promise<string | null> {
+export async function captureStaffPhoto(
+  cameraType: ImagePicker.CameraType = ImagePicker.CameraType.back,
+): Promise<string | null> {
   const permission = await ImagePicker.requestCameraPermissionsAsync();
   if (!permission.granted) {
     throw new Error('Camera permission is required to take a photo.');
   }
 
-  const result = await ImagePicker.launchCameraAsync(pickerOptions);
+  const result = await ImagePicker.launchCameraAsync({
+    ...pickerOptions,
+    cameraType,
+  });
   if (result.canceled || result.assets.length === 0) {
     return null;
   }

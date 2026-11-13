@@ -26,6 +26,7 @@ import {
   getShowFaceScores,
 } from '../../services/appSettings';
 import { clockOutStaff, recordAttendance } from '../../services/attendanceLogic';
+import { getLastLivenessDebug } from '../../services/faceLiveness';
 import {
   getFaceThresholds,
   matchFaceToStaff,
@@ -260,7 +261,7 @@ export function KioskTerminalScreen() {
           getShowFaceScores()
             ? {
                 ...result,
-                message: `${result.message} (face match ${Math.round(match.best.similarity * 100)}%)`,
+                message: `${result.message} (face match ${Math.round(match.best.similarity * 100)}%)${getLastLivenessDebug()}`,
               }
             : result,
         );
@@ -284,7 +285,7 @@ export function KioskTerminalScreen() {
       // While tuning (Settings > Face scanner), show how close the best match was.
       const scoreNote =
         getShowFaceScores() && match.best
-          ? ` (best match ${Math.round(match.best.similarity * 100)}%, needs ${Math.round(getFaceThresholds().auto * 100)}%)`
+          ? ` (best match ${Math.round(match.best.similarity * 100)}%, needs ${Math.round(getFaceThresholds().auto * 100)}%)${getLastLivenessDebug()}`
           : '';
       alert({
         tone: 'warning',

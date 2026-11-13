@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -136,6 +137,7 @@ export function StaffProfileScreen({ navigation, route }: Props) {
   const [isActive, setIsActive] = useState(true);
   const [photoUri, setPhotoUri] = useState<Staff['photoUri'] | undefined>(undefined);
   const [photoSheetOpen, setPhotoSheetOpen] = useState(false);
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
 
   // Fallback PIN sheet
   const [pinSheetOpen, setPinSheetOpen] = useState(false);
@@ -421,11 +423,19 @@ export function StaffProfileScreen({ navigation, route }: Props) {
             <>
               {/* ===== VIEW MODE: COMPACT PROFILE HEADER ===== */}
               <View style={styles.profileCard}>
-                <Avatar
-                  name={staff.fullName}
-                  photoUri={staff.photoUri}
-                  size={72}
-                />
+                <Pressable
+                  onPress={() => {
+                    if (staff.photoUri) setPhotoViewerOpen(true);
+                  }}
+                  disabled={!staff.photoUri}
+                  style={styles.avatarPressable}
+                >
+                  <Avatar
+                    name={staff.fullName}
+                    photoUri={staff.photoUri}
+                    size={72}
+                  />
+                </Pressable>
                 <View style={styles.profileCardText}>
                   <Text style={styles.profileName} numberOfLines={1}>
                     {staff.fullName}
@@ -579,6 +589,40 @@ export function StaffProfileScreen({ navigation, route }: Props) {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* ===== PHOTO VIEWER ===== */}
+      <Modal
+        visible={photoViewerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoViewerOpen(false)}
+      >
+        <Pressable
+          style={styles.photoViewerBackdrop}
+          onPress={() => setPhotoViewerOpen(false)}
+        >
+          <Pressable
+            style={styles.photoViewerCard}
+            onPress={() => {}}
+          >
+            <Pressable
+              onPress={() => setPhotoViewerOpen(false)}
+              style={styles.photoViewerClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close photo viewer"
+            >
+              <Ionicons name="close" size={24} color={colors.white} />
+            </Pressable>
+            {staff?.photoUri ? (
+              <Image
+                source={{ uri: staff.photoUri }}
+                style={styles.photoViewerImage}
+                resizeMode="contain"
+              />
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* ===== PHOTO SOURCE SHEET ===== */}
       <Modal
@@ -921,4 +965,41 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   footerButton: { flex: 1 },
+  avatarPressable: {
+    borderRadius: 36,
+    overflow: 'hidden',
+  },
+  photoViewerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoViewerCard: {
+    width: '90%',
+    maxHeight: '80%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  photoViewerClose: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    zIndex: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoViewerImage: {
+    width: '100%',
+    height: undefined,
+    aspectRatio: 1,
+  },
 });

@@ -142,10 +142,21 @@ function fail(
   return { ok: false, failure, message, frames, embedding: null };
 }
 
+/**
+ * Yaw (turn) and roll (tilt) of the three photos, for on-screen testing.
+ * A roll near 90° would mean the photo reaches the model sideways.
+ */
+let lastLivenessDebug = '';
+export function getLastLivenessDebug(): string {
+  return getShowFaceScores() ? lastLivenessDebug : '';
+}
+
 function describeAngles(poses: FacePose[]): string {
-  if (!getShowFaceScores()) return '';
-  const angles = poses.map((pose) => `${Math.round(pose.yaw)}°`).join(', ');
-  return ` (head angles: ${angles})`;
+  const angles = poses
+    .map((pose) => `${Math.round(pose.yaw)}/${Math.round(pose.roll)}`)
+    .join(', ');
+  lastLivenessDebug = ` [head turn/tilt: ${angles}]`;
+  return getShowFaceScores() ? lastLivenessDebug : '';
 }
 
 /**

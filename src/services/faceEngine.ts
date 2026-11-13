@@ -12,6 +12,7 @@
  */
 
 import { Asset } from 'expo-asset';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Platform } from 'react-native';
 
 import type {
@@ -263,6 +264,25 @@ async function extractRawVector(uri: string): Promise<number[]> {
   }
 }
 
+/**
+ * Re-saves a camera photo with its rotation baked into the pixels (no EXIF
+ * rotation tag left). Camera photos often store "rotate me" as a tag, which
+ * the native reader can miss, so the model would see SIDEWAYS faces: tests
+ * show sideways faces make different people look 50-80% alike. Always run
+ * photos through this before face analysis. Falls back to the original.
+ */
+export async function prepareFacePhoto(uri: string): Promise<string> {
+  try {
+    const result = await ImageManipulator.manipulateAsync(uri, [], {
+      compress: 0.9,
+      format: ImageManipulator.SaveFormat.JPEG,
+    });
+    return result.uri;
+  } catch {
+    return uri;
+  }
+}
+
 /** Embedding and head pose of the largest face in an image. */
 export async function analyzeFace(uri: string): Promise<FaceAnalysis> {
   const raw = await extractRawVector(uri);
@@ -285,7 +305,11 @@ export async function analyzeFace(uri: string): Promise<FaceAnalysis> {
 
 /** Extract the embedding of the largest face in an image. */
 export async function extractFaceEmbedding(uri: string): Promise<number[]> {
-  return (await analyzeFace(uri)).embedding;
+  // Profile photos, warm-up and legacy upgrades come through here: make sure
+  // they are upright too (live scan frames are prepared by their callers and
+  // use analyzeFace directly).
+  const upright = await prepareFacePhoto(uri);
+  return (await analyzeFace(upright)).embedding;
 }
 
 /** Cosine similarity in the 0..1 range used by the candidate UI. */

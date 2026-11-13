@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
@@ -17,6 +17,7 @@ import { getScanLightEnabled } from '../../services/appSettings';
 import {
   analyzeFace,
   prepareFaceEngine,
+  prepareFacePhoto,
   type FaceAnalysis,
 } from '../../services/faceEngine';
 import {
@@ -62,6 +63,17 @@ export function FaceScanPanel({
   const [hint, setHint] = useState<string | null>(null);
   const [cameraKey, setCameraKey] = useState(0);
   const { pictureSize, chooseSize } = useFacePictureSize(cameraRef);
+  const isFocused = useIsFocused();
+  const [cameraRetry, setCameraRetry] = useState(0);
+
+  // Remount camera when focus returns
+  useEffect(() => {
+    if (isFocused) {
+      setReady(false);
+      setCameraError(null);
+      setCameraKey((k) => k + 1);
+    }
+  }, [isFocused]);
   // Admin setting: bright screen light around the camera while photos are taken.
   const [lightEnabled, setLightEnabled] = useState(getScanLightEnabled());
 
@@ -138,7 +150,7 @@ export function FaceScanPanel({
         },
         (uri, index) => {
           scanTimerMark(`frame ${index + 1} captured`);
-          const job = analyzeFace(uri);
+          const job = prepareFacePhoto(uri).then((upright) => analyzeFace(upright));
           job.catch(() => undefined); // errors are handled when awaited below
           embeddingJobs.push(job);
         },
@@ -257,21 +269,29 @@ export function FaceScanPanel({
           <View pointerEvents="none" style={styles.lightGlow} />
         ) : null}
       <View style={styles.cameraFrame}>
-        <CameraView
-          key={cameraKey}
-          ref={cameraRef}
-          style={StyleSheet.absoluteFill}
-          facing="front"
-          enableTorch={lightOn}
-          pictureSize={pictureSize}
-          onCameraReady={() => {
-            setReady(true);
-            void chooseSize();
-          }}
-          onMountError={(event) =>
-            setCameraError(event?.message ?? 'The camera could not start.')
-          }
-        />
+        {isFocused ? (
+          <CameraView
+            key={cameraKey + cameraRetry}
+            ref={cameraRef}
+            style={StyleSheet.absoluteFill}
+            facing="front"
+            enableTorch={lightOn}
+            pictureSize={pictureSize}
+            onCameraReady={() => {
+              setReady(true);
+              setCameraError(null);
+              void chooseSize();
+            }}
+            onMountError={(event) => {
+              setCameraError(event?.message ?? 'The camera could not start.');
+              setReady(false);
+            }}
+          />
+        ) : (
+          <View style={styles.cameraPlaceholder}>
+            <ActivityIndicator color={colors.white} />
+          </View>
+        )}
 
         {/* Face guide oval */}
         <View pointerEvents="none" style={styles.overlay}>
@@ -333,7 +353,21 @@ export function FaceScanPanel({
           'Position your face inside the oval, then tap “Scan my face” and follow the prompts.'}
       </Text>
 
-      {cameraError ? <Text style={styles.error}>{cameraError}</Text> : null}
+      {cameraError ? (
+        <View style={styles.retryRow}>
+          <Text style={styles.error}>{cameraError}</Text>
+          <AppButton
+            title="Retry camera"
+            onPress={() => {
+              setCameraError(null);
+              setReady(false);
+              setCameraRetry((r) => r + 1);
+            }}
+            variant="ghost"
+            size="sm"
+          />
+        </View>
+      ) : null}
 
       <AppButton
         title={scanning ? 'Scanning…' : busy ? 'Matching…' : 'Scan my face'}
@@ -548,6 +582,16 @@ const styles = StyleSheet.create({
     color: '#FCA5A5',
     fontSize: fontSize.sm,
     textAlign: 'center',
+  },
+  retryRow: {
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  cameraPlaceholder: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.kioskSurface,
   },
   scanButton: { marginTop: spacing.md },
   useCodeButton: { marginTop: spacing.xs },

@@ -68,7 +68,14 @@
       "expo-font",
       "./src/plugins/withKioskLockTask.js",
       "@react-native-community/datetimepicker",
-      "expo-splash-screen"
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-logo.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0B132B"
+        }
+      ]
     ],
     "extra": {
       "eas": {

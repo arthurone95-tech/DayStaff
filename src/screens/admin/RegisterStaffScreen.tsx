@@ -32,11 +32,13 @@ import {
   FaceEngineUnavailableError,
   FacePhotoError,
   prepareFaceEngine,
+  prepareFacePhoto,
   serializeFaceEmbedding,
   type FaceAnalysis,
 } from '../../services/faceEngine';
 import {
   captureChallengeFrames,
+  getLastLivenessDebug,
   LIVENESS_STEPS,
   verifyLiveness,
 } from '../../services/faceLiveness';
@@ -51,6 +53,7 @@ import {
   chooseStaffPhoto,
   captureStaffPhoto,
 } from '../../services/photoService';
+import * as ImagePicker from 'expo-image-picker';
 import { setStaffPinForStaff } from '../../services/staffPinService';
 import { isStaffPinTaken } from '../../services/staffPinService';
 import { colors, fontSize, radius, spacing } from '../../theme';
@@ -78,6 +81,7 @@ export function RegisterStaffScreen() {
   }>({});
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoCameraType, setPhotoCameraType] = useState<ImagePicker.CameraType>(ImagePicker.CameraType.back);
   const [faceSignature, setFaceSignature] = useState<string | null>(null);
   const [staffPin, setStaffPin] = useState('');
   const [staffPinConfirm, setStaffPinConfirm] = useState('');
@@ -141,9 +145,9 @@ export function RegisterStaffScreen() {
   // Step 2 — profile photo
   // -------------------------------------------------------------------------
 
-  const handleTakePhoto = async () => {
+  const handleTakePhoto = async (cameraType: ImagePicker.CameraType = photoCameraType) => {
     try {
-      const uri = await captureStaffPhoto();
+      const uri = await captureStaffPhoto(cameraType);
       if (uri) setPhotoUri(uri);
     } catch (error) {
       alert({
@@ -195,7 +199,7 @@ export function RegisterStaffScreen() {
         (index) => setScanHint(LIVENESS_STEPS[index]?.hint ?? null),
         (uri) => {
           if (!engineReady) return;
-          const job = analyzeFace(uri);
+          const job = prepareFacePhoto(uri).then((upright) => analyzeFace(upright));
           job.catch(() => undefined); // errors are handled when awaited below
           jobs.push(job);
         },
@@ -228,7 +232,7 @@ export function RegisterStaffScreen() {
         if (closest && closest.similarity >= getFaceThresholds().auto) {
           setDuplicateFaceStaff(closest.staff);
           const score = getShowFaceScores()
-            ? ` (match ${Math.round(closest.similarity * 100)}%)`
+            ? ` (match ${Math.round(closest.similarity * 100)}%)${getLastLivenessDebug()}`
             : '';
           setFaceError(
             `This face is already registered to ${closest.staff.fullName}${score}.`,
@@ -522,8 +526,33 @@ export function RegisterStaffScreen() {
                 <View style={styles.photoButtonCell}>
                   <AppButton
                     title="Take photo"
-                    onPress={() => void handleTakePhoto()}
+                    onPress={() => void handleTakePhoto(photoCameraType)}
                     size="sm"
+                  />
+                </View>
+                <View style={styles.photoButtonCell}>
+                  <AppButton
+                    title="Flip camera"
+                    onPress={() =>
+                      setPhotoCameraType((prev) =>
+                        prev === ImagePicker.CameraType.back
+                          ? ImagePicker.CameraType.front
+                          : ImagePicker.CameraType.back,
+                      )
+                    }
+                    variant="secondary"
+                    size="sm"
+                    icon={
+                      <Ionicons
+                        name={
+                          photoCameraType === ImagePicker.CameraType.back
+                            ? 'camera-reverse-outline'
+                            : 'camera-outline'
+                        }
+                        size={18}
+                        color={colors.white}
+                      />
+                    }
                   />
                 </View>
                 <View style={styles.photoButtonCell}>
