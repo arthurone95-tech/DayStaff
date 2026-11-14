@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -82,6 +83,7 @@ export function RegisterStaffScreen() {
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [photoCameraType, setPhotoCameraType] = useState<ImagePicker.CameraType>(ImagePicker.CameraType.back);
+  const [scanCameraType, setScanCameraType] = useState<ImagePicker.CameraType>(ImagePicker.CameraType.front);
   const [faceSignature, setFaceSignature] = useState<string | null>(null);
   const [staffPin, setStaffPin] = useState('');
   const [staffPinConfirm, setStaffPinConfirm] = useState('');
@@ -628,7 +630,7 @@ export function RegisterStaffScreen() {
                   <CameraView
                     ref={cameraRef}
                     style={styles.camera}
-                    facing="front"
+                    facing={scanCameraType}
                     pictureSize={pictureSize}
                     onCameraReady={() => void chooseSize()}
                   />
@@ -673,6 +675,36 @@ export function RegisterStaffScreen() {
                   size="lg"
                   disabled={!cameraPermission?.granted || faceBusy || faceCheckBusy}
                 />
+              </View>
+
+              <View style={styles.cameraFlipRow}>
+                <Pressable
+                  onPress={() =>
+                    setScanCameraType((prev) =>
+                      prev === ImagePicker.CameraType.back
+                        ? ImagePicker.CameraType.front
+                        : ImagePicker.CameraType.back
+                    )
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Switch camera"
+                  style={styles.cameraFlipButton}
+                >
+                  <Ionicons
+                    name={
+                      scanCameraType === ImagePicker.CameraType.back
+                        ? 'camera-reverse-outline'
+                        : 'camera-outline'
+                    }
+                    size={18}
+                    color={colors.primary}
+                  />
+                </Pressable>
+                <Text style={styles.cameraFlipLabel}>
+                  {scanCameraType === ImagePicker.CameraType.back
+                    ? 'Rear camera'
+                    : 'Front camera'}
+                </Text>
               </View>
 
               <View style={styles.note}>
@@ -820,6 +852,27 @@ const styles = StyleSheet.create({
     backgroundColor: colors.slate200,
   },
   camera: { flex: 1 },
+  cameraFlipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  cameraFlipButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  cameraFlipLabel: {
+    fontSize: fontSize.xs,
+    color: colors.slate500,
+  },
   cameraPlaceholder: {
     flex: 1,
     alignItems: 'center',
