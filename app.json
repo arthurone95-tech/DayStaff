@@ -17,6 +17,7 @@
       "bundleIdentifier": "com.daystaff.app",
       "infoPlist": {
         "NSFaceIDUsageDescription": "DayStaff uses Face ID to verify staff attendance.",
+        "NSLocalNetworkUsageDescription": "DayStaff uses the local network to connect staff phones to this kiosk for offline attendance.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -33,7 +34,10 @@
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT",
         "android.permission.CAMERA",
-        "android.permission.READ_MEDIA_IMAGES"
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE"
       ]
     },
     "web": {

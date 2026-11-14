@@ -16,6 +16,7 @@ import {
   updateClockOut,
 } from '../database/queries';
 import type {
+  AttendanceAuthMethod,
   AttendanceEvaluation,
   AttendanceLog,
   AttendanceResult,
@@ -82,6 +83,7 @@ function completeClockOut(
   now: Date,
   schedule: Schedule,
   date: string,
+  authMethod: AttendanceAuthMethod,
 ): AttendanceResult {
   const evaluation = evaluateClockOut(now, schedule, date);
   const log = updateClockOut({
@@ -89,6 +91,7 @@ function completeClockOut(
     clockOutTime: now.toISOString(),
     status: evaluation.status,
     minutesEarly: evaluation.minutesEarly,
+    authMethod,
   });
 
   const detail =
@@ -125,6 +128,7 @@ export function deriveDayStatus(log: AttendanceLog | null): DayStatus {
 export function recordAttendance(
   staff: Staff,
   now: Date = new Date(),
+  authMethod: AttendanceAuthMethod = 'FACE_BIOMETRIC',
 ): AttendanceResult {
   const date = toDateKey(now);
   const schedule = getSchedule();
@@ -138,6 +142,7 @@ export function recordAttendance(
       clockInTime: now.toISOString(),
       status: evaluation.status,
       minutesLate: evaluation.minutesLate,
+      authMethod,
     });
 
     const detail =
@@ -173,7 +178,14 @@ export function recordAttendance(
       };
     }
 
-    return completeClockOut(staff, existing, now, schedule, date);
+    return completeClockOut(
+      staff,
+      existing,
+      now,
+      schedule,
+      date,
+      authMethod,
+    );
   }
 
   return {
@@ -194,6 +206,7 @@ export function recordAttendance(
 export function clockOutStaff(
   staff: Staff,
   now: Date = new Date(),
+  authMethod: AttendanceAuthMethod = 'FACE_BIOMETRIC',
 ): AttendanceResult {
   const date = toDateKey(now);
   const schedule = getSchedule();
@@ -215,7 +228,7 @@ export function clockOutStaff(
     };
   }
 
-  return completeClockOut(staff, existing, now, schedule, date);
+  return completeClockOut(staff, existing, now, schedule, date, authMethod);
 }
 
 /** Build the admin dashboard view for a given local date. */

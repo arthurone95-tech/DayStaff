@@ -10,8 +10,8 @@ interface AuthMethodPickerProps {
   disabled?: boolean;
 }
 
-// Staff code + biometrics has been retired in favour of face recognition.
-// Keep the type import so the picker stays compatible if it is restored later.
+// Face recognition remains the primary/default method. The administrator can
+// switch the kiosk to the short-code + two-way visual QR method instead.
 const OPTIONS: Array<{
   value: AuthMethod;
   title: string;
@@ -26,6 +26,13 @@ const OPTIONS: Array<{
       'Staff look at the camera and the app matches the capture against profile photos. Best with clear, front-facing photos.',
     icon: 'scan-outline',
     recommended: true,
+  },
+  {
+    value: 'SHORT_CODE_QR',
+    title: 'Short code + visual QR',
+    description:
+      'Staff enter their 2-character code, scan a dynamic kiosk QR with a paired phone, and confirm with the phone biometrics. Fully on-device.',
+    icon: 'qr-code-outline',
   },
 ];
 

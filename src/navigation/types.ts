@@ -8,6 +8,15 @@ export type AttendanceFilter =
   | 'earlyExit'
   | 'absent';
 
+export type PhoneVerificationParams = {
+  code: string;
+  sessionId: string;
+  nonce: string;
+  initials: string;
+  mode: 'pair' | 'attend';
+  expiresAt: number;
+};
+
 export type RootStackParamList = {
   Kiosk: undefined;
   AdminDashboard: undefined;
@@ -18,6 +27,8 @@ export type RootStackParamList = {
   AttendanceHistory: { filter?: AttendanceFilter } | undefined;
   ExportReports: undefined;
   AdminSettings: undefined;
+  PhoneVerification: PhoneVerificationParams | undefined;
+  QrScan: { scanResetKey?: number } | undefined;
 };
 
 export type RootNavigation = NativeStackNavigationProp<RootStackParamList>;

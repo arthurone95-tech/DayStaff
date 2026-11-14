@@ -12,20 +12,26 @@ import {
   View,
 } from 'react-native';
 
-import { DEFAULT_AUTH_METHOD, DEFAULT_COMPANY_NAME } from '../../config/app';
+import { DEFAULT_AUTH_METHOD, DEFAULT_COMPANY_NAME, QR_SUCCESS_RESET_MS } from '../../config/app';
 import { AppButton } from '../../components/AppButton';
 import { useAppDialog } from '../../components/AppDialog';
+import { DynamicQrPanel } from '../../components/DynamicQrPanel';
 import { FeedbackModal } from '../../components/FeedbackModal';
 import { Screen } from '../../components/Screen';
-import { getActiveStaff } from '../../database/queries';
+import {
+  getActiveStaff,
+  getStaffDeviceCredential,
+} from '../../database/queries';
 import { useNow } from '../../hooks/useNow';
 import type { RootNavigation } from '../../navigation/types';
 import {
   getAuthMethod,
   getCompanyName,
+  getModeResetTimeoutSeconds,
   getShowFaceScores,
 } from '../../services/appSettings';
 import { clockOutStaff, recordAttendance } from '../../services/attendanceLogic';
+import { getKioskServerUrl, setKioskServerHandlers } from '../../services/kioskServer';
 import { getLastLivenessDebug } from '../../services/faceLiveness';
 import {
   getFaceThresholds,
@@ -34,22 +40,52 @@ import {
   type FaceCandidate,
   type FaceProfileSummary,
 } from '../../services/faceRecognitionService';
+import { createQrSession, isSessionExpired, sessionRemainingSeconds, type QrSession } from '../../services/qrVerificationService';
 import {
   isStaffPinFormatValid,
   recordSinglePinFailure,
   verifyStaffPin,
 } from '../../services/staffPinService';
 import { colors, fontSize, radius, spacing } from '../../theme';
-import type { AttendanceResult, AuthMethod, Staff } from '../../types';
+import type {
+  AttendanceAuthMethod,
+  AttendanceResult,
+  AuthMethod,
+  Staff,
+} from '../../types';
 import { formatDateLong, formatTime24h } from '../../utils/date';
 import { enableKiosk, isKioskLockTaskAvailable } from '../../services/kioskLockTask';
 import { AdminPinModal } from '../auth/AdminPinModal';
+import { CodeKeypad } from './CodeKeypad';
 import { FaceMatchModal } from './FaceMatchModal';
 import { FaceScanPanel } from './FaceScanPanel';
 
 const FEEDBACK_TIMEOUT_MS = 8000;
 /** Deep navy background used behind the whole kiosk screen. */
 const KIOSK_BG = '#06142B';
+
+type KioskMode = 'face' | 'qr';
+
+function modeForAuthMethod(method: AuthMethod): KioskMode {
+  return method === 'SHORT_CODE_QR' ? 'qr' : 'face';
+}
+
+function safeEqualBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    diff |= left[i] ^ right[i];
+  }
+  return diff === 0;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
 
 export function KioskTerminalScreen() {
   const navigation = useNavigation<RootNavigation>();
@@ -59,12 +95,23 @@ export function KioskTerminalScreen() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [companyName, setCompanyName] = useState(DEFAULT_COMPANY_NAME);
   const [authMethod, setAuthMethod] = useState<AuthMethod>(DEFAULT_AUTH_METHOD);
+  const [kioskMode, setKioskMode] = useState<KioskMode>('face');
+  const [modeResetSeconds, setModeResetSeconds] = useState(3);
+  const [modeActivityAt, setModeActivityAt] = useState(() => Date.now());
+
+  const [qrCode, setQrCode] = useState('');
+  const [qrError, setQrError] = useState<string | undefined>();
+  const [qrStaff, setQrStaff] = useState<Staff | null>(null);
+  const [qrSession, setQrSession] = useState<QrSession | null>(null);
+  const [qrBusy, setQrBusy] = useState(false);
+  const [qrScanResetKey, setQrScanResetKey] = useState(0);
 
   const [processingId, setProcessingId] = useState<number | null>(null);
   /** Synchronous lock so a fast action cannot race. */
   const operationRef = useRef(false);
 
   const [faceBusy, setFaceBusy] = useState(false);
+  const [faceScanning, setFaceScanning] = useState(false);
   const [pendingMatch, setPendingMatch] = useState<FaceCandidate | null>(null);
   const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
   const [faceProfileSummary, setFaceProfileSummary] =
@@ -90,6 +137,14 @@ export function KioskTerminalScreen() {
       setStaff(getActiveStaff());
       setCompanyName(getCompanyName());
       setAuthMethod(method);
+      setKioskMode(modeForAuthMethod(method));
+      setModeResetSeconds(getModeResetTimeoutSeconds());
+      setModeActivityAt(Date.now());
+      setQrCode('');
+      setQrError(undefined);
+      setQrStaff(null);
+      setQrSession(null);
+      setQrBusy(false);
       setPendingMatch(null);
       setCapturedPhotoUri(null);
       setFaceProfileSummary(null);
@@ -138,6 +193,206 @@ export function KioskTerminalScreen() {
       };
     }, []),
   );
+
+  const resetQrFlow = useCallback(() => {
+    setQrCode('');
+    setQrError(undefined);
+    setQrStaff(null);
+    setQrSession(null);
+    setQrBusy(false);
+  }, []);
+
+  const resetToDefaultMode = useCallback(() => {
+    setKioskMode(modeForAuthMethod(authMethod));
+    resetQrFlow();
+    setFaceScanning(false);
+    setPendingMatch(null);
+    setCapturedPhotoUri(null);
+    setAmbiguousCandidates(null);
+    setAmbiguousPin('');
+    setAmbiguousPinError(undefined);
+    setModeActivityAt(Date.now());
+  }, [authMethod, resetQrFlow]);
+
+  const touchMode = useCallback(() => {
+    setModeActivityAt(Date.now());
+  }, []);
+
+  const handleModeSwitch = useCallback(() => {
+    setKioskMode((current) => (current === 'face' ? 'qr' : 'face'));
+    setFaceScanning(false);
+    resetQrFlow();
+    setPendingMatch(null);
+    setCapturedPhotoUri(null);
+    setAmbiguousCandidates(null);
+    setAmbiguousPin('');
+    setAmbiguousPinError(undefined);
+    setModeActivityAt(Date.now());
+  }, [resetQrFlow]);
+
+  const handleQrCodeChange = useCallback(
+    (next: string) => {
+      setQrCode(next.toUpperCase());
+      setQrError(undefined);
+      touchMode();
+    },
+    [touchMode],
+  );
+
+  const handleQrCodeSubmit = useCallback(() => {
+    if (operationRef.current || qrBusy) {
+      return;
+    }
+    const normalized = qrCode.trim().toUpperCase();
+    const member = staff.find(
+      (item) => item.staffCode?.toUpperCase() === normalized,
+    );
+    if (!member) {
+      setQrError('That staff code is not recognised. Check with the admin.');
+      return;
+    }
+    if (!getStaffDeviceCredential(member.id)) {
+      setQrError(
+        'This staff member has no paired phone yet. Ask an administrator to pair one from the staff profile.',
+      );
+      return;
+    }
+    setQrStaff(member);
+    setQrSession(createQrSession(member, 'attend', getKioskServerUrl()));
+    setQrError(undefined);
+    setQrScanResetKey((value) => value + 1);
+    touchMode();
+  }, [qrBusy, qrCode, staff, touchMode]);
+
+  const handleAttendancePayload = useCallback(
+    async (payload: any) => {
+      if (!qrStaff || !qrSession || operationRef.current) {
+        return { ok: false, error: 'No active kiosk session.' };
+      }
+      operationRef.current = true;
+      setQrBusy(true);
+      setQrError(undefined);
+      try {
+        if (String(payload?.code || '').toUpperCase() !== qrStaff.staffCode.toUpperCase()) {
+          return { ok: false, error: 'The staff code does not match.' };
+        }
+        if (payload?.sessionId !== qrSession.sessionId) {
+          return { ok: false, error: 'This attendance belongs to a different session.' };
+        }
+        const credential = getStaffDeviceCredential(qrStaff.id);
+        const deviceToken = String(payload?.deviceToken || '');
+        const biometricConfirmed = Boolean(payload?.biometric);
+        if (!credential) {
+          return { ok: false, error: 'This phone is not paired with this staff profile.' };
+        }
+        if (deviceToken !== credential.token) {
+          return { ok: false, error: 'This phone is not paired with this staff profile.' };
+        }
+        if (!biometricConfirmed) {
+          return { ok: false, error: 'Biometric verification was not confirmed.' };
+        }
+
+        const payloadTimestamp = Number(payload?.timestamp || 0);
+        if (
+          !Number.isFinite(payloadTimestamp) ||
+          payloadTimestamp > Date.now() + 2000 ||
+          Date.now() - payloadTimestamp > 5000
+        ) {
+          return { ok: false, error: 'Attendance was rejected because the proof was expired.' };
+        }
+
+        // Native biometric verification is handled by the caller.
+        const result = recordAttendance(qrStaff, new Date(), 'QR_DEVICE_BOUND');
+        setFeedback(result);
+        setSimulated(false);
+        setFeedbackVisible(true);
+        setQrError(undefined);
+        setTimeout(() => {
+          resetToDefaultMode();
+        }, QR_SUCCESS_RESET_MS);
+        return { ok: true };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Attendance could not be recorded.';
+        setQrError(message);
+        return { ok: false, error: message };
+      } finally {
+        operationRef.current = false;
+        setQrBusy(false);
+      }
+    },
+    [qrSession, qrStaff, resetToDefaultMode],
+  );
+
+  useEffect(() => {
+    setKioskServerHandlers({ onAttend: handleAttendancePayload });
+    return () => setKioskServerHandlers({ onAttend: null });
+  }, [handleAttendancePayload]);
+
+  useEffect(() => {
+    if (kioskMode !== 'qr' || !qrStaff || !qrSession || qrBusy) {
+      return;
+    }
+    if (!isSessionExpired(qrSession, now.getTime())) {
+      return;
+    }
+    setQrSession(createQrSession(qrStaff, 'attend', getKioskServerUrl()));
+    setQrError(undefined);
+    setQrScanResetKey((value) => value + 1);
+  }, [kioskMode, now, qrBusy, qrSession, qrStaff]);
+
+  useEffect(() => {
+    const defaultMode = modeForAuthMethod(authMethod);
+    if (kioskMode === defaultMode) {
+      return;
+    }
+    if (kioskMode === 'qr') {
+      // Only reset a secondary mode that nobody has started using. Once a code
+      // is entered the flow owns the screen.
+      if (
+        qrStaff !== null ||
+        qrCode.length > 0 ||
+        pendingMatch !== null ||
+        feedbackVisible ||
+        pinVisible ||
+        ambiguousCandidates !== null
+      ) {
+        return;
+      }
+    } else if (kioskMode === 'face') {
+      if (
+        faceBusy ||
+        faceScanning ||
+        pendingMatch !== null ||
+        feedbackVisible ||
+        pinVisible ||
+        ambiguousCandidates !== null
+      ) {
+        return;
+      }
+    } else {
+      return;
+    }
+    const timeout = setTimeout(
+      () => resetToDefaultMode(),
+      Math.max(1, modeResetSeconds) * 1000,
+    );
+    return () => clearTimeout(timeout);
+  }, [
+    ambiguousCandidates,
+    authMethod,
+    faceBusy,
+    faceScanning,
+    feedbackVisible,
+    kioskMode,
+    modeActivityAt,
+    modeResetSeconds,
+    pendingMatch,
+    pinVisible,
+    qrCode,
+    qrStaff,
+    resetToDefaultMode,
+  ]);
 
   useEffect(() => {
     if (!feedbackVisible || feedback?.action === 'already_signed_in') {
@@ -222,10 +477,15 @@ export function KioskTerminalScreen() {
     }
     operationRef.current = true;
     try {
-      const result = clockOutStaff(feedback.staff);
+      const method: AttendanceAuthMethod =
+        feedback.log.authMethod ?? 'FACE_BIOMETRIC';
+      const result = clockOutStaff(feedback.staff, new Date(), method);
       setFeedback(result);
       setSimulated(false);
       setFeedbackVisible(true);
+      setTimeout(() => {
+        resetToDefaultMode();
+      }, QR_SUCCESS_RESET_MS);
     } catch (error) {
       setFeedbackVisible(false);
       alert({
@@ -270,6 +530,9 @@ export function KioskTerminalScreen() {
         setFeedbackVisible(true);
         setPendingMatch(null);
         setCapturedPhotoUri(null);
+        setTimeout(() => {
+          resetToDefaultMode();
+        }, QR_SUCCESS_RESET_MS);
         return;
       }
 
@@ -309,6 +572,7 @@ export function KioskTerminalScreen() {
     } finally {
       operationRef.current = false;
       setFaceBusy(false);
+      setFaceScanning(false);
     }
   };
 
@@ -321,6 +585,9 @@ export function KioskTerminalScreen() {
       setFeedback(result);
       setSimulated(false);
       setFeedbackVisible(true);
+      setTimeout(() => {
+        resetToDefaultMode();
+      }, QR_SUCCESS_RESET_MS);
     } catch (error) {
       setPendingMatch(null);
       setCapturedPhotoUri(null);
@@ -351,6 +618,10 @@ export function KioskTerminalScreen() {
   const faceProfileCount =
     faceProfileSummary?.ready ??
     staff.filter((member) => Boolean(member.faceSignature)).length;
+  const qrRemainingSeconds = qrSession
+    ? sessionRemainingSeconds(qrSession, now.getTime())
+    : 0;
+  const adminDefaultMode = modeForAuthMethod(authMethod);
 
   if (staff.length === 0) {
     return (
@@ -461,9 +732,44 @@ export function KioskTerminalScreen() {
           <View style={styles.livePill}>
             <View style={styles.liveDot} />
             <Text style={styles.liveLabel}>
-              Face recognition
+              {kioskMode === 'qr'
+                ? 'Short code + visual QR'
+                : 'Face recognition'}
             </Text>
           </View>
+        </View>
+
+        <View style={styles.modeSwitchRow}>
+          <Pressable
+            onPress={handleModeSwitch}
+            style={({ pressed }) => [
+              styles.modeSwitch,
+              pressed && styles.lockButtonPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={
+              kioskMode === 'face'
+                ? 'Switch to short code and QR verification'
+                : 'Switch to face recognition'
+            }
+          >
+            <Ionicons
+              name={
+                kioskMode === 'face' ? 'qr-code-outline' : 'scan-outline'
+              }
+              size={18}
+              color="#BFD4FF"
+            />
+            <Text style={styles.modeSwitchLabel}>
+              {kioskMode === 'face'
+                ? 'Use short code + QR'
+                : 'Use face recognition'}
+            </Text>
+          </Pressable>
+          <Text style={styles.modeSwitchHint}>
+            Admin default:{' '}
+            {adminDefaultMode === 'qr' ? 'Short code + QR' : 'Face recognition'}
+          </Text>
         </View>
 
         <View
@@ -472,7 +778,50 @@ export function KioskTerminalScreen() {
             styles.bodyTop,
           ]}
         >
-          {ambiguousCandidates ? (
+          {kioskMode === 'qr' ? (
+            qrStaff && qrSession ? (
+              <View style={styles.qrFlow}>
+                <DynamicQrPanel
+                  title="Attendance verification"
+                  session={qrSession}
+                  remainingSeconds={qrRemainingSeconds}
+                  staffName={qrStaff.fullName}
+                  initials={qrSession.initials}
+                  error={qrError}
+                  busy={qrBusy}
+                  showScanner={false}
+                  scanResetKey={qrScanResetKey}
+                  onScan={() => undefined}
+                />
+                <Pressable
+                  onPress={() => {
+                    resetQrFlow();
+                    touchMode();
+                  }}
+                  style={styles.qrBackLink}
+                  accessibilityRole="button"
+                  accessibilityLabel="Use a different staff code"
+                >
+                  <Ionicons
+                    name="arrow-back"
+                    size={16}
+                    color={colors.kioskMuted}
+                  />
+                  <Text style={styles.qrBackLabel}>Use a different code</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.qrKeypadWrap}>
+                <CodeKeypad
+                  code={qrCode}
+                  hint="Enter your 2-character staff code. Next, scan the kiosk QR with your paired phone."
+                  error={qrError}
+                  onChange={handleQrCodeChange}
+                  onSubmit={handleQrCodeSubmit}
+                />
+              </View>
+            )
+          ) : ambiguousCandidates ? (
             <View style={styles.codeFaceWrap}>
               <Text style={styles.codeFaceTitle}>Identity check</Text>
               <Text style={styles.codeFaceHint}>
@@ -485,6 +834,11 @@ export function KioskTerminalScreen() {
               profileCount={faceProfileCount}
               engineAvailable={faceProfileSummary?.engineAvailable ?? null}
               engineMessage={faceProfileSummary?.message}
+              onScanStart={() => {
+                setFaceScanning(true);
+                touchMode();
+              }}
+              onScanEnd={() => setFaceScanning(false)}
               onScanned={(frames, embedding, frameEmbeddings) =>
                 void handleFaceCapture(frames, embedding, frameEmbeddings)
               }
@@ -674,6 +1028,52 @@ const styles = StyleSheet.create({
   instructionRow: {
     alignItems: 'center',
     marginBottom: spacing.sm,
+  },
+  modeSwitchRow: {
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: spacing.sm,
+  },
+  modeSwitch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.45)',
+    backgroundColor: 'rgba(12, 36, 74, 0.75)',
+  },
+  modeSwitchLabel: {
+    color: '#DCE8FF',
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+  modeSwitchHint: {
+    color: 'rgba(169, 188, 224, 0.8)',
+    fontSize: 11,
+  },
+  qrFlow: {
+    width: '100%',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  qrKeypadWrap: {
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
+  },
+  qrBackLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  qrBackLabel: {
+    color: colors.kioskMuted,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
   },
   livePill: {
     flexDirection: 'row',

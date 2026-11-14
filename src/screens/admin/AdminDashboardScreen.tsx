@@ -18,6 +18,7 @@ import type { DailySummary, Schedule } from '../../types';
 import {
   formatClockTime,
   formatDateLong,
+  formatTime12h,
   todayKey,
 } from '../../utils/date';
 
@@ -47,6 +48,7 @@ export function AdminDashboardScreen() {
   );
 
   const pendingRecords = summary.records.filter((record) => !record.log);
+  const checkedInRecords = summary.records.filter((record) => record.log);
 
   return (
     <Screen>
@@ -107,6 +109,56 @@ export function AdminDashboardScreen() {
             onPress={() => navigation.navigate('AttendanceHistory', { filter: 'absent' })}
           />
         </View>
+
+        {checkedInRecords.length > 0 ? (
+          <>
+            <View style={styles.listHeader}>
+              <Text style={styles.listTitle}>Today’s check-ins</Text>
+              <Text style={styles.listCount}>
+                {checkedInRecords.length} recorded
+              </Text>
+            </View>
+            <Card padded={false} style={styles.listCard}>
+              {checkedInRecords.map((record) =>
+                record.log ? (
+                  <StaffRow
+                    key={record.staff.id}
+                    staff={record.staff}
+                    badge={
+                      <Badge
+                        label={
+                          record.log.authMethod === 'QR_DEVICE_BOUND'
+                            ? '📱 QR Code'
+                            : '📷 Facial Scan'
+                        }
+                        tone={
+                          record.log.authMethod === 'QR_DEVICE_BOUND'
+                            ? 'info'
+                            : 'neutral'
+                        }
+                      />
+                    }
+                    caption={
+                      record.staff.staffCode
+                        ? `#${record.staff.staffCode}`
+                        : 'No staff code'
+                    }
+                    detail={
+                      record.log.clockOutTime
+                        ? `In ${formatTime12h(record.log.clockInTime)} · Out ${formatTime12h(record.log.clockOutTime)}`
+                        : `Clocked in ${formatTime12h(record.log.clockInTime)}`
+                    }
+                    onPress={() =>
+                      navigation.navigate('StaffProfile', {
+                        staffId: record.staff.id,
+                      })
+                    }
+                  />
+                ) : null,
+              )}
+            </Card>
+          </>
+        ) : null}
 
         <View style={styles.listHeader}>
           <Text style={styles.listTitle}>Not clocked in yet</Text>

@@ -16,6 +16,7 @@ import { AppButton } from '../../components/AppButton';
 import { useAppDialog } from '../../components/AppDialog';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
+import { PhonePairingModal } from '../../components/PhonePairingModal';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import {
@@ -92,6 +93,7 @@ export function RegisterStaffScreen() {
   const [faceCheckBusy, setFaceCheckBusy] = useState(false);
   const [duplicateFaceStaff, setDuplicateFaceStaff] = useState<Staff | null>(null);
   const [saving, setSaving] = useState(false);
+  const [staffToPair, setStaffToPair] = useState<Staff | null>(null);
 
   const cameraRef = useRef<CameraView | null>(null);
   const { pictureSize, chooseSize } = useFacePictureSize(cameraRef);
@@ -107,7 +109,12 @@ export function RegisterStaffScreen() {
       next.name = 'Full name is required.';
     }
     const normalizedCode = normalizeCode(staffCode);
-    if (normalizedCode && isStaffCodeTaken(normalizedCode)) {
+    if (
+      normalizedCode &&
+      normalizedCode.length !== STAFF_CODE_MAX_LENGTH
+    ) {
+      next.code = `Use exactly ${STAFF_CODE_MAX_LENGTH} letters or numbers.`;
+    } else if (normalizedCode && isStaffCodeTaken(normalizedCode)) {
       next.code = 'That code is already assigned to another staff member.';
     }
     setErrors((prev) => ({
@@ -328,12 +335,8 @@ export function RegisterStaffScreen() {
       if (created.id && staffPin) {
         await setStaffPinForStaff(created.id, staffPin);
       }
-      alert({
-        tone: 'success',
-        title: 'Staff registered',
-        message: `${fullName} has been registered.`,
-      });
-      navigation.goBack();
+      // Offer the optional phone pairing step before returning to the list.
+      setStaffToPair(created);
     } catch (error) {
       alert({
         tone: 'danger',
@@ -363,7 +366,7 @@ export function RegisterStaffScreen() {
         : 'Face scan';
   const stepSubtitle =
     step === 1
-      ? 'Name and fallback PIN.'
+      ? 'Name, staff code and fallback PIN.'
       : step === 2
         ? 'A normal photo for the staff list and reports.'
         : 'A guided live scan that builds the recognition profile.';
@@ -412,6 +415,24 @@ export function RegisterStaffScreen() {
                 autoCapitalize="words"
                 error={errors.name}
                 maxLength={80}
+              />
+              <TextField
+                label="Staff code (optional)"
+                value={staffCode}
+                onChangeText={(value) => {
+                  setStaffCode(
+                    value
+                      .toUpperCase()
+                      .replace(/[^A-Z0-9]/g, '')
+                      .slice(0, STAFF_CODE_MAX_LENGTH),
+                  );
+                  setErrors((prev) => ({ ...prev, code: undefined }));
+                }}
+                placeholder="e.g. A7"
+                autoCapitalize="characters"
+                maxLength={STAFF_CODE_MAX_LENGTH}
+                error={errors.code}
+                hint={`Exactly two letters or numbers. Leave blank to generate one automatically.`}
               />
               <TextField
                 label="Fallback PIN (6 digits)"
@@ -692,6 +713,27 @@ export function RegisterStaffScreen() {
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {staffToPair ? (
+        <PhonePairingModal
+          visible
+          staff={staffToPair}
+          onClose={() => {
+            const name = staffToPair.fullName;
+            setStaffToPair(null);
+            alert({
+              tone: 'success',
+              title: 'Staff registered',
+              message: `${name} has been registered.`,
+            });
+            navigation.goBack();
+          }}
+          onPaired={() => {
+            // Keep the modal open so the admin sees the success state, then
+            // the Done button closes it and returns to the staff list.
+          }}
+        />
+      ) : null}
     </Screen>
   );
 }

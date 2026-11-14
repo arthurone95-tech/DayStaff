@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#06142b" />
+    <meta
+      name="description"
+      content="DayStaff short-code and visual QR attendance verifier"
+    />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>DayStaff verification</title>
+  </head>
+  <body>
+    <main>
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">◈</div>
+        <div>
+          <div class="brand-name">DayStaff</div>
+          <div class="brand-sub">Short code + visual QR verification</div>
+        </div>
+      </div>
+
+      <section class="card">
+        <div class="identity">
+          <div class="initials" id="initials">••</div>
+          <div class="identity-text">
+            <div class="code" id="staffCode">Staff code</div>
+            <div class="mode" id="modeLabel">Checking kiosk code…</div>
+          </div>
+        </div>
+
+        <div class="session-row" id="sessionRow">
+          <span class="session-dot" aria-hidden="true"></span>
+          <span id="sessionText">Reading kiosk session…</span>
+        </div>
+
+        <p class="message" id="message">
+          Preparing this phone for DayStaff verification…
+        </p>
+
+        <button class="primary-button" id="actionButton" type="button" hidden>
+          Verify with Face ID / fingerprint
+        </button>
+        <button class="secondary-button" id="resetButton" type="button" hidden>
+          Use another paired credential
+        </button>
+
+        <div class="qr-wrap" id="qrSection" hidden>
+          <div class="qr-frame">
+            <canvas id="qrCanvas" aria-label="Signed return QR code"></canvas>
+          </div>
+          <div class="qr-timer" id="qrTimer">Show this QR to the kiosk</div>
+          <p class="qr-hint">
+            Keep this screen open and hold the phone up to the kiosk camera.
+            The code refreshes automatically.
+          </p>
+        </div>
+
+        <div class="alert" id="alertBox" hidden role="alert"></div>
+
+        <div class="note">
+          This page verifies your identity with your phone's built-in biometric
+          authenticator. The signed code is bound to this device. No name,
+          photo, or attendance data leaves the kiosk.
+        </div>
+      </section>
+
+      <div class="small-links">
+        <a href="/privacy">Privacy</a>
+        <a href="./">Verifier home</a>
+      </div>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

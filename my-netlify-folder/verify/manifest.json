@@ -1,0 +1,19 @@
+{
+  "name": "DayStaff Verification",
+  "short_name": "DayStaff",
+  "description": "Phone verifier for DayStaff short-code + visual QR attendance",
+  "start_url": "/verify/",
+  "scope": "/verify/",
+  "display": "standalone",
+  "background_color": "#06142b",
+  "theme_color": "#06142b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

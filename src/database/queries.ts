@@ -1,15 +1,54 @@
 /** Typed data-access helpers. */
 
 import * as FileSystem from 'expo-file-system';
+import { STAFF_CODE_MAX_LENGTH } from '../config/app';
 import type {
+  AttendanceAuthMethod,
   AttendanceLog,
   ClockInStatus,
   ClockOutStatus,
   NewStaff,
   Schedule,
   Staff,
+  StaffDeviceCredential,
 } from '../types';
 import { getDb } from './db';
+
+const STAFF_CODE_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+function normalizeStaffCode(value: string | null | undefined): string {
+  return (value ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+}
+
+/**
+ * Find an unused two-character code. Excluding the current staff member keeps
+ * an edit that leaves the code unchanged from generating a new one.
+ */
+export function generateUniqueStaffCode(excludeId?: number): string {
+  const rows = excludeId
+    ? getDb().getAllSync<{ staff_code: string | null }>(
+        'SELECT staff_code FROM staff WHERE staff_code IS NOT NULL AND id != ?',
+        [excludeId],
+      )
+    : getDb().getAllSync<{ staff_code: string | null }>(
+        'SELECT staff_code FROM staff WHERE staff_code IS NOT NULL',
+      );
+  const used = new Set(rows.map((row) => normalizeStaffCode(row.staff_code)));
+  for (let index = 0; index < STAFF_CODE_ALPHABET.length ** 2; index += 1) {
+    const code =
+      STAFF_CODE_ALPHABET[Math.floor(index / STAFF_CODE_ALPHABET.length)] +
+      STAFF_CODE_ALPHABET[index % STAFF_CODE_ALPHABET.length];
+    if (!used.has(code)) {
+      return code;
+    }
+  }
+  throw new Error(
+    'All two-character staff codes are in use. Deactivate or delete an unused staff profile first.',
+  );
+}
 
 export const DEFAULT_SCHEDULE: Schedule = {
   startTime: '07:00',
@@ -28,6 +67,9 @@ interface StaffRow {
   staff_pin_salt: string | null;
   pin_failed_attempts: number;
   pin_locked_until: string | null;
+  device_token: string | null;
+  device_secret: string | null;
+  device_paired_at: string | null;
   is_active: number;
   created_at: string;
 }
@@ -50,6 +92,7 @@ interface AttendanceRow {
   clock_out_time: string | null;
   clock_out_status: ClockOutStatus | null;
   minutes_early: number;
+  auth_method: AttendanceAuthMethod;
 }
 
 interface ExportRow extends AttendanceRow {
@@ -67,6 +110,8 @@ const mapStaff = (row: StaffRow): Staff => ({
   staffPinSalt: row.staff_pin_salt,
   pinFailedAttempts: row.pin_failed_attempts ?? 0,
   pinLockedUntil: row.pin_locked_until,
+  deviceToken: row.device_token ?? null,
+  devicePairedAt: row.device_paired_at ?? null,
   isActive: row.is_active,
   createdAt: row.created_at,
 });
@@ -81,6 +126,7 @@ const mapLog = (row: AttendanceRow): AttendanceLog => ({
   clockOutTime: row.clock_out_time,
   clockOutStatus: row.clock_out_status,
   minutesEarly: row.minutes_early,
+  authMethod: row.auth_method ?? 'FACE_BIOMETRIC',
 });
 
 // ---------------------------------------------------------------------------
@@ -140,14 +186,24 @@ export function isStaffCodeTaken(code: string, excludeId?: number): boolean {
 
 export function createStaff(input: NewStaff): Staff {
   const createdAt = new Date().toISOString();
-  const providedCode = (input.staffCode ?? '').trim().toUpperCase();
+  const providedCode = normalizeStaffCode(input.staffCode);
+  if (
+    providedCode &&
+    (providedCode.length !== STAFF_CODE_MAX_LENGTH ||
+      !new RegExp(`^[A-Z0-9]{${STAFF_CODE_MAX_LENGTH}}$`).test(providedCode))
+  ) {
+    throw new Error(
+      `Staff code must be exactly ${STAFF_CODE_MAX_LENGTH} letters or numbers.`,
+    );
+  }
+  const staffCode = providedCode || generateUniqueStaffCode();
   const result = getDb().runSync(
     `INSERT INTO staff
        (full_name, staff_code, photo_uri, face_signature, staff_pin_hash, staff_pin_salt, pin_failed_attempts, pin_locked_until, is_active, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 0, NULL, 1, ?)`,
     [
       input.fullName.trim(),
-      providedCode || null,
+      staffCode,
       input.photoUri,
       input.faceSignature,
       input.staffPinHash ?? null,
@@ -156,16 +212,6 @@ export function createStaff(input: NewStaff): Staff {
     ],
   );
   const newId = Number(result.lastInsertRowId);
-  // Auto-generate a deterministic code when none was provided.
-  if (!providedCode) {
-    const firstChar = input.fullName.trim().charAt(0).toUpperCase();
-    const prefix = /^[A-Z0-9]$/.test(firstChar) ? firstChar : 'S';
-    const generated = `${prefix}${newId}`;
-    getDb().runSync('UPDATE staff SET staff_code = ? WHERE id = ?', [
-      generated,
-      newId,
-    ]);
-  }
   const staff = getStaffById(newId);
   if (!staff) {
     throw new Error('Failed to create staff member.');
@@ -174,13 +220,24 @@ export function createStaff(input: NewStaff): Staff {
 }
 
 export function updateStaff(id: number, input: NewStaff): Staff {
+  const providedCode = normalizeStaffCode(input.staffCode);
+  if (
+    providedCode &&
+    (providedCode.length !== STAFF_CODE_MAX_LENGTH ||
+      !new RegExp(`^[A-Z0-9]{${STAFF_CODE_MAX_LENGTH}}$`).test(providedCode))
+  ) {
+    throw new Error(
+      `Staff code must be exactly ${STAFF_CODE_MAX_LENGTH} letters or numbers.`,
+    );
+  }
+  const staffCode = providedCode || generateUniqueStaffCode(id);
   getDb().runSync(
     `UPDATE staff
      SET full_name = ?, staff_code = ?, photo_uri = ?, face_signature = ?, staff_pin_hash = ?, staff_pin_salt = ?
      WHERE id = ?`,
     [
       input.fullName.trim(),
-      (input.staffCode ?? '').trim().toUpperCase(),
+      staffCode,
       input.photoUri,
       input.faceSignature,
       input.staffPinHash ?? null,
@@ -210,6 +267,42 @@ export function setStaffFaceSignature(
     signature,
     id,
   ]);
+}
+
+/** The secret half of a paired phone credential. Never shown in the UI. */
+export function getStaffDeviceCredential(
+  id: number,
+): StaffDeviceCredential | null {
+  const row = getDb().getFirstSync<{
+    device_token: string | null;
+    device_public_key: string | null;
+  }>('SELECT device_token, device_public_key FROM staff WHERE id = ?', [id]);
+  if (!row?.device_token) {
+    return null;
+  }
+  return { token: row.device_token, publicKey: row.device_public_key };
+}
+
+export function setStaffDeviceCredential(
+  id: number,
+  credential: StaffDeviceCredential,
+): void {
+  getDb().runSync(
+    'UPDATE staff SET device_token = ?, device_public_key = ?, device_paired_at = ? WHERE id = ?',
+    [
+      credential.token,
+      credential.publicKey,
+      new Date().toISOString(),
+      id,
+    ],
+  );
+}
+
+export function clearStaffDeviceCredential(id: number): void {
+  getDb().runSync(
+    'UPDATE staff SET device_token = NULL, device_secret = NULL, device_paired_at = NULL WHERE id = ?',
+    [id],
+  );
 }
 
 import * as Crypto from 'expo-crypto';
@@ -280,7 +373,7 @@ export async function deleteStaffProfile(id: number): Promise<void> {
   // the old camelCase names made this statement fail every time), then remove
   // the photo file, which is best-effort only.
   getDb().runSync(
-    'UPDATE staff SET is_active = 0, face_signature = NULL, photo_uri = NULL WHERE id = ?',
+    'UPDATE staff SET is_active = 0, face_signature = NULL, photo_uri = NULL, device_token = NULL, device_secret = NULL, device_paired_at = NULL WHERE id = ?',
     [id]
   );
   if (staff?.photoUri) {
@@ -378,17 +471,19 @@ export function insertClockIn(params: {
   clockInTime: string;
   status: ClockInStatus;
   minutesLate: number;
+  authMethod: AttendanceAuthMethod;
 }): AttendanceLog {
   const result = getDb().runSync(
     `INSERT INTO attendance_logs
-       (staff_id, date, clock_in_time, clock_in_status, minutes_late, minutes_early)
-     VALUES (?, ?, ?, ?, ?, 0)`,
+       (staff_id, date, clock_in_time, clock_in_status, minutes_late, minutes_early, auth_method)
+     VALUES (?, ?, ?, ?, ?, 0, ?)`,
     [
       params.staffId,
       params.date,
       params.clockInTime,
       params.status,
       params.minutesLate,
+      params.authMethod,
     ],
   );
   const log = getDb().getFirstSync<AttendanceRow>(
@@ -406,12 +501,19 @@ export function updateClockOut(params: {
   clockOutTime: string;
   status: ClockOutStatus;
   minutesEarly: number;
+  authMethod: AttendanceAuthMethod;
 }): AttendanceLog {
   getDb().runSync(
     `UPDATE attendance_logs
-     SET clock_out_time = ?, clock_out_status = ?, minutes_early = ?
+     SET clock_out_time = ?, clock_out_status = ?, minutes_early = ?, auth_method = ?
      WHERE id = ?`,
-    [params.clockOutTime, params.status, params.minutesEarly, params.logId],
+    [
+      params.clockOutTime,
+      params.status,
+      params.minutesEarly,
+      params.authMethod,
+      params.logId,
+    ],
   );
   const log = getDb().getFirstSync<AttendanceRow>(
     'SELECT * FROM attendance_logs WHERE id = ?',
@@ -438,6 +540,7 @@ interface AttendanceWithStaffSqlRow {
   clock_out_time: string | null;
   clock_out_status: ClockOutStatus | null;
   minutes_early: number;
+  auth_method: AttendanceAuthMethod;
   staff_pk: number;
   full_name: string;
   staff_code: string | null;
@@ -447,6 +550,9 @@ interface AttendanceWithStaffSqlRow {
   staff_pin_salt: string | null;
   pin_failed_attempts: number;
   pin_locked_until: string | null;
+  device_token: string | null;
+  device_secret: string | null;
+  device_paired_at: string | null;
   is_active: number;
   created_at: string;
 }
@@ -469,6 +575,7 @@ export function getAttendanceWithStaffForDate(
        l.clock_out_time,
        l.clock_out_status,
        l.minutes_early,
+       l.auth_method,
        s.id AS staff_pk,
        s.full_name,
        s.staff_code,
@@ -478,6 +585,9 @@ export function getAttendanceWithStaffForDate(
        s.staff_pin_salt,
        s.pin_failed_attempts,
        s.pin_locked_until,
+       s.device_token,
+       s.device_secret,
+       s.device_paired_at,
        s.is_active,
        s.created_at
      FROM attendance_logs l
@@ -498,6 +608,9 @@ export function getAttendanceWithStaffForDate(
       staff_pin_salt: row.staff_pin_salt,
       pin_failed_attempts: row.pin_failed_attempts ?? 0,
       pin_locked_until: row.pin_locked_until,
+      device_token: row.device_token,
+      device_secret: row.device_secret,
+      device_paired_at: row.device_paired_at,
       is_active: row.is_active,
       created_at: row.created_at,
     }),
@@ -511,6 +624,7 @@ export function getAttendanceWithStaffForDate(
       clock_out_time: row.clock_out_time,
       clock_out_status: row.clock_out_status,
       minutes_early: row.minutes_early,
+      auth_method: row.auth_method,
     }),
   }));
 }

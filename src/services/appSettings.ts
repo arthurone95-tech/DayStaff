@@ -1,12 +1,19 @@
 /** Typed accessors for the key/value settings stored in SQLite. */
 
+import { getKioskServerUrl } from './kioskServer';
 import {
   AUTH_METHOD_SETTING,
   COMPANY_NAME_SETTING,
   DEFAULT_AUTH_METHOD,
   DEFAULT_COMPANY_NAME,
+  DEFAULT_MODE_RESET_TIMEOUT_SECONDS,
+  DEFAULT_QR_VERIFIER_URL,
   FACE_STRICTNESS_SETTING,
   LEGACY_SCHOOL_NAME_SETTING,
+  MAX_MODE_RESET_TIMEOUT_SECONDS,
+  MIN_MODE_RESET_TIMEOUT_SECONDS,
+  MODE_RESET_TIMEOUT_SETTING,
+  QR_VERIFIER_URL_SETTING,
   SCAN_LIGHT_SETTING,
   SHOW_FACE_SCORES_SETTING,
 } from '../config/app';
@@ -32,11 +39,51 @@ export function getAuthMethod(): AuthMethod {
   if (value === 'PIN_BIOMETRIC') {
     return 'FACE_RECOGNITION';
   }
+  if (value === 'SHORT_CODE_QR') {
+    return 'SHORT_CODE_QR';
+  }
   return value === 'FACE_RECOGNITION' ? 'FACE_RECOGNITION' : DEFAULT_AUTH_METHOD;
 }
 
 export function setAuthMethod(method: AuthMethod): void {
-  setSetting(AUTH_METHOD_SETTING, method);
+  setSetting(
+    AUTH_METHOD_SETTING,
+    method === 'PIN_BIOMETRIC' ? 'FACE_RECOGNITION' : method,
+  );
+}
+
+/** Seconds an abandoned non-default kiosk screen waits before resetting. */
+export function getModeResetTimeoutSeconds(): number {
+  const parsed = Number(getSetting(MODE_RESET_TIMEOUT_SETTING));
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_MODE_RESET_TIMEOUT_SECONDS;
+  }
+  return Math.min(
+    MAX_MODE_RESET_TIMEOUT_SECONDS,
+    Math.max(MIN_MODE_RESET_TIMEOUT_SECONDS, Math.round(parsed)),
+  );
+}
+
+export function setModeResetTimeoutSeconds(seconds: number): void {
+  const safe = Math.min(
+    MAX_MODE_RESET_TIMEOUT_SECONDS,
+    Math.max(MIN_MODE_RESET_TIMEOUT_SECONDS, Math.round(seconds)),
+  );
+  setSetting(MODE_RESET_TIMEOUT_SETTING, String(safe));
+}
+
+/** Base URL of the static phone verifier page used by the QR flow. */
+export function getQrVerifierUrl(): string {
+  const local = getKioskServerUrl();
+  if (local && local !== 'http://127.0.0.1:8080/') {
+    return local;
+  }
+  const value = getSetting(QR_VERIFIER_URL_SETTING)?.trim();
+  return value || local || DEFAULT_QR_VERIFIER_URL;
+}
+
+export function setQrVerifierUrl(url: string): void {
+  setSetting(QR_VERIFIER_URL_SETTING, url.trim() || DEFAULT_QR_VERIFIER_URL);
 }
 
 // ---------------------------------------------------------------------------

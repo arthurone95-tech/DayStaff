@@ -24,6 +24,7 @@ import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { useAppDialog } from '../../components/AppDialog';
 import {
+  clearStaffDeviceCredential,
   deleteStaffProfile,
   getStaffById,
   setStaffActive,
@@ -32,6 +33,8 @@ import {
 } from '../../database/queries';
 import type { RootStackParamList } from '../../navigation/types';
 import type { Staff } from '../../types';
+import { PhonePairingModal } from '../../components/PhonePairingModal';
+import { STAFF_CODE_MAX_LENGTH } from '../../config/app';
 import { colors, fontSize, radius, shadow, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StaffProfile'>;
@@ -144,6 +147,7 @@ export function StaffProfileScreen({ navigation, route }: Props) {
   const [pin, setPin] = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
   const [pinError, setPinError] = useState('');
+  const [pairingOpen, setPairingOpen] = useState(false);
 
   // Hide the header back button (and swipe-back) while editing
   useLayoutEffect(() => {
@@ -197,6 +201,18 @@ export function StaffProfileScreen({ navigation, route }: Props) {
         setSaving(true);
         try {
           const normalizedCode = staffCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (
+            normalizedCode &&
+            normalizedCode.length !== STAFF_CODE_MAX_LENGTH
+          ) {
+            alert({
+              tone: 'warning',
+              title: 'Invalid staff code',
+              message: `Use exactly ${STAFF_CODE_MAX_LENGTH} letters or numbers, or clear the field to generate a new one.`,
+            });
+            setSaving(false);
+            return;
+          }
           updateStaff(staffId, {
             fullName: fullName.trim(),
             staffCode: normalizedCode || undefined,
@@ -259,6 +275,23 @@ export function StaffProfileScreen({ navigation, route }: Props) {
     } catch (error) {
       setPinError(error instanceof Error ? error.message : 'Could not save PIN.');
     }
+  };
+
+  const handleUnpairPhone = () => {
+    if (!staffId || !staff) return;
+    confirm({
+      tone: 'danger',
+      icon: 'phone-portrait-outline',
+      title: 'Unpair this phone?',
+      message: `${staff.fullName} will not be able to use short code + QR until a phone is paired again. Past attendance records are kept.`,
+      confirmLabel: 'Unpair',
+      cancelLabel: 'Cancel',
+      destructive: true,
+      onConfirm: () => {
+        clearStaffDeviceCredential(staffId);
+        loadStaff(staffId);
+      },
+    });
   };
 
   const handleToggleActive = () => {
@@ -465,10 +498,21 @@ export function StaffProfileScreen({ navigation, route }: Props) {
                     tone={staff.faceSignature ? 'success' : 'neutral'}
                   />
                 </InfoRow>
-                <InfoRow icon="key-outline" label="Fallback PIN" last compact>
+                <InfoRow icon="key-outline" label="Fallback PIN" compact>
                   <Badge
                     label={staff.staffPinHash ? 'Set' : 'Not set'}
                     tone={staff.staffPinHash ? 'success' : 'neutral'}
+                  />
+                </InfoRow>
+                <InfoRow
+                  icon="phone-portrait-outline"
+                  label="Paired phone"
+                  last
+                  compact
+                >
+                  <Badge
+                    label={staff.deviceToken ? 'Paired' : 'Not paired'}
+                    tone={staff.deviceToken ? 'success' : 'neutral'}
                   />
                 </InfoRow>
               </View>
@@ -495,6 +539,22 @@ export function StaffProfileScreen({ navigation, route }: Props) {
                   title={staff.staffPinHash ? 'Change fallback PIN' : 'Add fallback PIN'}
                   onPress={openPinSheet}
                 />
+                <ActionRow
+                  compact
+                  icon="phone-portrait-outline"
+                  title={staff.deviceToken ? 'Replace paired phone' : 'Pair a phone'}
+                  subtitle="For short code + visual QR attendance"
+                  onPress={() => setPairingOpen(true)}
+                />
+                {staff.deviceToken ? (
+                  <ActionRow
+                    compact
+                    icon="phone-portrait-outline"
+                    title="Unpair phone"
+                    onPress={handleUnpairPhone}
+                    danger
+                  />
+                ) : null}
                 <ActionRow
                   compact
                   icon={isActive ? 'person-remove-outline' : 'person-add-outline'}
@@ -558,11 +618,11 @@ export function StaffProfileScreen({ navigation, route }: Props) {
                   value={staffCode}
                   onChangeText={setStaffCode}
                   autoCapitalize="characters"
-                  maxLength={20}
+                  maxLength={STAFF_CODE_MAX_LENGTH}
                 />
                 <Text style={styles.helperText}>
-                  Letters and numbers only. Used to look this person up at the
-                  kiosk.
+                  Exactly two letters or numbers. Leave blank to generate a new
+                  code. Used to look this person up at the kiosk.
                 </Text>
               </View>
 
@@ -732,6 +792,15 @@ export function StaffProfileScreen({ navigation, route }: Props) {
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
+
+      <PhonePairingModal
+        visible={pairingOpen}
+        staff={staff}
+        onClose={() => setPairingOpen(false)}
+        onPaired={() => {
+          if (staffId) loadStaff(staffId);
+        }}
+      />
     </Screen>
   );
 }

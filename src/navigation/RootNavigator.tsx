@@ -16,6 +16,8 @@ import { ScheduleSettingsScreen } from '../screens/admin/ScheduleSettingsScreen'
 import { StaffListScreen } from '../screens/admin/StaffListScreen';
 import { StaffProfileScreen } from '../screens/admin/StaffProfileScreen';
 import { KioskTerminalScreen } from '../screens/kiosk/KioskTerminalScreen';
+import PhoneVerificationScreen from '../screens/verifier/PhoneVerificationScreen';
+import QrScanScreen from '../screens/verifier/QrScanScreen';
 import { colors } from '../theme';
 import type { RootStackParamList } from './types';
 
@@ -89,6 +91,16 @@ export function RootNavigator() {
           name="Kiosk"
           component={KioskTerminalScreen}
           options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="PhoneVerification"
+          component={PhoneVerificationScreen}
+          options={{ title: 'Phone verification', animation: 'none', headerLeft: () => null }}
+        />
+        <Stack.Screen
+          name="QrScan"
+          component={QrScanScreen}
+          options={{ title: 'Scan kiosk code', animation: 'none', headerLeft: () => null }}
         />
         <Stack.Screen
           name="AdminDashboard"

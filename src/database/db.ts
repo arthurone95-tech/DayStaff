@@ -8,7 +8,10 @@
 import * as SQLite from 'expo-sqlite';
 
 export const DATABASE_NAME = 'daystaff_v2.db';
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 6;
+
+/** Two-character alphabet for staff short codes (36 x 36 = 1,296 codes). */
+const STAFF_CODE_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 let connection: SQLite.SQLiteDatabase | null = null;
 
@@ -24,6 +27,7 @@ export function getDb(): SQLite.SQLiteDatabase {
   // Runs on every launch, even when the schema version is already current,
   // so a database stamped by an older build can never be missing a column.
   ensureStaffColumns(db);
+  ensureAttendanceColumns(db);
   console.log('[DayStaff] database ready:', DATABASE_NAME);
   connection = db;
   return db;
@@ -43,12 +47,103 @@ function ensureStaffColumns(db: SQLite.SQLiteDatabase): void {
     ['staff_pin_salt', 'TEXT'],
     ['pin_failed_attempts', 'INTEGER NOT NULL DEFAULT 0'],
     ['pin_locked_until', 'TEXT'],
+    ['device_token', 'TEXT'],
+    ['device_secret', 'TEXT'],
+    ['device_public_key', 'TEXT'],
+    ['device_paired_at', 'TEXT'],
   ];
   for (const [name, type] of needed) {
     if (!names.has(name)) {
       db.execSync(`ALTER TABLE staff ADD COLUMN ${name} ${type};`);
     }
   }
+}
+
+/** Add the attendance auth-method column to databases created before v5. */
+function ensureAttendanceColumns(db: SQLite.SQLiteDatabase): void {
+  const names = new Set(
+    db
+      .getAllSync<{ name: string }>('PRAGMA table_info(attendance_logs)')
+      .map((column) => column.name),
+  );
+  if (!names.has('auth_method')) {
+    db.execSync(
+      "ALTER TABLE attendance_logs ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'FACE_BIOMETRIC';",
+    );
+  }
+}
+
+/**
+ * Give every staff member a unique two-character code.
+ *
+ * Codes are the keypad identifier for the short-code + QR flow, so a legacy
+ * `A10` or blank value cannot be entered on the kiosk. Existing valid codes
+ * are preserved; anything else is reassigned deterministically. The unique
+ * index is dropped for the duration so case-only duplicates can be repaired.
+ */
+function normalizeStaffCodes(db: SQLite.SQLiteDatabase): void {
+  db.execSync('DROP INDEX IF EXISTS idx_staff_code;');
+
+  const rows = db.getAllSync<{ id: number; staff_code: string | null }>(
+    'SELECT id, staff_code FROM staff ORDER BY id ASC',
+  );
+  const used = new Set<string>();
+  const renames: Array<{ id: number; code: string }> = [];
+  const unassigned: number[] = [];
+
+  for (const row of rows) {
+    const normalized = (row.staff_code ?? '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+    if (/^[A-Z0-9]{2}$/.test(normalized) && !used.has(normalized)) {
+      used.add(normalized);
+      if (row.staff_code !== normalized) {
+        renames.push({ id: row.id, code: normalized });
+      }
+    } else {
+      unassigned.push(row.id);
+    }
+  }
+
+  for (const rename of renames) {
+    db.runSync('UPDATE staff SET staff_code = ? WHERE id = ?', [
+      rename.code,
+      rename.id,
+    ]);
+  }
+
+  let cursor = 0;
+  for (const id of unassigned) {
+    let assigned: string | null = null;
+    while (cursor < STAFF_CODE_ALPHABET.length ** 2) {
+      const code =
+        STAFF_CODE_ALPHABET[Math.floor(cursor / STAFF_CODE_ALPHABET.length)] +
+        STAFF_CODE_ALPHABET[cursor % STAFF_CODE_ALPHABET.length];
+      cursor += 1;
+      if (!used.has(code)) {
+        used.add(code);
+        assigned = code;
+        break;
+      }
+    }
+    if (!assigned) {
+      // The app only supports two-character codes. Keeping the legacy value
+      // is safer than failing startup; the admin can free a code and re-save.
+      console.warn(
+        '[DayStaff] no unused 2-character staff code remains for staff id',
+        id,
+      );
+      break;
+    }
+    db.runSync('UPDATE staff SET staff_code = ? WHERE id = ?', [assigned, id]);
+  }
+
+  db.execSync(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_code
+      ON staff (staff_code)
+      WHERE staff_code IS NOT NULL;
+  `);
 }
 
 function migrate(db: SQLite.SQLiteDatabase): void {
@@ -71,6 +166,10 @@ function migrate(db: SQLite.SQLiteDatabase): void {
         staff_pin_salt TEXT,
         pin_failed_attempts INTEGER NOT NULL DEFAULT 0,
         pin_locked_until TEXT,
+        device_token TEXT,
+        device_secret TEXT,
+        device_public_key TEXT,
+        device_paired_at TEXT,
         is_active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL
       );
@@ -93,6 +192,7 @@ function migrate(db: SQLite.SQLiteDatabase): void {
         clock_out_time TEXT,
         clock_out_status TEXT CHECK (clock_out_status IN ('on_time', 'early')),
         minutes_early INTEGER NOT NULL DEFAULT 0,
+        auth_method TEXT NOT NULL DEFAULT 'FACE_BIOMETRIC',
         FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE CASCADE,
         UNIQUE (staff_id, date)
       );
@@ -109,27 +209,12 @@ function migrate(db: SQLite.SQLiteDatabase): void {
     `);
 
     // Older databases need the newer staff columns added in place. This must
-    // happen before the staff_code backfill and unique index below.
+    // happen before staff codes are repaired below.
     ensureStaffColumns(db);
 
-    // Give existing staff a deterministic, unique code so the keypad works
-    // immediately after upgrading.
-    db.execSync(`
-      UPDATE staff
-      SET staff_code =
-        (CASE
-          WHEN upper(substr(full_name, 1, 1)) GLOB '[A-Z0-9]'
-            THEN upper(substr(full_name, 1, 1))
-          ELSE 'S'
-        END) || id
-      WHERE staff_code IS NULL OR trim(staff_code) = '';
-    `);
-
-    db.execSync(`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_code
-        ON staff (staff_code)
-        WHERE staff_code IS NOT NULL;
-    `);
+    // Every staff member needs a unique two-character code for the kiosk
+    // keypad, including staff imported from pre-QR versions of the app.
+    normalizeStaffCodes(db);
 
     db.execSync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
   });

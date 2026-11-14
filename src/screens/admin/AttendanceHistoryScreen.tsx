@@ -125,6 +125,11 @@ function AttendanceRecordRow({ record }: { record: AttendanceWithStaffRow }) {
       : { label: 'Clocked out', tone: 'success' }
     : { label: 'No clock-out', tone: 'neutral' };
 
+  const authBadge: { label: string; tone: BadgeTone } =
+    log.authMethod === 'QR_DEVICE_BOUND'
+      ? { label: '📱 QR Code', tone: 'info' }
+      : { label: '📷 Facial Scan', tone: 'neutral' };
+
   const clockOut = log.clockOutTime
     ? formatTime12h(log.clockOutTime)
     : 'Not recorded';
@@ -142,7 +147,7 @@ function AttendanceRecordRow({ record }: { record: AttendanceWithStaffRow }) {
         log.clockInTime,
       )}, clocked out ${clockOut}, ${arrivalBadge.label}, ${
         departureBadge.label
-      }`}
+      }, ${authBadge.label}`}
       style={[styles.recordRow, rowToneStyle]}
     >
       <Avatar name={staff.fullName} photoUri={staff.photoUri} size={46} />
@@ -182,6 +187,7 @@ function AttendanceRecordRow({ record }: { record: AttendanceWithStaffRow }) {
         <View style={styles.badges}>
           <Badge label={arrivalBadge.label} tone={arrivalBadge.tone} />
           <Badge label={departureBadge.label} tone={departureBadge.tone} />
+          <Badge label={authBadge.label} tone={authBadge.tone} />
         </View>
       </View>
     </View>

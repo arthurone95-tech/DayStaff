@@ -18,7 +18,18 @@ export type AttendanceAction =
   | 'already_completed';
 
 /** How the kiosk authenticates a staff member. */
-export type AuthMethod = 'PIN_BIOMETRIC' | 'FACE_RECOGNITION';
+export type AuthMethod =
+  | 'PIN_BIOMETRIC'
+  | 'FACE_RECOGNITION'
+  | 'SHORT_CODE_QR';
+
+/**
+ * The method recorded against an individual attendance transaction.
+ *
+ * `FACE_BIOMETRIC` is used by the face-recognition kiosk; `QR_DEVICE_BOUND`
+ * is used by the short-code + two-way visual QR flow.
+ */
+export type AttendanceAuthMethod = 'FACE_BIOMETRIC' | 'QR_DEVICE_BOUND';
 
 export interface Staff {
   id: number;
@@ -36,8 +47,18 @@ export interface Staff {
   pinFailedAttempts: number;
   /** ISO timestamp until which PIN entry is locked, or null. */
   pinLockedUntil: string | null;
+  /** Public token for the optional paired phone, or null when unpaired. */
+  deviceToken: string | null;
+  /** ISO timestamp when the phone was paired, or null. */
+  devicePairedAt: string | null;
   isActive: number;
   createdAt: string;
+}
+
+/** Secret credential shared with a paired phone during pairing. */
+export interface StaffDeviceCredential {
+  token: string;
+  publicKey: string | null;
 }
 
 export interface NewStaff {
@@ -72,6 +93,8 @@ export interface AttendanceLog {
   clockOutTime: string | null;
   clockOutStatus: ClockOutStatus | null;
   minutesEarly: number;
+  /** How the clock-in/out transaction was authenticated. */
+  authMethod: AttendanceAuthMethod;
 }
 
 export interface StaffDayRecord {

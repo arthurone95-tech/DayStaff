@@ -12,7 +12,6 @@ import {
   View,
 } from 'react-native';
 import { AppButton } from '../../components/AppButton';
-import { Linking } from 'react-native';
 import { useAppDialog } from '../../components/AppDialog';
 import { AuthMethodPicker } from '../../components/AuthMethodPicker';
 import { Card } from '../../components/Card';
@@ -22,15 +21,23 @@ import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import type { RootNavigation } from '../../navigation/types';
 import {
+  MAX_MODE_RESET_TIMEOUT_SECONDS,
+  MIN_MODE_RESET_TIMEOUT_SECONDS,
+} from '../../config/app';
+import {
   type FaceStrictness,
   getAuthMethod,
   getCompanyName,
   getFaceStrictness,
+  getModeResetTimeoutSeconds,
+  getQrVerifierUrl,
   getScanLightEnabled,
   getShowFaceScores,
   setAuthMethod,
   setCompanyName,
   setFaceStrictness,
+  setModeResetTimeoutSeconds,
+  setQrVerifierUrl,
   setScanLightEnabled,
   setShowFaceScores,
 } from '../../services/appSettings';
@@ -72,6 +79,11 @@ export function AdminSettingsScreen() {
   const [authMethod, setAuthMethodState] = useState<AuthMethod>(
     getAuthMethod(),
   );
+  const [modeResetSeconds, setModeResetSeconds] = useState(
+    String(getModeResetTimeoutSeconds()),
+  );
+  const [verifierUrl, setVerifierUrl] = useState(getQrVerifierUrl());
+  const [savingQrSettings, setSavingQrSettings] = useState(false);
   const [biometric, setBiometric] = useState<BiometricStatus | null>(null);
 
   useEffect(() => {
@@ -135,6 +147,45 @@ export function AdminSettingsScreen() {
         title: 'Could not change kiosk mode',
         message: error instanceof Error ? error.message : 'Please try again.',
       });
+    }
+  };
+
+  const handleSaveQrSettings = () => {
+    const parsed = Number(modeResetSeconds);
+    if (
+      !Number.isFinite(parsed) ||
+      parsed < MIN_MODE_RESET_TIMEOUT_SECONDS ||
+      parsed > MAX_MODE_RESET_TIMEOUT_SECONDS
+    ) {
+      alert({
+        tone: 'warning',
+        title: 'Invalid timeout',
+        message: `Enter a whole number between ${MIN_MODE_RESET_TIMEOUT_SECONDS} and ${MAX_MODE_RESET_TIMEOUT_SECONDS} seconds.`,
+      });
+      return;
+    }
+    const url = verifierUrl.trim();
+    setSavingQrSettings(true);
+    try {
+      setModeResetTimeoutSeconds(parsed);
+      setModeResetSeconds(String(getModeResetTimeoutSeconds()));
+      setQrVerifierUrl(url);
+      setVerifierUrl(getQrVerifierUrl());
+      Keyboard.dismiss();
+      alert({
+        tone: 'success',
+        title: 'Visual QR settings saved',
+        message:
+          'New kiosk sessions will use the updated timeout and verifier address.',
+      });
+    } catch (error) {
+      alert({
+        tone: 'danger',
+        title: 'Could not save QR settings',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
+    } finally {
+      setSavingQrSettings(false);
     }
   };
 
@@ -287,10 +338,43 @@ export function AdminSettingsScreen() {
             />
           </View>
           <Text style={styles.authNote}>
-            Attendance identification uses on-device facial recognition against
-            enrolled staff photos. A personal 6-digit PIN is requested only when
-            the face match is ambiguous.
+            {authMethod === 'SHORT_CODE_QR'
+              ? 'Staff enter their 2-character code, scan a dynamic kiosk QR with a paired phone, and confirm with the phone biometrics. The phone sends a signed verification to the kiosk over the local network. Everything stays on the device.'
+              : 'Attendance identification uses on-device facial recognition against enrolled staff photos. A personal 6-digit PIN is requested only when the face match is ambiguous.'}
           </Text>
+        </Card>
+
+        <Card style={styles.card}>
+          <Text style={styles.cardTitle}>Short code + visual QR</Text>
+          <Text style={styles.cardHint}>
+            Controls for the second kiosk method. Face recognition remains the
+            primary method.
+          </Text>
+          <TextField
+            label="Abandoned-mode reset (seconds)"
+            value={modeResetSeconds}
+            onChangeText={(value) =>
+              setModeResetSeconds(value.replace(/\D/g, '').slice(0, 2))
+            }
+            keyboardType="number-pad"
+            placeholder="3"
+            maxLength={2}
+            hint={`If a staff member switches away from the admin default mode and stops interacting, the kiosk returns after ${MIN_MODE_RESET_TIMEOUT_SECONDS}–${MAX_MODE_RESET_TIMEOUT_SECONDS} seconds. Default: 3.`}
+          />
+          <TextField
+            label="Phone verifier address"
+            value={verifierUrl}
+            onChangeText={setVerifierUrl}
+            keyboardType="url"
+            autoCapitalize="none"
+            placeholder="http://127.0.0.1:8080/"
+            hint="Local kiosk server address used when a staff phone loads the verifier. It stays on the local Wi-Fi network and needs no public internet host."
+          />
+          <AppButton
+            title="Save visual QR settings"
+            onPress={handleSaveQrSettings}
+            loading={savingQrSettings}
+          />
         </Card>
 
         <Card style={styles.card}>
@@ -485,16 +569,10 @@ export function AdminSettingsScreen() {
 
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>Privacy & security</Text>
-          <View style={styles.statusRow}>
-            <Text style={styles.statusLabel}>Privacy Policy</Text>
-            <AppButton
-              title="View policy"
-              variant="ghost"
-              size="sm"
-              fullWidth={false}
-              onPress={() => Linking.openURL('https://daystaff.netlify.app/privacy/')}
-            />
-          </View>
+          <Text style={styles.cardHint}>
+            Attendance verification stays on the kiosk and the paired phone over
+            the local Wi-Fi network. No attendance data leaves the local network.
+          </Text>
         </Card>
 
           <Text style={styles.version}>DayStaff · v1.1.0 · Offline MVP</Text>

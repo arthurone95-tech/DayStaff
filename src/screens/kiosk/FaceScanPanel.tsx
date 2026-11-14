@@ -47,6 +47,8 @@ interface FaceScanPanelProps {
     embedding: number[] | null,
     frameEmbeddings?: number[][] | null,
   ) => void;
+  onScanStart?: () => void;
+  onScanEnd?: () => void;
   onUseCode?: () => void;
 }
 
@@ -56,6 +58,8 @@ export function FaceScanPanel({
   engineAvailable,
   engineMessage,
   onScanned,
+  onScanStart,
+  onScanEnd,
   onUseCode,
 }: FaceScanPanelProps) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -135,6 +139,7 @@ export function FaceScanPanel({
     setPhase('capturing');
     setStepIndex(0);
     setHint(LIVENESS_STEPS[0]?.hint ?? null);
+    onScanStart?.();
     try {
       const shutter = () =>
         cameraRef.current!.takePictureAsync({
@@ -197,6 +202,8 @@ export function FaceScanPanel({
           ? error.message
           : 'Could not complete the scan. Try again.',
       );
+    } finally {
+      onScanEnd?.();
     }
   };
 

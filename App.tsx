@@ -13,6 +13,7 @@ import { AppButton } from './src/components/AppButton';
 import { AppDialogProvider } from './src/components/AppDialog';
 import { getDb } from './src/database/db';
 import { seedDatabase } from './src/database/seed';
+import { startKioskServer, setKioskServerHandlers } from './src/services/kioskServer';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { AdminSetupScreen } from './src/screens/setup/AdminSetupScreen';
 import { needsAdminSetup } from './src/services/pinService';
@@ -30,6 +31,7 @@ export default function App() {
     try {
       getDb();
       await seedDatabase();
+      await startKioskServer();
       setState((await needsAdminSetup()) ? 'setup' : 'ready');
     } catch (bootError) {
       setError(

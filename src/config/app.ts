@@ -9,6 +9,23 @@ export const DEFAULT_COMPANY_NAME = 'DayStaff';
 export const AUTH_METHOD_SETTING = 'auth_method';
 export const DEFAULT_AUTH_METHOD: AuthMethod = 'FACE_RECOGNITION';
 
+/** How long an abandoned secondary kiosk screen waits before resetting. */
+export const MODE_RESET_TIMEOUT_SETTING = 'mode_reset_timeout_seconds';
+export const DEFAULT_MODE_RESET_TIMEOUT_SECONDS = 3;
+export const MIN_MODE_RESET_TIMEOUT_SECONDS = 3;
+export const MAX_MODE_RESET_TIMEOUT_SECONDS = 60;
+
+/** Local phone verifier used by the two-way visual QR flow. */
+export const QR_VERIFIER_URL_SETTING = 'qr_verifier_url';
+export const DEFAULT_QR_VERIFIER_URL = 'http://127.0.0.1:8080/';
+
+/** Kiosk -> phone QR lifetime. */
+export const QR_SESSION_TTL_MS = 10_000;
+/** Pairing QR lifetime (the admin is physically present). */
+export const QR_PAIRING_TTL_MS = 120_000;
+/** Success screens return to the default kiosk mode within this window. */
+export const QR_SUCCESS_RESET_MS = 2_000;
+
 export const ADMIN_PIN_SETTING = 'admin_pin_hash';
 export const SETUP_COMPLETED_SETTING = 'setup_completed_at';
 
