@@ -74,6 +74,42 @@ export function FaceScanPanel({
   const isFocused = useIsFocused();
   const [cameraRetry, setCameraRetry] = useState(0);
 
+  // Controlled camera mount recovery. When CameraView fails to mount (onMountError),
+  // automatically retry a bounded number of times instead of leaving a black screen
+  // until the user taps "Retry camera" or navigates away and back.
+  const MAX_CAMERA_MOUNT_RETRIES = 3;
+  const [mountAttempts, setMountAttempts] = useState(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear any pending auto-retry timer when the component unmounts.
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current !== null) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Auto-retry the camera after a mount failure, up to MAX_CAMERA_MOUNT_RETRIES.
+  // Resets when the camera successfully mounts or the user manually retries.
+  useEffect(() => {
+    if (!cameraError || ready || mountAttempts >= MAX_CAMERA_MOUNT_RETRIES) {
+      return;
+    }
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      setCameraError(null);
+      setMountAttempts((a) => a + 1);
+    }, 1500);
+    return () => {
+      if (retryTimerRef.current !== null) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, [cameraError, ready, mountAttempts]);
+
   // Remount camera when focus returns
   useEffect(() => {
     if (isFocused) {
@@ -289,6 +325,7 @@ export function FaceScanPanel({
             enableTorch={lightOn}
             pictureSize={pictureSize}
             onCameraReady={() => {
+              setMountAttempts(0);
               setReady(true);
               setCameraError(null);
               void chooseSize();
@@ -371,6 +408,7 @@ export function FaceScanPanel({
             title="Retry camera"
             onPress={() => {
               setCameraError(null);
+              setMountAttempts(0);
               setReady(false);
               setCameraRetry((r) => r + 1);
             }}
