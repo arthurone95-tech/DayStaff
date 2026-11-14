@@ -5,18 +5,15 @@
  * frames (see faceLiveness.ts). Scans are verified as live, moving faces and
  * matched by cosine similarity against every active profile.
  *
- * Identity comes from ONE straight-on photo (see faceLiveness.ts), cut as a
- * straightened square crop by the patched native module. Averaging turned-head
- * photos made different people look alike, and the old low cut-offs (0.45 /
- * 0.58) then let strangers through.
- *
- * Cut-offs now depend on the admin "Match strictness" setting (see
- * FACE_THRESHOLDS below). FaceNet512's usual same-person cut-off is about
- * 0.70 cosine similarity. Turn on "Show match scores" in Settings, scan real
- * staff and strangers, and pick the level that separates them in your light.
- * If two profiles both reach the "suggest" score and are too close together,
- * the kiosk asks for the staff PIN. Anything below the "auto" score is never
- * confirmed by name, so a look-alike photo cannot claim someone's identity.
+ * TUNING (measured in the field after the face-crop margin fix):
+ *  - same person, different session: similarity ~0.85 – 0.95
+ *  - different people (incl. lookalikes): similarity ~0.55 – 0.80
+ * Duplicate registration blocks at 0.85; kiosk auto-confirm requires >= 0.80
+ * with a top-1/top-2 margin of 0.06. When two profiles both score >= 0.68 and
+ * the margin is under 0.06 the kiosk asks for the staff PIN instead of
+ * guessing. Weaker single candidates are rejected rather than confirmed.
+ * Tune these numbers using the [face-match] console logs produced on every
+ * scan (adb logcat | grep face-match).
  */
 
 import { getActiveStaff, setStaffFaceSignature } from '../database/queries';
@@ -84,10 +81,12 @@ export interface FaceThresholds {
 }
 
 export const FACE_THRESHOLDS: Record<FaceStrictness, FaceThresholds> = {
-  relaxed: { auto: 0.62, suggest: 0.52, margin: 0.06 },
-  balanced: { auto: 0.7, suggest: 0.58, margin: 0.08 },
-  strict: { auto: 0.76, suggest: 0.64, margin: 0.1 },
+  relaxed: { auto: 0.74, suggest: 0.62, margin: 0.06 },
+  balanced: { auto: 0.8, suggest: 0.68, margin: 0.06 },
+  strict: { auto: 0.86, suggest: 0.74, margin: 0.08 },
 };
+
+export const DUPLICATE_MATCH_SIMILARITY = 0.85;
 
 export function getFaceThresholds(): FaceThresholds {
   return FACE_THRESHOLDS[getFaceStrictness()];
@@ -273,10 +272,18 @@ export async function prepareStaffFaceProfiles(): Promise<FaceProfileSummary> {
   };
 }
 
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
 async function matchWithEmbeddings(
   captureUris: string[],
   activeStaff: Staff[],
   scanEmbedding: number[] | null,
+  scanFrameEmbeddings?: number[][] | null,
 ): Promise<FaceMatchResult> {
   const profiles: Array<{ staff: Staff; embedding: number[] }> = [];
 
@@ -313,18 +320,28 @@ async function matchWithEmbeddings(
   }
 
   const ranked = profiles
-    .map((profile) =>
-      embeddingCandidate(
-        profile.staff,
-        compareFaceEmbeddings(captureEmbedding as number[], profile.embedding),
-      ),
-    )
+    .map((profile) => {
+      const similarity =
+        scanFrameEmbeddings && scanFrameEmbeddings.length > 0
+          ? median(
+              scanFrameEmbeddings.map((frame) =>
+                compareFaceEmbeddings(frame, profile.embedding),
+              ),
+            )
+          : compareFaceEmbeddings(captureEmbedding as number[], profile.embedding);
+      return embeddingCandidate(profile.staff, similarity);
+    })
     .sort((a, b) => b.similarity - a.similarity);
 
   const limits = getFaceThresholds();
   const best = ranked[0] ?? null;
   const second = ranked[1];
   const margin = second ? (best?.similarity ?? 0) - second.similarity : 1;
+  console.log(
+    `[face-match] best=${best?.staff.fullName ?? 'none'} ${(best?.similarity ?? 0).toFixed(3)} ` +
+      `second=${second?.staff.fullName ?? 'none'} ${(second?.similarity ?? 0).toFixed(3)} ` +
+      `margin=${margin.toFixed(3)}`,
+  );
   const suggested = best && best.similarity >= limits.suggest ? best : null;
   const autoConfirm =
     best !== null &&
@@ -409,6 +426,7 @@ async function matchWithLegacyHashes(
 export async function matchFaceToStaff(
   captureUris: string[] | string,
   scanEmbedding?: number[] | null,
+  scanFrameEmbeddings?: number[][] | null,
 ): Promise<FaceMatchResult> {
   const list = Array.isArray(captureUris) ? captureUris : [captureUris];
   const activeStaff = getActiveStaff();
@@ -419,6 +437,7 @@ export async function matchFaceToStaff(
       list,
       activeStaff,
       scanEmbedding ?? null,
+      scanFrameEmbeddings ?? null,
     );
     scanTimerMark('matched against staff');
     return result;
@@ -468,12 +487,50 @@ export async function findClosestFace(
  * Check whether a newly captured face signature already belongs to another
  * staff member. Used during registration to prevent duplicate face profiles.
  */
+export interface DuplicateFaceResult {
+  staff: Staff;
+  similarity: number;
+}
+
+/**
+ * Check whether a newly captured face already belongs to another staff
+ * member. Used during registration to prevent duplicate face profiles.
+ * Blocks only on very strong matches (>= DUPLICATE_MATCH_SIMILARITY): a real
+ * duplicate (same person re-registering) will clear it on at least one frame,
+ * while mere lookalikes (measured up to ~0.81) pass.
+ */
 export async function findDuplicateFace(
   signature: string,
   excludeId?: number,
-): Promise<Staff | null> {
-  const closest = await findClosestFace(signature, excludeId);
-  return closest && closest.similarity >= getFaceThresholds().auto
-    ? closest.staff
-    : null;
+  frameEmbeddings?: number[][] | null,
+): Promise<DuplicateFaceResult | null> {
+  const probes: number[][] = [];
+  const averaged = parseFaceEmbedding(signature);
+  if (averaged) {
+    probes.push(averaged);
+  }
+  if (frameEmbeddings && frameEmbeddings.length > 0) {
+    probes.push(...frameEmbeddings);
+  }
+  if (probes.length === 0) {
+    return null;
+  }
+
+  const staff = getActiveStaff().filter((member) => member.id !== excludeId);
+  for (const member of staff) {
+    if (!member.faceSignature) {
+      continue;
+    }
+    const existing = parseFaceEmbedding(member.faceSignature);
+    if (!existing) {
+      continue;
+    }
+    for (const probe of probes) {
+      const similarity = compareFaceEmbeddings(probe, existing);
+      if (similarity >= DUPLICATE_MATCH_SIMILARITY) {
+        return { staff: member, similarity };
+      }
+    }
+  }
+  return null;
 }

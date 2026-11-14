@@ -42,7 +42,11 @@ interface FaceScanPanelProps {
    * Called with the verified live-scan frames and their averaged embedding.
    * The kiosk matches these against staff profiles.
    */
-  onScanned: (frames: string[], embedding: number[] | null) => void;
+  onScanned: (
+    frames: string[],
+    embedding: number[] | null,
+    frameEmbeddings?: number[][] | null,
+  ) => void;
   onUseCode?: () => void;
 }
 
@@ -184,7 +188,7 @@ export function FaceScanPanel({
 
       setPhase('idle');
       setHint(null);
-      onScanned(liveness.frames, liveness.embedding);
+      onScanned(liveness.frames, liveness.embedding, liveness.embeddings);
     } catch (error) {
       setPhase('idle');
       setHint(null);

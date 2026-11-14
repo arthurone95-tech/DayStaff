@@ -244,6 +244,7 @@ export function KioskTerminalScreen() {
   const handleFaceCapture = async (
     frames: string[],
     embedding: number[] | null,
+    frameEmbeddings?: number[][] | null,
   ) => {
     if (operationRef.current || faceBusy || processingId !== null) {
       return;
@@ -252,7 +253,7 @@ export function KioskTerminalScreen() {
     setFaceBusy(true);
     setCapturedPhotoUri(frames[frames.length - 1] ?? null);
     try {
-      const match = await matchFaceToStaff(frames, embedding);
+      const match = await matchFaceToStaff(frames, embedding, frameEmbeddings);
 
       if (match.autoConfirm && match.best) {
         const result = recordAttendance(match.best.staff);
@@ -484,8 +485,8 @@ export function KioskTerminalScreen() {
               profileCount={faceProfileCount}
               engineAvailable={faceProfileSummary?.engineAvailable ?? null}
               engineMessage={faceProfileSummary?.message}
-              onScanned={(frames, embedding) =>
-                void handleFaceCapture(frames, embedding)
+              onScanned={(frames, embedding, frameEmbeddings) =>
+                void handleFaceCapture(frames, embedding, frameEmbeddings)
               }
             />
           )}

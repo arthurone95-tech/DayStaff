@@ -44,8 +44,7 @@ import {
 } from '../../services/faceLiveness';
 import {
   createStaffFaceSignature,
-  findClosestFace,
-  getFaceThresholds,
+  findDuplicateFace,
 } from '../../services/faceRecognitionService';
 import { getShowFaceScores } from '../../services/appSettings';
 import { FACE_PHOTO_QUALITY, useFacePictureSize } from '../../hooks/useFacePictureSize';
@@ -207,6 +206,7 @@ export function RegisterStaffScreen() {
       setScanHint('Building face profile…');
 
       let signature: string;
+      let frameEmbeddings: number[][] | null = null;
       if (engineReady) {
         // Same head-turn check as the kiosk, so a photo cannot be enrolled.
         const liveness = await verifyLiveness(frames, jobs);
@@ -216,6 +216,7 @@ export function RegisterStaffScreen() {
           );
         }
         signature = serializeFaceEmbedding(liveness.embedding);
+        frameEmbeddings = liveness.embeddings;
       } else {
         const enrollment = await createStaffFaceSignature(frames, {
           allowLegacy: true,
@@ -228,14 +229,14 @@ export function RegisterStaffScreen() {
       // Check whether this face is already registered to another staff member.
       setFaceCheckBusy(true);
       try {
-        const closest = await findClosestFace(signature);
-        if (closest && closest.similarity >= getFaceThresholds().auto) {
-          setDuplicateFaceStaff(closest.staff);
+        const existing = await findDuplicateFace(signature, undefined, frameEmbeddings);
+        if (existing) {
+          setDuplicateFaceStaff(existing.staff);
           const score = getShowFaceScores()
-            ? ` (match ${Math.round(closest.similarity * 100)}%)${getLastLivenessDebug()}`
+            ? ` (match ${Math.round(existing.similarity * 100)}%)${getLastLivenessDebug()}`
             : '';
           setFaceError(
-            `This face is already registered to ${closest.staff.fullName}${score}.`,
+            `This face is already registered to ${existing.staff.fullName}${score}.`,
           );
         }
       } finally {

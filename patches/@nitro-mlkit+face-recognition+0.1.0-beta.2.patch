@@ -59,7 +59,7 @@ index e021b93..254ad80 100644
    private fun embedFace(bitmap: Bitmap, face: Face): DoubleArray? {
      val itp = interpreter ?: throw IllegalStateException(
        "No embedding model loaded. Call downloadModel(url) or loadModel(uri) first.",
-@@ -220,13 +242,43 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
+@@ -220,13 +242,50 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
      return l2normalize(DoubleArray(embDim) { output[0][it].toDouble() })
    }
  
@@ -75,12 +75,18 @@ index e021b93..254ad80 100644
 -    val h = box.height().coerceAtMost(bitmap.height - y)
 -    if (w <= 0 || h <= 0) return null
 -    return Bitmap.createBitmap(bitmap, x, y, w, h)
-+    val limit = minOf(bitmap.width, bitmap.height)
-+    val side = minOf((maxOf(box.width(), box.height()) * 1.25f).toInt(), limit)
-+    if (side <= 0) return null
-+    val x = (box.centerX() - side / 2).coerceIn(0, bitmap.width - side)
-+    val y = (box.centerY() - side / 2).coerceIn(0, bitmap.height - side)
-+    return Bitmap.createBitmap(bitmap, x, y, side, side)
++    val cx = box.centerX()
++    val cy = box.centerY()
++    val halfW = box.width() * 0.75f   // final crop width  = 1.5x the box
++    val halfH = box.height() * 0.95f  // final crop height = 1.9x the box
++    val x = (cx - halfW).toInt().coerceIn(0, bitmap.width)
++    val y = (cy - halfH).toInt().coerceIn(0, bitmap.height)
++    val right = (cx + halfW).toInt().coerceIn(0, bitmap.width)
++    val bottom = (cy + halfH).toInt().coerceIn(0, bitmap.height)
++    val w = right - x
++    val h = bottom - y
++    if (w <= 0 || h <= 0) return null
++    return Bitmap.createBitmap(bitmap, x, y, w, h)
 +  }
 +
 +  /** DayStaff patch: honour the photo's EXIF rotation (iOS already does). */

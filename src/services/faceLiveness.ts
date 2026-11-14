@@ -43,6 +43,8 @@ export interface LivenessResult {
   frames: string[];
   /** Embedding of the straight-on frame (null when the check failed). */
   embedding: number[] | null;
+  /** Per-frame embeddings, in challenge order (null on failure). */
+  embeddings: number[][] | null;
 }
 
 export interface LivenessStep {
@@ -139,7 +141,7 @@ function fail(
   failure: LivenessFailure,
   message: string,
 ): LivenessResult {
-  return { ok: false, failure, message, frames, embedding: null };
+  return { ok: false, failure, message, frames, embedding: null, embeddings: null };
 }
 
 /**
@@ -262,5 +264,5 @@ export async function verifyLiveness(
     );
   }
 
-  return { ok: true, frames, embedding: analyses[0].embedding };
+  return { ok: true, frames, embedding: analyses[0].embedding, embeddings: analyses.map((a) => a.embedding) };
 }

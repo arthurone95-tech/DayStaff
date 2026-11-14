@@ -27,6 +27,8 @@ input  input_1     [1, 160, 160, 3] float32
 output Identity    [1, 512]         float32
 ```
 
-A local check with aligned face crops produced cosine similarity of about `0.85`
-for two photos of the same person and below `0.1` for a different person. The
-app's auto-confirm threshold is `0.70`, with suggestions from `0.55`.
+With the expanded face crop, field measurements are about `0.85 – 0.95` for the
+same person and `0.55 – 0.80` for different people (including lookalikes). The
+app blocks duplicate registration at `0.85`, auto-confirms at `0.80` (with a
+top-1/top-2 margin of `0.06`), and asks for the staff PIN below that. Tune
+from the `[face-match]` logcat lines.
