@@ -10,7 +10,7 @@ import {
 } from 'expo-local-authentication';
 import { getSetting, setSetting } from '../../database/queries';
 import { bytesToBase64Url } from '../../services/qrCrypto';
-import { getKioskServerUrl } from '../../services/kioskServer';
+import { isPrivateKioskUrl } from '../../services/kioskServer';
 import { colors, fontSize, radius, spacing } from '../../theme';
 
 export type PhoneVerificationParams = {
@@ -20,6 +20,7 @@ export type PhoneVerificationParams = {
   initials: string;
   mode: 'pair' | 'attend';
   expiresAt: number;
+  kioskUrl: string;
 };
 
 export default function PhoneVerificationScreen() {
@@ -36,6 +37,9 @@ export default function PhoneVerificationScreen() {
     setBusy(true);
     setError(undefined);
     try {
+      if (!isPrivateKioskUrl(params.kioskUrl)) {
+        throw new Error('The kiosk address is not valid. Rescan the DayStaff kiosk QR code.');
+      }
       const hardware = await hasHardwareAsync();
       if (!hardware) {
         throw new Error('No Face ID or fingerprint is available on this device.');
@@ -69,7 +73,8 @@ export default function PhoneVerificationScreen() {
         setSetting('daystaff.phone.device_token', deviceToken);
       }
 
-      const response = await fetch(`${getKioskServerUrl()}api/${mode}`, {
+      const kioskBase = params.kioskUrl.replace(/\/+$/, '');
+      const response = await fetch(`${kioskBase}/api/${mode}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -77,6 +82,7 @@ export default function PhoneVerificationScreen() {
           kind: mode,
           code: params.code,
           sessionId: params.sessionId,
+          nonce: params.nonce,
           timestamp: Date.now(),
           deviceToken,
           biometric: true,

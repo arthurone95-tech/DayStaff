@@ -65,6 +65,7 @@ export function createQrSession(
   const nonce = randomUrlToken(24);
   const initials = maskInitials(staff.fullName);
   const expiresAt = now + ttl;
+  const kioskBaseUrl = verifierUrl || getQrVerifierUrl();
   const params = [
     ['v', '1'],
     ['m', mode],
@@ -74,6 +75,7 @@ export function createQrSession(
     ['x', String(expiresAt)],
     ['n', nonce],
     ['i', initials],
+    ['k', kioskBaseUrl],
   ]
     .map(
       ([key, value]) =>
@@ -90,7 +92,7 @@ export function createQrSession(
     nonce,
     issuedAt: now,
     expiresAt,
-    qrUrl: appendQuery(verifierUrl || getQrVerifierUrl(), params.toString()),
+    qrUrl: `daystaff://verify?${params}`,
   };
 }
 

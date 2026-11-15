@@ -15,6 +15,7 @@ export type PhoneVerificationParams = {
   initials: string;
   mode: 'pair' | 'attend';
   expiresAt: number;
+  kioskUrl: string;
 };
 
 export type RootStackParamList = {

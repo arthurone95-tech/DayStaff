@@ -18,16 +18,19 @@
       "infoPlist": {
         "NSFaceIDUsageDescription": "DayStaff uses Face ID to verify staff attendance.",
         "NSLocalNetworkUsageDescription": "DayStaff uses the local network to connect staff phones to this kiosk for offline attendance.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
       }
     },
     "android": {
       "package": "com.daystaff.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/icon.png",
+        "backgroundImage": "./assets/icon.png",
+        "monochromeImage": "./assets/icon.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -41,7 +44,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/icon.png"
     },
     "plugins": [
       [

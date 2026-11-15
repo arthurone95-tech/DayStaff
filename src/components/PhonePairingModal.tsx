@@ -19,7 +19,7 @@ import {
   sessionRemainingSeconds,
   type QrSession,
 } from '../services/qrVerificationService';
-import { getKioskServerUrl, setKioskServerHandlers } from '../services/kioskServer';
+import { getKioskServerUrl, setKioskServerHandlers, startKioskServer } from '../services/kioskServer';
 import { colors, fontSize, radius, spacing } from '../theme';
 import type { Staff } from '../types';
 
@@ -42,6 +42,12 @@ export function PhonePairingModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [scanResetKey, setScanResetKey] = useState(0);
+
+  useEffect(() => {
+    if (visible) {
+      void startKioskServer().catch(() => undefined);
+    }
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) {
@@ -76,6 +82,17 @@ export function PhonePairingModal({
       }
       if (String(payload?.code || '').toUpperCase() !== staff.staffCode.toUpperCase()) {
         return { ok: false, error: 'The staff code does not match.' };
+      }
+      if (!payload?.nonce || payload.nonce !== session.nonce) {
+        return { ok: false, error: 'The authentication challenge does not match.' };
+      }
+      const payloadTimestamp = Number(payload?.timestamp || 0);
+      if (
+        !Number.isFinite(payloadTimestamp) ||
+        payloadTimestamp > Date.now() + 2000 ||
+        Date.now() - payloadTimestamp > 5000
+      ) {
+        return { ok: false, error: 'Attendance was rejected because the proof was expired.' };
       }
       const deviceToken = String(payload?.deviceToken || '');
       if (!deviceToken) {
@@ -177,7 +194,8 @@ export function PhonePairingModal({
                   1. Connect the phone to the same Wi-Fi network as this kiosk.
                 </Text>
                 <Text style={styles.step}>
-                  2. Scan the QR code below with the phone camera.
+                  2. Open the DayStaff app on the phone and scan the QR code below
+                  (the phone camera also works and opens the app via the deep link).
                 </Text>
                 <Text style={styles.step}>
                   3. Confirm with the phone's Face ID or fingerprint.

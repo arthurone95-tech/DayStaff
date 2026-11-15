@@ -36,6 +36,22 @@ export function getKioskServerUrl(): string {
   return currentUrl || `http://127.0.0.1:${KIOSK_SERVER_PORT}/`;
 }
 
+export function isPrivateKioskUrl(value: string): boolean {
+  const match = value.trim().match(/^https?:\/\/([^/:?#]+)/i);
+  if (!match) return false;
+  const host = match[1].toLowerCase();
+  if (host === 'localhost') return true;
+  if (/^127\./.test(host)) return true;
+  if (/^10\./.test(host)) return true;
+  if (/^192\.168\./.test(host)) return true;
+  const m = host.match(/^172\.(\d+)\./);
+  if (m) {
+    const octet = Number(m[1]);
+    if (octet >= 16 && octet <= 31) return true;
+  }
+  return false;
+}
+
 export async function startKioskServer(): Promise<string> {
   if (server) {
     return getKioskServerUrl();
@@ -89,7 +105,20 @@ export async function startKioskServer(): Promise<string> {
       const body = buffer.slice(bodyStart, bodyStart + contentLength);
 
       if (method === 'GET') {
-        send(200, `<!DOCTYPE html><html><body style="font-family:system-ui;background:#06142b;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px"><main style="max-width:420px;width:100%;background:rgba(12,36,74,.85);border-radius:18px;padding:24px;text-align:center"><h1>DayStaff verification</h1><p>Open this session in the DayStaff native phone app.</p></main></body></html>`, 'text/html; charset=utf-8');
+        const queryIndex = path.indexOf('?');
+        const queryString = queryIndex >= 0 ? path.slice(queryIndex + 1) : '';
+        const deepLink = `daystaff://verify${queryString ? `?${queryString}` : ''}`;
+        const html =
+          `<!DOCTYPE html><html><head><meta charset="utf-8" />` +
+          `<meta name="viewport" content="width=device-width,initial-scale=1" />` +
+          `<title>DayStaff verification</title></head><body style="font-family:system-ui;background:#06142b;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">` +
+          `<main style="max-width:420px;width:100%;background:rgba(12,36,74,.85);border-radius:18px;padding:24px;text-align:center">` +
+          `<h1>DayStaff verification</h1>` +
+          `<p>Opening the DayStaff app…</p>` +
+          `<p><a href="${deepLink}" style="display:inline-block;padding:12px 20px;border-radius:12px;background:#1e6bff;color:#fff;font-weight:700;text-decoration:none">Open in DayStaff app</a></p>` +
+          `<p style="color:#a9bce0;font-size:13px">If nothing happens, open the DayStaff app on your phone and tap "Scan kiosk code".</p>` +
+          `</main><script>try{window.location.replace(${JSON.stringify(deepLink)});}catch(e){}</script></body></html>`;
+        send(200, html, 'text/html; charset=utf-8');
         return;
       }
 

@@ -8,8 +8,28 @@ import type { RootNavigation } from '../../navigation/types';
 import type { PhoneVerificationParams } from './PhoneVerificationScreen';
 
 function parseKioskQr(value: string): PhoneVerificationParams | null {
-  const queryIndex = value.indexOf('?');
-  const query = queryIndex >= 0 ? value.slice(queryIndex + 1) : '';
+  // Accept both the deep-link scheme (daystaff://verify?...) and legacy
+  // http://<kiosk>/?... URLs.
+  let query = '';
+  let derivedKioskUrl = '';
+  const trimmed = value.trim();
+  if (/^daystaff:\/\//i.test(trimmed)) {
+    const qIndex = trimmed.indexOf('?');
+    query = qIndex >= 0 ? trimmed.slice(qIndex + 1) : '';
+  } else if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      query = url.search.replace(/^\?/, '');
+      derivedKioskUrl = `${url.protocol}//${url.host}/`;
+    } catch {
+      const qIndex = trimmed.indexOf('?');
+      query = qIndex >= 0 ? trimmed.slice(qIndex + 1) : '';
+    }
+  } else {
+    const qIndex = trimmed.indexOf('?');
+    query = qIndex >= 0 ? trimmed.slice(qIndex + 1) : '';
+  }
+
   const pairs = query.split('&').filter(Boolean);
   const params = new Map<string, string>();
   for (const pair of pairs) {
@@ -23,18 +43,32 @@ function parseKioskQr(value: string): PhoneVerificationParams | null {
   }
 
   const version = params.get('v');
-  const mode = params.get('m') === 'pair' ? ('pair' as const) : ('attend' as const);
-  const code = (params.get('c') || '').toUpperCase();
-  const sessionId = params.get('s') || '';
-  const nonce = params.get('n') || '';
-  const initials = params.get('i') || '';
+  const modeRaw = params.get('m');
+  const mode: 'pair' | 'attend' = modeRaw === 'pair' ? 'pair' : 'attend';
+  const code = decodeURIComponent(params.get('c') || '').toUpperCase();
+  const sessionId = decodeURIComponent(params.get('s') || '');
+  const nonce = decodeURIComponent(params.get('n') || '');
+  const initials = decodeURIComponent(params.get('i') || '');
   const expiresAt = Number(params.get('x') || 0);
+  const kParam = params.get('k');
 
   if (version !== '1' || !code || !sessionId || !nonce || !Number.isFinite(expiresAt)) {
     return null;
   }
 
-  return { code, sessionId, nonce, initials, mode, expiresAt };
+  if (kParam) {
+    try {
+      derivedKioskUrl = decodeURIComponent(kParam);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!derivedKioskUrl) {
+    return null;
+  }
+
+  return { code, sessionId, nonce, initials, mode, expiresAt, kioskUrl: derivedKioskUrl };
 }
 
 export default function QrScanScreen() {

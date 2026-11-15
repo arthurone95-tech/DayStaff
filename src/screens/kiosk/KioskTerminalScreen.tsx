@@ -31,7 +31,7 @@ import {
   getShowFaceScores,
 } from '../../services/appSettings';
 import { clockOutStaff, recordAttendance } from '../../services/attendanceLogic';
-import { getKioskServerUrl, setKioskServerHandlers } from '../../services/kioskServer';
+import { getKioskServerUrl, setKioskServerHandlers, startKioskServer } from '../../services/kioskServer';
 import { getLastLivenessDebug } from '../../services/faceLiveness';
 import {
   getFaceThresholds,
@@ -128,6 +128,16 @@ export function KioskTerminalScreen() {
   const [simulated, setSimulated] = useState(false);
   const [pinVisible, setPinVisible] = useState(false);
   const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
+
+  // Start the embedded kiosk server so staff phones can reach it over the LAN.
+  // Only the kiosk device runs this; phones never depend on it for verification.
+  useEffect(() => {
+    void startKioskServer().catch((error) => {
+      if (__DEV__) {
+        console.warn('Could not start kiosk server:', error);
+      }
+    });
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -279,6 +289,9 @@ export function KioskTerminalScreen() {
         if (payload?.sessionId !== qrSession.sessionId) {
           return { ok: false, error: 'This attendance belongs to a different session.' };
         }
+        if (!payload?.nonce || payload.nonce !== qrSession.nonce) {
+          return { ok: false, error: 'The authentication challenge does not match.' };
+        }
         const credential = getStaffDeviceCredential(qrStaff.id);
         const deviceToken = String(payload?.deviceToken || '');
         const biometricConfirmed = Boolean(payload?.biometric);
@@ -337,7 +350,9 @@ export function KioskTerminalScreen() {
       return;
     }
     setQrSession(createQrSession(qrStaff, 'attend', getKioskServerUrl()));
-    setQrError(undefined);
+    setQrError(
+      'No phone response yet — make sure the DayStaff app on the phone scanned this code',
+    );
     setQrScanResetKey((value) => value + 1);
   }, [kioskMode, now, qrBusy, qrSession, qrStaff]);
 
