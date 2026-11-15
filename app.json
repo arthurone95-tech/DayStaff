@@ -9,8 +9,9 @@
     "scheme": "daystaff",
     "splash": {
       "image": "./assets/splash-logo.png",
-      "resizeMode": "cover",
-      "backgroundColor": "#0B132B"
+      "resizeMode": "contain",
+      "backgroundColor": "#061734",
+      "imageWidth": 280
     },
     "ios": {
       "supportsTablet": true,
@@ -79,8 +80,11 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash-logo.png",
-          "resizeMode": "cover",
-          "backgroundColor": "#0B132B"
+          "resizeMode": "contain",
+          "backgroundColor": "#061734",
+          "android": {
+            "imageWidth": 280
+          }
         }
       ]
     ],
