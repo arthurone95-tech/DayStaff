@@ -1,5 +1,5 @@
 diff --git a/node_modules/@nitro-mlkit/face-recognition/android/src/main/kotlin/com/margelo/nitro/nitromlkit/recognition/HybridFaceRecognizer.kt b/node_modules/@nitro-mlkit/face-recognition/android/src/main/kotlin/com/margelo/nitro/nitromlkit/recognition/HybridFaceRecognizer.kt
-index e021b93..254ad80 100644
+index 30c3903..f49fd89 100644
 --- a/node_modules/@nitro-mlkit/face-recognition/android/src/main/kotlin/com/margelo/nitro/nitromlkit/recognition/HybridFaceRecognizer.kt
 +++ b/node_modules/@nitro-mlkit/face-recognition/android/src/main/kotlin/com/margelo/nitro/nitromlkit/recognition/HybridFaceRecognizer.kt
 @@ -2,7 +2,9 @@ package com.margelo.nitro.nitromlkit.recognition
@@ -12,16 +12,18 @@ index e021b93..254ad80 100644
  import com.google.mlkit.vision.common.InputImage
  import com.google.mlkit.vision.face.Face
  import com.google.mlkit.vision.face.FaceDetection
-@@ -31,7 +33,8 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
+@@ -31,8 +33,9 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
    private val detector: FaceDetector by lazy {
      FaceDetection.getClient(
        FaceDetectorOptions.Builder()
 -        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+-        .build(),
 +        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
 +        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
-         .build(),
++          .build(),
      )
    }
+ 
 @@ -168,8 +171,10 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
  
    override fun extractEmbedding(faceUri: String): Promise<FaceEmbedding> {
@@ -59,7 +61,7 @@ index e021b93..254ad80 100644
    private fun embedFace(bitmap: Bitmap, face: Face): DoubleArray? {
      val itp = interpreter ?: throw IllegalStateException(
        "No embedding model loaded. Call downloadModel(url) or loadModel(uri) first.",
-@@ -220,13 +242,50 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
+@@ -220,15 +242,51 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
      return l2normalize(DoubleArray(embDim) { output[0][it].toDouble() })
    }
  
@@ -73,8 +75,6 @@ index e021b93..254ad80 100644
 -    val y = box.top.coerceAtLeast(0)
 -    val w = box.width().coerceAtMost(bitmap.width - x)
 -    val h = box.height().coerceAtMost(bitmap.height - y)
--    if (w <= 0 || h <= 0) return null
--    return Bitmap.createBitmap(bitmap, x, y, w, h)
 +    val cx = box.centerX()
 +    val cy = box.centerY()
 +    val halfW = box.width() * 0.75f   // final crop width  = 1.5x the box
@@ -85,10 +85,10 @@ index e021b93..254ad80 100644
 +    val bottom = (cy + halfH).toInt().coerceIn(0, bitmap.height)
 +    val w = right - x
 +    val h = bottom - y
-+    if (w <= 0 || h <= 0) return null
-+    return Bitmap.createBitmap(bitmap, x, y, w, h)
-+  }
-+
+     if (w <= 0 || h <= 0) return null
+     return Bitmap.createBitmap(bitmap, x, y, w, h)
+   }
+ 
 +  /** DayStaff patch: honour the photo's EXIF rotation (iOS already does). */
 +  private fun applyExifOrientation(bitmap: Bitmap, path: String): Bitmap {
 +    val orientation = try {
@@ -112,10 +112,12 @@ index e021b93..254ad80 100644
 +    } catch (e: Exception) {
 +      bitmap
 +    }
-   }
- 
++  }
++
    private fun l2normalize(v: DoubleArray): DoubleArray {
-@@ -281,7 +333,13 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
+     var mag = 0.0
+     for (e in v) mag += e * e
+@@ -281,7 +339,13 @@ class HybridFaceRecognizer : HybridFaceRecognizerSpec() {
          val longest = maxOf(bounds.outWidth, bounds.outHeight)
          while (longest / (sample * 2) >= targetSize) sample *= 2
        }
@@ -130,86 +132,3 @@ index e021b93..254ad80 100644
      } catch (e: Exception) {
        null
      }
-diff --git a/node_modules/@nitro-mlkit/face-recognition/ios/HybridFaceRecognizer.swift b/node_modules/@nitro-mlkit/face-recognition/ios/HybridFaceRecognizer.swift
-index e90a1e6..b3f7680 100644
---- a/node_modules/@nitro-mlkit/face-recognition/ios/HybridFaceRecognizer.swift
-+++ b/node_modules/@nitro-mlkit/face-recognition/ios/HybridFaceRecognizer.swift
-@@ -192,9 +192,9 @@ class HybridFaceRecognizer: HybridFaceRecognizerSpec {
-     /// Recognition only ever needs the box.
-     private lazy var detector: MLKitFaceDetection.FaceDetector = {
-         let opts = FaceDetectorOptions()
--        opts.performanceMode = .fast
-+        opts.performanceMode = .accurate
-         opts.landmarkMode = .none
--        opts.classificationMode = .none
-+        opts.classificationMode = .all
-         return MLKitFaceDetection.FaceDetector.faceDetector(options: opts)
-     }()
- 
-@@ -406,10 +406,12 @@ class HybridFaceRecognizer: HybridFaceRecognizerSpec {
- 
-     func extractEmbedding(faceUri: String) throws -> Promise<FaceEmbedding> {
-         return Promise.async {
--            guard let embedding = try await self.embedPrimaryFace(faceUri) else {
-+            // DayStaff patch: embedding followed by 6 extra numbers
-+            // [yaw, pitch, roll, leftEyeOpen, rightEyeOpen, faceWidthRatio].
-+            guard let analysis = try await self.analyzePrimaryFace(faceUri) else {
-                 throw RuntimeError.error(withMessage: "No face found")
-             }
--            return FaceEmbedding(vector: embedding)
-+            return FaceEmbedding(vector: analysis.0 + analysis.1)
-         }
-     }
- 
-@@ -436,6 +438,30 @@ class HybridFaceRecognizer: HybridFaceRecognizerSpec {
-         return try embedFace(cgImage: cgImage, box: largest.frame)
-     }
- 
-+    /// Embedding of the largest face plus its head pose (DayStaff liveness patch).
-+    private func analyzePrimaryFace(_ imageUri: String) async throws -> ([Double], [Double])? {
-+        guard case .image(let image) = loadImage(from: imageUri, spec: .single),
-+              let cgImage = image.cgImage else {
-+            throw RuntimeError.error(withMessage: "Failed to load image: \(imageUri)")
-+        }
-+        let faces = try await detect(image)
-+        guard let largest = faces.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else {
-+            return nil
-+        }
-+        guard let embedding = try embedFace(cgImage: cgImage, box: largest.frame) else { return nil }
-+        let leftEye: Double = largest.hasLeftEyeOpenProbability ? Double(largest.leftEyeOpenProbability) : -1.0
-+        let rightEye: Double = largest.hasRightEyeOpenProbability ? Double(largest.rightEyeOpenProbability) : -1.0
-+        let pose: [Double] = [
-+            Double(largest.headEulerAngleY),
-+            Double(largest.headEulerAngleX),
-+            Double(largest.headEulerAngleZ),
-+            leftEye,
-+            rightEye,
-+            Double(largest.frame.width) / Double(cgImage.width),
-+        ]
-+        return (embedding, pose)
-+    }
-+
-     private func embedFace(cgImage: CGImage, box: CGRect) throws -> [Double]? {
-         let (width, height) = try modelShape()
-         guard let crop = Self.crop(cgImage, to: box) else { return nil }
-@@ -470,12 +496,14 @@ class HybridFaceRecognizer: HybridFaceRecognizerSpec {
-     }
- 
-     private static func crop(_ cgImage: CGImage, to box: CGRect) -> CGImage? {
--        let x = max(0, box.origin.x)
--        let y = max(0, box.origin.y)
--        let w = min(CGFloat(cgImage.width) - x, box.width)
--        let h = min(CGFloat(cgImage.height) - y, box.height)
--        guard w > 0, h > 0 else { return nil }
--        return cgImage.cropping(to: CGRect(x: x, y: y, width: w, height: h))
-+        // DayStaff patch: square crop with a small margin (no stretching).
-+        let imageWidth = CGFloat(cgImage.width)
-+        let imageHeight = CGFloat(cgImage.height)
-+        let side = min(max(box.width, box.height) * 1.25, min(imageWidth, imageHeight))
-+        guard side > 0 else { return nil }
-+        let x = max(0, min(box.midX - side / 2, imageWidth - side))
-+        let y = max(0, min(box.midY - side / 2, imageHeight - side))
-+        return cgImage.cropping(to: CGRect(x: x, y: y, width: side, height: side))
-     }
- 
-     /// Face crop → the tensor the model wants: RGB, `(px − 127.5) / 128`,
