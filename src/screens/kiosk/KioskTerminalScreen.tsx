@@ -249,11 +249,12 @@ export function KioskTerminalScreen() {
     [touchMode],
   );
 
-  const handleQrCodeSubmit = useCallback(() => {
+  const handleQrCodeSubmit = useCallback((submittedCode?: string) => {
     if (operationRef.current || qrBusy) {
       return;
     }
-    const normalized = qrCode.trim().toUpperCase();
+    const codeToUse = (submittedCode ?? qrCode).trim().toUpperCase();
+    const normalized = codeToUse;
     const member = staff.find(
       (item) => item.staffCode?.toUpperCase() === normalized,
     );
@@ -636,7 +637,6 @@ export function KioskTerminalScreen() {
   const qrRemainingSeconds = qrSession
     ? sessionRemainingSeconds(qrSession, now.getTime())
     : 0;
-  const adminDefaultMode = modeForAuthMethod(authMethod);
 
   if (staff.length === 0) {
     return (
@@ -743,16 +743,6 @@ export function KioskTerminalScreen() {
           <Text style={styles.date}>{formatDateLong(now)}</Text>
         </View>
 
-        <View style={styles.instructionRow}>
-          <View style={styles.livePill}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveLabel}>
-              {kioskMode === 'qr'
-                ? 'Short code + visual QR'
-                : 'Face recognition'}
-            </Text>
-          </View>
-        </View>
 
         <View style={styles.modeSwitchRow}>
           <Pressable
@@ -781,10 +771,7 @@ export function KioskTerminalScreen() {
                 : 'Use face recognition'}
             </Text>
           </Pressable>
-          <Text style={styles.modeSwitchHint}>
-            Admin default:{' '}
-            {adminDefaultMode === 'qr' ? 'Short code + QR' : 'Face recognition'}
-          </Text>
+
         </View>
 
         <View

@@ -1068,6 +1068,7 @@ const styles = StyleSheet.create({
   },
   photoViewerImage: {
     width: '100%',
-    height: undefined,
+    aspectRatio: 1,
+    maxHeight: '100%',
   },
 });

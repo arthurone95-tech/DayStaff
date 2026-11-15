@@ -1,33 +1,33 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { STAFF_CODE_MAX_LENGTH } from '../../config/app';
 
 /**
- * Local palette for the kiosk keypad. Change a value here and every key,
- * panel and button that uses it updates together.
+ * Local palette for the kiosk keypad.
  */
 const UI = {
   panelBg: 'rgba(12, 36, 74, 0.72)',
   panelBorder: 'rgba(59, 130, 246, 0.5)',
   keyBg: '#0F2D57',
   keyBorder: 'rgba(96, 165, 250, 0.4)',
+  keyActiveBg: '#1E6BFF',
+  keyActiveBorder: '#5AA2FF',
   fieldBorder: '#2F7BFF',
   text: '#FFFFFF',
   muted: '#A9BCE0',
+  dimmed: 'rgba(169, 188, 224, 0.35)',
   line: 'rgba(59, 130, 246, 0.45)',
-  verifyBg: '#1E6BFF',
-  verifyBorder: '#5AA2FF',
   error: '#FCA5A5',
 } as const;
 
-/** 7 letters per row; the last row (V-Z) is centered. Digits: 5 per row. */
-const LETTER_ROWS = ['ABCDEFG', 'HIJKLMN', 'OPQRSTU', 'VWXYZ'].map((row) =>
-  row.split(''),
-);
-const DIGIT_ROWS = ['01234', '56789'].map((row) => row.split(''));
-const MAX_CODE_LENGTH = STAFF_CODE_MAX_LENGTH;
+/** Approved letters and numbers — must match the kiosk short-code system. */
+const APPROVED_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K'];
+const APPROVED_NUMBERS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+const INACTIVITY_RESET_MS = 3500;
 
 interface CodeKeypadProps {
   code: string;
@@ -35,17 +35,20 @@ interface CodeKeypadProps {
   error?: string;
   disabled?: boolean;
   onChange: (next: string) => void;
-  onSubmit: () => void;
+  onSubmit: (code?: string) => void;
 }
 
-interface KeyButtonProps {
+function KeyButton({
+  value,
+  disabled,
+  dimmed,
+  onPress,
+}: {
   value: string;
-  digit?: boolean;
   disabled: boolean;
+  dimmed: boolean;
   onPress: () => void;
-}
-
-function KeyButton({ value, digit = false, disabled, onPress }: KeyButtonProps) {
+}) {
   return (
     <Pressable
       onPress={onPress}
@@ -54,23 +57,25 @@ function KeyButton({ value, digit = false, disabled, onPress }: KeyButtonProps) 
       accessibilityLabel={`Enter ${value}`}
       style={({ pressed }) => [
         styles.key,
-        digit && styles.keyDigit,
         pressed && styles.keyPressed,
         disabled && styles.keyDisabled,
+        dimmed && styles.keyDimmed,
       ]}
     >
-      <Text style={[styles.keyLabel, digit && styles.keyLabelDigit]}>
+      <Text style={[styles.keyLabel, dimmed && styles.keyLabelDimmed]}>
         {value}
       </Text>
     </Pressable>
   );
 }
 
-function SectionHeader({ label }: { label: string }) {
+function SectionHeader({ label, dimmed }: { label: string; dimmed: boolean }) {
   return (
     <View style={styles.sectionHeader}>
       <View style={styles.sectionLine} />
-      <Text style={styles.sectionLabel}>{label}</Text>
+      <Text style={[styles.sectionLabel, dimmed && styles.sectionLabelDimmed]}>
+        {label}
+      </Text>
       <View style={styles.sectionLine} />
     </View>
   );
@@ -88,32 +93,57 @@ export function CodeKeypad({
     Haptics.selectionAsync().catch(() => {});
   };
 
-  const append = (key: string) => {
-    if (disabled || code.length >= MAX_CODE_LENGTH) {
-      return;
+  const letterSelected = code.length >= 1;
+  const numberSelected = code.length >= 2;
+
+  // Inactivity reset: if a letter is selected but no number within 3.5s, reset
+  const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (letterSelected && !numberSelected) {
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+      inactivityTimer.current = setTimeout(() => {
+        onChange('');
+      }, INACTIVITY_RESET_MS);
+    } else {
+      if (inactivityTimer.current) {
+        clearTimeout(inactivityTimer.current);
+        inactivityTimer.current = null;
+      }
     }
+    return () => {
+      if (inactivityTimer.current) {
+        clearTimeout(inactivityTimer.current);
+        inactivityTimer.current = null;
+      }
+    };
+  }, [letterSelected, numberSelected, onChange]);
+
+  const handleLetterPress = (letter: string) => {
+    if (disabled || letterSelected) return;
     tap();
-    onChange(code + key);
+    onChange(letter);
+  };
+
+  const handleNumberPress = (num: string) => {
+    if (disabled || !letterSelected || numberSelected) return;
+    tap();
+    const next = (code[0] || '') + num;
+    onChange(next);
+    // Auto-verify on second character
+    setTimeout(() => {
+      onSubmit(next);
+    }, 50);
   };
 
   const clear = () => {
-    if (disabled || code.length === 0) {
-      return;
-    }
+    if (disabled) return;
     tap();
     onChange('');
   };
 
-  const verify = () => {
-    if (disabled || code.length < 2) {
-      return;
-    }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    onSubmit();
-  };
-
-  const clearDisabled = disabled || code.length === 0;
-  const verifyDisabled = disabled || code.length < 2;
+  const displayCode = code.length === 0 ? '' : code;
+  const letterDimmed = letterSelected; // dim letters once a letter is chosen
+  const numberDimmed = !letterSelected; // dim numbers until a letter is chosen
 
   return (
     <View style={styles.wrap}>
@@ -127,10 +157,14 @@ export function CodeKeypad({
               numberOfLines={1}
               adjustsFontSizeToFit
             >
-              {code || 'Enter your code'}
+              {code.length === 0
+                ? '_  _'
+                : code.length === 1
+                ? `${code}  _`
+                : code}
             </Text>
             <Text style={styles.displayCount}>
-              {code.length}/{MAX_CODE_LENGTH}
+              {code.length}/{STAFF_CODE_MAX_LENGTH}
             </Text>
           </View>
           {error ? (
@@ -141,70 +175,55 @@ export function CodeKeypad({
         </View>
       </View>
 
-      {/* Letters + numbers panel */}
-      <View style={styles.panel}>
-        <SectionHeader label="Letters A–Z" />
-        {LETTER_ROWS.map((row) => (
-          <View key={row.join('')} style={styles.gridRow}>
-            {row.map((key) => (
-              <View key={key} style={styles.letterCell}>
-                <KeyButton
-                  value={key}
-                  disabled={disabled}
-                  onPress={() => append(key)}
-                />
-              </View>
-            ))}
-          </View>
-        ))}
-
-        <SectionHeader label="Numbers 0–9" />
-        {DIGIT_ROWS.map((row) => (
-          <View key={row.join('')} style={styles.gridRow}>
-            {row.map((key) => (
-              <View key={key} style={styles.digitCell}>
-                <KeyButton
-                  value={key}
-                  digit
-                  disabled={disabled}
-                  onPress={() => append(key)}
-                />
-              </View>
-            ))}
-          </View>
-        ))}
+      {/* Letters section */}
+      <View style={[styles.panel, letterDimmed && styles.panelDimmed]}>
+        <SectionHeader label="Select letter" dimmed={letterDimmed} />
+        <View style={styles.gridRow}>
+          {APPROVED_LETTERS.map((key) => (
+            <View key={key} style={styles.letterCell}>
+              <KeyButton
+                value={key}
+                disabled={disabled || letterSelected}
+                dimmed={letterDimmed}
+                onPress={() => handleLetterPress(key)}
+              />
+            </View>
+          ))}
+        </View>
       </View>
 
-      {/* Actions */}
+      {/* Numbers section */}
+      <View style={[styles.panel, styles.numberPanel, numberDimmed && styles.panelDimmed]}>
+        <SectionHeader label="Select number" dimmed={numberDimmed} />
+        <View style={styles.gridRow}>
+          {APPROVED_NUMBERS.map((key) => (
+            <View key={key} style={styles.digitCell}>
+              <KeyButton
+                value={key}
+                disabled={disabled || !letterSelected || numberSelected}
+                dimmed={numberDimmed}
+                onPress={() => handleNumberPress(key)}
+              />
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* Clear action */}
       <View style={styles.actions}>
         <Pressable
           onPress={clear}
-          disabled={clearDisabled}
+          disabled={disabled || code.length === 0}
           accessibilityRole="button"
           accessibilityLabel="Clear code"
           style={({ pressed }) => [
             styles.action,
             pressed && styles.keyPressed,
-            clearDisabled && styles.actionDisabled,
+            (disabled || code.length === 0) && styles.actionDisabled,
           ]}
         >
           <Ionicons name="trash-outline" size={24} color={UI.text} />
           <Text style={styles.actionLabel}>Clear</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={verify}
-          disabled={verifyDisabled}
-          accessibilityRole="button"
-          accessibilityLabel="Verify code with biometrics"
-          style={({ pressed }) => [
-            styles.verify,
-            pressed && styles.keyPressed,
-            verifyDisabled && styles.actionDisabled,
-          ]}
-        >
-          <Ionicons name="finger-print" size={28} color={UI.text} />
-          <Text style={styles.actionLabel}>Verify</Text>
         </Pressable>
       </View>
     </View>
@@ -299,6 +318,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingTop: 8,
     paddingBottom: 8,
+    marginBottom: 8,
+  },
+  numberPanel: {
+    marginTop: 0,
+  },
+  panelDimmed: {
+    opacity: 0.45,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -314,6 +340,9 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
+  sectionLabelDimmed: {
+    color: UI.dimmed,
+  },
   sectionLine: {
     flex: 1,
     height: 1,
@@ -321,11 +350,12 @@ const styles = StyleSheet.create({
   },
   gridRow: {
     flexDirection: 'row',
-    justifyContent: 'center', // centers the short last letter row (V-Z)
+    justifyContent: 'center',
+    flexWrap: 'wrap',
   },
   letterCell: {
-    width: `${100 / 7}%`,
-    padding: 3,
+    width: '20%',
+    padding: 4,
   },
   digitCell: {
     width: '20%',
@@ -335,7 +365,7 @@ const styles = StyleSheet.create({
   // ---- Keys ----
   key: {
     width: '100%',
-    aspectRatio: 1.05, // letters: almost square
+    aspectRatio: 1.1,
     borderRadius: 14,
     backgroundColor: UI.keyBg,
     borderWidth: 1,
@@ -347,10 +377,6 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 0 },
   },
-  keyDigit: {
-    aspectRatio: 1.55, // numbers: wider and larger
-    borderRadius: 16,
-  },
   keyPressed: {
     opacity: 0.7,
     transform: [{ scale: 0.97 }],
@@ -358,16 +384,19 @@ const styles = StyleSheet.create({
   keyDisabled: {
     opacity: 0.4,
   },
+  keyDimmed: {
+    opacity: 0.35,
+  },
   keyLabel: {
     color: UI.text,
     fontSize: 26,
     fontWeight: '800',
   },
-  keyLabelDigit: {
-    fontSize: 30,
+  keyLabelDimmed: {
+    color: UI.dimmed,
   },
 
-  // ---- Clear / Verify ----
+  // ---- Clear ----
   actions: {
     flexDirection: 'row',
     gap: 12,
@@ -392,21 +421,5 @@ const styles = StyleSheet.create({
   },
   actionDisabled: {
     opacity: 0.45,
-  },
-  verify: {
-    flex: 1.1,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: UI.verifyBg,
-    borderWidth: 1.5,
-    borderColor: UI.verifyBorder,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    shadowColor: UI.verifyBg,
-    shadowOpacity: 0.55,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 0 },
   },
 });

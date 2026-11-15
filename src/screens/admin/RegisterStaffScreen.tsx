@@ -96,6 +96,7 @@ export function RegisterStaffScreen() {
   const [duplicateFaceStaff, setDuplicateFaceStaff] = useState<Staff | null>(null);
   const [saving, setSaving] = useState(false);
   const [staffToPair, setStaffToPair] = useState<Staff | null>(null);
+  const [staffCodeKeyboardVisible, setStaffCodeKeyboardVisible] = useState(false);
 
   const cameraRef = useRef<CameraView | null>(null);
   const { pictureSize, chooseSize } = useFacePictureSize(cameraRef);
@@ -435,6 +436,8 @@ export function RegisterStaffScreen() {
                 maxLength={STAFF_CODE_MAX_LENGTH}
                 error={errors.code}
                 hint={`Exactly two letters or numbers. Leave blank to generate one automatically.`}
+                showSoftInputOnFocus={false}
+                onFocus={() => setStaffCodeKeyboardVisible(true)}
               />
               <TextField
                 label="Fallback PIN (6 digits)"
@@ -467,6 +470,83 @@ export function RegisterStaffScreen() {
                 secureTextEntry
                 error={errors.pinConfirm}
               />
+              {staffCodeKeyboardVisible ? (
+                <View style={styles.customKeyboard}>
+                  <View style={styles.customKeyboardRow}>
+                    {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K'].map(
+                      (key) => (
+                        <Pressable
+                          key={key}
+                          onPress={() => {
+                            if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
+                              setStaffCode((prev) =>
+                                (prev + key).slice(0, STAFF_CODE_MAX_LENGTH),
+                              );
+                              setErrors((prev) => ({ ...prev, code: undefined }));
+                            }
+                          }}
+                          style={({ pressed }) => [
+                            styles.customKey,
+                            pressed && styles.customKeyPressed,
+                          ]}
+                        >
+                          <Text style={styles.customKeyLabel}>{key}</Text>
+                        </Pressable>
+                      ),
+                    )}
+                  </View>
+                  <View style={styles.customKeyboardRow}>
+                    {['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
+                      (key) => (
+                        <Pressable
+                          key={key}
+                          onPress={() => {
+                            if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
+                              setStaffCode((prev) =>
+                                (prev + key).slice(0, STAFF_CODE_MAX_LENGTH),
+                              );
+                              setErrors((prev) => ({ ...prev, code: undefined }));
+                            }
+                          }}
+                          style={({ pressed }) => [
+                            styles.customKey,
+                            styles.customKeyDigit,
+                            pressed && styles.customKeyPressed,
+                          ]}
+                        >
+                          <Text style={styles.customKeyLabel}>{key}</Text>
+                        </Pressable>
+                      ),
+                    )}
+                  </View>
+                  <View style={styles.customKeyboardActions}>
+                    <Pressable
+                      onPress={() => {
+                        setStaffCode((prev) => prev.slice(0, -1));
+                        setErrors((prev) => ({ ...prev, code: undefined }));
+                      }}
+                      style={({ pressed }) => [
+                        styles.customKeyAction,
+                        pressed && styles.customKeyPressed,
+                      ]}
+                    >
+                      <Ionicons name="backspace-outline" size={20} color={colors.slate900} />
+                      <Text style={styles.customKeyActionLabel}>Backspace</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setStaffCodeKeyboardVisible(false)}
+                      style={({ pressed }) => [
+                        styles.customKeyAction,
+                        styles.customKeyDone,
+                        pressed && styles.customKeyPressed,
+                      ]}
+                    >
+                      <Text style={[styles.customKeyActionLabel, { color: colors.white }]}>Done</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
+
               <View style={styles.footerSingle}>
                 <AppButton
                   title="Next"
@@ -552,31 +632,6 @@ export function RegisterStaffScreen() {
                     title="Take photo"
                     onPress={() => void handleTakePhoto(photoCameraType)}
                     size="sm"
-                  />
-                </View>
-                <View style={styles.photoButtonCell}>
-                  <AppButton
-                    title="Flip camera"
-                    onPress={() =>
-                      setPhotoCameraType((prev) =>
-                        prev === ImagePicker.CameraType.back
-                          ? ImagePicker.CameraType.front
-                          : ImagePicker.CameraType.back,
-                      )
-                    }
-                    variant="secondary"
-                    size="sm"
-                    icon={
-                      <Ionicons
-                        name={
-                          photoCameraType === ImagePicker.CameraType.back
-                            ? 'camera-reverse-outline'
-                            : 'camera-outline'
-                        }
-                        size={18}
-                        color={colors.white}
-                      />
-                    }
                   />
                 </View>
                 <View style={styles.photoButtonCell}>
@@ -808,6 +863,67 @@ const styles = StyleSheet.create({
     color: colors.slate800,
   },
   stepSubtitle: { marginTop: 2, fontSize: fontSize.xs, color: colors.slate500 },
+
+  // Custom staff code keyboard
+  customKeyboard: {
+    backgroundColor: colors.slate100,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  customKeyboardRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  customKey: {
+    flex: 1,
+    height: 48,
+    borderRadius: radius.sm,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customKeyDigit: {
+    backgroundColor: colors.slate50,
+  },
+  customKeyPressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.95 }],
+  },
+  customKeyLabel: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.slate900,
+  },
+  customKeyboardActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  customKeyAction: {
+    flex: 1,
+    height: 44,
+    borderRadius: radius.sm,
+    backgroundColor: colors.slate200,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  customKeyDone: {
+    backgroundColor: colors.primary,
+  },
+  customKeyActionLabel: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.slate900,
+  },
 
   // Cards + text
   formCard: { marginTop: spacing.sm },

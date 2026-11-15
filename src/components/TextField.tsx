@@ -21,6 +21,9 @@ interface TextFieldProps {
   hint?: string;
   secureTextEntry?: boolean;
   autoFocus?: boolean;
+  showSoftInputOnFocus?: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }
 
 export function TextField({
@@ -36,6 +39,9 @@ export function TextField({
   hint,
   secureTextEntry = false,
   autoFocus = false,
+  showSoftInputOnFocus = true,
+  onFocus,
+  onBlur,
 }: TextFieldProps) {
   return (
     <View style={styles.container}>
@@ -52,6 +58,9 @@ export function TextField({
         editable={editable}
         secureTextEntry={secureTextEntry}
         autoFocus={autoFocus}
+        showSoftInputOnFocus={showSoftInputOnFocus}
+        onFocus={onFocus}
+        onBlur={onBlur}
         style={[styles.input, error ? styles.inputError : null, !editable && styles.disabled]}
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
