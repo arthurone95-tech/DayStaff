@@ -9,7 +9,7 @@
     "scheme": "daystaff",
     "splash": {
       "image": "./assets/splash-logo.png",
-      "resizeMode": "contain",
+      "resizeMode": "cover",
       "backgroundColor": "#0B132B"
     },
     "ios": {
@@ -79,7 +79,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash-logo.png",
-          "resizeMode": "contain",
+          "resizeMode": "cover",
           "backgroundColor": "#0B132B"
         }
       ]
