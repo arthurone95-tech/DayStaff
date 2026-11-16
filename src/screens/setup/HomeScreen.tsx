@@ -36,7 +36,7 @@ export function HomeScreen({ onGetStarted }: HomeScreenProps) {
       >
         <View style={styles.hero}>
           <Image
-            source={require('../../assets/icon.png')}
+            source={require('../../../assets/icon.png')}
             style={styles.logo}
             resizeMode="contain"
           />
