@@ -50,7 +50,7 @@ interface FaceScanPanelProps {
   onScanStart?: () => void;
   onScanEnd?: () => void;
   onUseCode?: () => void;
-  onCameraError?: (message: string) => void;
+  onError?: (message: string) => void;
   /** Increment to auto-trigger a scan once the camera is ready. */
   triggerScan?: number;
 }
@@ -64,7 +64,7 @@ export function FaceScanPanel({
   onScanStart,
   onScanEnd,
   onUseCode,
-  onCameraError,
+  onError,
   triggerScan,
 }: FaceScanPanelProps) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -118,9 +118,9 @@ export function FaceScanPanel({
   // Surface camera failures as a pop-up instead of inline status text.
   useEffect(() => {
     if (cameraError && mountAttempts >= MAX_CAMERA_MOUNT_RETRIES) {
-      onCameraError?.(cameraError);
+      onError?.(cameraError);
     }
-  }, [cameraError, mountAttempts, onCameraError]);
+  }, [cameraError, mountAttempts, onError]);
 
   // Remount camera when focus returns
   useEffect(() => {
@@ -220,22 +220,24 @@ export function FaceScanPanel({
 
       const engineReady = await prepareFaceEngine();
       if (!engineReady) {
+        const message =
+          'Face recognition is not available in this build. Install the latest DayStaff build.';
         setPhase('idle');
         setHint(null);
-        setCameraError(
-          'Face recognition is not available in this build. Install the latest DayStaff build.',
-        );
+        setCameraError(message);
+        onError?.(message);
         return;
       }
 
       const liveness = await verifyLiveness(frames, embeddingJobs);
       scanTimerMark('liveness verified');
       if (!liveness.ok) {
+        const message =
+          liveness.message ?? 'The liveness check failed. Try again.';
         setPhase('idle');
         setHint(null);
-        setCameraError(
-          liveness.message ?? 'The liveness check failed. Try again.',
-        );
+        setCameraError(message);
+        onError?.(message);
         return;
       }
 
@@ -243,13 +245,14 @@ export function FaceScanPanel({
       setHint(null);
       onScanned(liveness.frames, liveness.embedding, liveness.embeddings);
     } catch (error) {
-      setPhase('idle');
-      setHint(null);
-      setCameraError(
+      const message =
         error instanceof Error
           ? error.message
-          : 'Could not complete the scan. Try again.',
-      );
+          : 'Could not complete the scan. Try again.';
+      setPhase('idle');
+      setHint(null);
+      setCameraError(message);
+      onError?.(message);
     } finally {
       onScanEnd?.();
     }

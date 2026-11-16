@@ -335,7 +335,7 @@ export function KioskTerminalScreen() {
             onScanStart={() => { setFaceScanning(true); }}
             onScanEnd={() => setFaceScanning(false)}
             onScanned={(frames, embedding) => void handleFaceScanned(frames, embedding)}
-            onCameraError={(message) => {
+            onError={(message) => {
               alert({ tone: 'danger', title: 'Camera error', message });
             }}
             triggerScan={scanTrigger}

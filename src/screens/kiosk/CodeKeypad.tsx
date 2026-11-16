@@ -173,6 +173,20 @@ export function CodeKeypad({
             <Text style={styles.hint}>{hint}</Text>
           ) : null}
         </View>
+        <Pressable
+          onPress={clear}
+          disabled={disabled || code.length === 0}
+          accessibilityRole="button"
+          accessibilityLabel="Clear code"
+          style={({ pressed }) => [
+            styles.clearButton,
+            pressed && styles.keyPressed,
+            (disabled || code.length === 0) && styles.actionDisabled,
+          ]}
+        >
+          <Ionicons name="trash-outline" size={20} color={UI.text} />
+          <Text style={styles.clearButtonLabel}>Clear</Text>
+        </Pressable>
       </View>
 
       {letterSelected ? (
@@ -211,23 +225,6 @@ export function CodeKeypad({
         </View>
       )}
 
-      {/* Clear action */}
-      <View style={styles.actions}>
-        <Pressable
-          onPress={clear}
-          disabled={disabled || code.length === 0}
-          accessibilityRole="button"
-          accessibilityLabel="Clear code"
-          style={({ pressed }) => [
-            styles.action,
-            pressed && styles.keyPressed,
-            (disabled || code.length === 0) && styles.actionDisabled,
-          ]}
-        >
-          <Ionicons name="trash-outline" size={24} color={UI.text} />
-          <Text style={styles.actionLabel}>Clear</Text>
-        </Pressable>
-      </View>
     </View>
   );
 }
@@ -243,6 +240,7 @@ const styles = StyleSheet.create({
   display: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     backgroundColor: UI.panelBg,
     borderRadius: 28,
     borderWidth: 1.5,
@@ -253,6 +251,24 @@ const styles = StyleSheet.create({
   },
   displayBody: {
     flex: 1,
+  },
+  clearButton: {
+    height: 46,
+    minWidth: 76,
+    borderRadius: 20,
+    backgroundColor: 'rgba(12, 36, 74, 0.85)',
+    borderWidth: 1.5,
+    borderColor: UI.panelBorder,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+  },
+  clearButtonLabel: {
+    color: UI.text,
+    fontSize: 16,
+    fontWeight: '700',
   },
   displayLabel: {
     color: UI.muted,
@@ -267,6 +283,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     height: 46,
+    width: 132,
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: UI.fieldBorder,
