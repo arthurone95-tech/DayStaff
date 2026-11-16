@@ -40,6 +40,13 @@ export interface ExportResult {
   shared: boolean;
 }
 
+interface ReportRow {
+  date: string;
+  staffName: string;
+  staffCode: string;
+  log: import('../types').AttendanceLog | null;
+}
+
 const MIME = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   csv: 'text/csv',
@@ -67,7 +74,10 @@ function resolveBounds(
   };
 }
 
-function statusLabel(row: ExportLogRow): string {
+function statusLabel(row: ReportRow): string {
+  if (!row.log) {
+    return 'Absent';
+  }
   const status = deriveDayStatus(row.log);
   switch (status) {
     case 'on_time':
@@ -83,11 +93,11 @@ function statusLabel(row: ExportLogRow): string {
   }
 }
 
-function buildRows(rows: ExportLogRow[]): (string | number)[][] {
+function buildRows(rows: ReportRow[]): (string | number)[][] {
   return rows.map((row) => {
-    const { log } = row;
+    const log = row.log;
     const onSiteMinutes =
-      log.clockOutTime
+      log?.clockOutTime
         ? Math.max(
             0,
             Math.round(
@@ -99,20 +109,20 @@ function buildRows(rows: ExportLogRow[]): (string | number)[][] {
         : '';
 
     return [
-      log.date,
+      row.date,
       row.staffName,
       row.staffCode,
-      log.authMethod === 'QR_DEVICE_BOUND' ? 'QR Code' : 'Facial Scan',
-      formatTime12h(log.clockInTime),
-      log.clockInStatus === 'late' ? 'Late' : 'On time',
-      log.minutesLate,
-      log.clockOutTime ? formatTime12h(log.clockOutTime) : '',
-      log.clockOutStatus
+      log ? (log.authMethod === 'QR_DEVICE_BOUND' ? 'QR Code' : 'Facial Scan') : '',
+      log ? formatTime12h(log.clockInTime) : '',
+      log ? (log.clockInStatus === 'late' ? 'Late' : 'On time') : '',
+      log ? log.minutesLate : '',
+      log?.clockOutTime ? formatTime12h(log.clockOutTime) : '',
+      log?.clockOutStatus
         ? log.clockOutStatus === 'early'
           ? 'Early'
           : 'On time'
         : '',
-      log.minutesEarly,
+      log ? log.minutesEarly : '',
       statusLabel(row),
       onSiteMinutes,
     ];
@@ -135,23 +145,24 @@ const HEADERS = [
 ];
 
 function buildDailyTotals(
-  rows: ExportLogRow[],
+  rows: ReportRow[],
 ): (string | number)[][] {
   const byDate = new Map<
     string,
-    { present: number; late: number; clockedOut: number; earlyExit: number }
+    { present: number; late: number; clockedOut: number; earlyExit: number; absent: number }
   >();
 
   for (const row of rows) {
     const bucket =
-      byDate.get(row.log.date) ??
-      { present: 0, late: 0, clockedOut: 0, earlyExit: 0 };
-    const status = deriveDayStatus(row.log);
+      byDate.get(row.date) ??
+      { present: 0, late: 0, clockedOut: 0, earlyExit: 0, absent: 0 };
+    const status = row.log ? deriveDayStatus(row.log) : 'absent';
     if (status === 'on_time') bucket.present += 1;
     if (status === 'late') bucket.late += 1;
     if (status === 'clocked_out') bucket.clockedOut += 1;
     if (status === 'early_exit') bucket.earlyExit += 1;
-    byDate.set(row.log.date, bucket);
+    if (status === 'absent') bucket.absent += 1;
+    byDate.set(row.date, bucket);
   }
 
   return Array.from(byDate.entries())
@@ -166,7 +177,7 @@ function buildDailyTotals(
 }
 
 function buildWorkbook(
-  rows: ExportLogRow[],
+  rows: ReportRow[],
   label: string,
 ): XLSX.WorkBook {
   const companyName = getCompanyName();
@@ -181,7 +192,7 @@ function buildWorkbook(
     ['Registered staff', staff.length],
     [
       'Official hours',
-      `${schedule.startTime} – ${schedule.endTime} (grace ${schedule.lateThresholdMinutes} min)`,
+      `${schedule.startTime} ï¿½ ${schedule.endTime} (grace ${schedule.lateThresholdMinutes} min)`,
     ],
     [],
   ];
@@ -207,7 +218,7 @@ function buildWorkbook(
   ];
 
   const dailySheet = XLSX.utils.aoa_to_sheet([
-    ['Date', 'Present (on time)', 'Late', 'Clocked out', 'Early exit'],
+    ['Date', 'Present (on time)', 'Late', 'Clocked out', 'Early exit', 'Absent'],
     ...buildDailyTotals(rows),
   ]);
   dailySheet['!cols'] = [
@@ -216,6 +227,7 @@ function buildWorkbook(
     { wch: 10 },
     { wch: 14 },
     { wch: 12 },
+    { wch: 10 },
   ];
 
   const workbook = XLSX.utils.book_new();
@@ -251,7 +263,41 @@ async function writeReport(
   bounds: { startDate: string; endDate: string; label: string },
   format: 'xlsx' | 'csv',
 ): Promise<ExportResult> {
-  const rows = getExportLogs(bounds.startDate, bounds.endDate);
+  const loggedRows = getExportLogs(bounds.startDate, bounds.endDate);
+  const activeStaff = getActiveStaff();
+
+  const rowsByDate = new Map<string, typeof loggedRows>();
+  for (const row of loggedRows) {
+    const date = row.log.date;
+    const bucket = rowsByDate.get(date) ?? [];
+    bucket.push(row);
+    rowsByDate.set(date, bucket);
+  }
+
+  const rows: ReportRow[] = [];
+  for (const [date, dateRows] of rowsByDate) {
+    const loggedStaffIds = new Set(dateRows.map((row) => row.log.staffId));
+    for (const row of dateRows) {
+      rows.push({
+        date: row.log.date,
+        staffName: row.staffName,
+        staffCode: row.staffCode,
+        log: row.log,
+      });
+    }
+    for (const member of activeStaff) {
+      if (member.createdAt.slice(0, 10) <= date && !loggedStaffIds.has(member.id)) {
+        rows.push({
+          date,
+          staffName: member.fullName,
+          staffCode: member.staffCode,
+          log: null,
+        });
+      }
+    }
+  }
+
+  rows.sort((a, b) => a.date.localeCompare(b.date) || a.staffName.localeCompare(b.staffName));
   const safeLabel = bounds.label
     .replace(/[^a-z0-9]+/gi, '-')
     .replace(/^-|-$/g, '');
