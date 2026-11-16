@@ -247,7 +247,7 @@ export function RootNavigator() {
         <Stack.Screen
           name="RegisterStaff"
           component={RegisterStaffScreen}
-          options={{ title: 'Register staff', animation: 'none', headerLeft: () => null }}
+          options={{ title: 'Register staff', animation: 'none' }}
         />
         <Stack.Screen
           name="StaffProfile"

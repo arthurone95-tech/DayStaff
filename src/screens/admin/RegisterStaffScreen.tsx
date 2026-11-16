@@ -387,10 +387,6 @@ export function RegisterStaffScreen() {
 
            {step === 2 ? (
             <Card style={styles.formCard}>
-              <Text style={styles.cardHint}>
-                {scanHint ??
-                  'Tap “Scan face”, look straight at the camera, then turn your head to one side and then the other. The face profile is built from the straight-on photo.'}
-              </Text>
               <View style={styles.cameraWrap}>
                 {cameraPermission?.granted ? (
                   <CameraView
@@ -411,6 +407,26 @@ export function RegisterStaffScreen() {
                     />
                   </View>
                 )}
+                {cameraPermission?.granted ? (
+                  <Pressable
+                    onPress={() =>
+                      setScanCameraType((prev) =>
+                        prev === ImagePicker.CameraType.back
+                          ? ImagePicker.CameraType.front
+                          : ImagePicker.CameraType.back,
+                      )
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel="Switch camera"
+                    style={styles.cameraFlipOverlay}
+                  >
+                    <Ionicons
+                      name="camera-reverse-outline"
+                      size={20}
+                      color={colors.white}
+                    />
+                  </Pressable>
+                ) : null}
               </View>
 
               {faceSignature && !duplicateFaceStaff ? (
@@ -443,54 +459,9 @@ export function RegisterStaffScreen() {
                 />
               </View>
 
-              <View style={styles.cameraFlipRow}>
-                <Pressable
-                  onPress={() =>
-                    setScanCameraType((prev) =>
-                      prev === ImagePicker.CameraType.back
-                        ? ImagePicker.CameraType.front
-                        : ImagePicker.CameraType.back
-                    )
-                  }
-                  accessibilityRole="button"
-                  accessibilityLabel="Switch camera"
-                  style={styles.cameraFlipButton}
-                >
-                  <Ionicons
-                    name={
-                      scanCameraType === ImagePicker.CameraType.back
-                        ? 'camera-reverse-outline'
-                        : 'camera-outline'
-                    }
-                    size={18}
-                    color={colors.primary}
-                  />
-                </Pressable>
-                <Text style={styles.cameraFlipLabel}>
-                  {scanCameraType === ImagePicker.CameraType.back
-                    ? 'Rear camera'
-                    : 'Front camera'}
-                </Text>
-              </View>
 
-              <View style={styles.note}>
-                <Ionicons name="information-circle-outline" size={16} color={colors.slate500} />
-                <Text style={styles.noteText}>
-                  The profile photo and the face profile are separate: the photo
-                  is for display, the scan is what the kiosk matches against.
-                </Text>
-              </View>
 
                 <View style={styles.footerRow}>
-                <View style={styles.footerBack}>
-                  <AppButton
-                    title="Back"
-                    onPress={goToPreviousStep}
-                    variant="secondary"
-                    size="lg"
-                    disabled={faceBusy}
-                  />
-                </View>
                 <View style={styles.footerPrimary}>
                   <AppButton
                     title="Register staff"
@@ -684,6 +655,17 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     overflow: 'hidden',
     backgroundColor: colors.slate200,
+  },
+  cameraFlipOverlay: {
+    position: 'absolute',
+    right: spacing.sm,
+    bottom: spacing.sm,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   camera: { flex: 1 },
   cameraFlipRow: {
