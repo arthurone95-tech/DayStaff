@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
@@ -69,6 +69,7 @@ export function RegisterStaffScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { alert } = useAppDialog();
 
+
   const [step, setStep] = useState<1 | 2>(1);
   const [fullName, setFullName] = useState('');
   const [consent, setConsent] = useState(false);
@@ -76,6 +77,27 @@ export function RegisterStaffScreen() {
   const [errors, setErrors] = useState<{
     name?: string;
   }>({});
+  useEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <Pressable
+          onPress={() => {
+            if (step === 2) {
+              setStep(1);
+            } else {
+              navigation.goBack();
+            }
+          }}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          style={({ pressed }) => ({ opacity: pressed ? 0.55 : 1 })}
+        >
+          <Ionicons name="chevron-back" size={26} color={colors.white} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, step]);
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [photoCameraType, setPhotoCameraType] = useState<ImagePicker.CameraType>(ImagePicker.CameraType.back);
@@ -387,6 +409,10 @@ export function RegisterStaffScreen() {
 
            {step === 2 ? (
             <Card style={styles.formCard}>
+              <Text style={styles.cardHint}>
+                {scanHint ??
+                  'Tap �Scan face�, look straight at the camera, then turn your head to one side and then the other. The face profile is built from the straight-on photo.'}
+              </Text>
               <View style={styles.cameraWrap}>
                 {cameraPermission?.granted ? (
                   <CameraView
