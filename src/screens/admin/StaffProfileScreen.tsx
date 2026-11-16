@@ -539,22 +539,7 @@ export function StaffProfileScreen({ navigation, route }: Props) {
                   title={staff.staffPinHash ? 'Change fallback PIN' : 'Add fallback PIN'}
                   onPress={openPinSheet}
                 />
-                <ActionRow
-                  compact
-                  icon="phone-portrait-outline"
-                  title={staff.deviceToken ? 'Replace paired phone' : 'Pair a phone'}
-                  subtitle="For short code + visual QR attendance"
-                  onPress={() => setPairingOpen(true)}
-                />
-                {staff.deviceToken ? (
-                  <ActionRow
-                    compact
-                    icon="phone-portrait-outline"
-                    title="Unpair phone"
-                    onPress={handleUnpairPhone}
-                    danger
-                  />
-                ) : null}
+
                 <ActionRow
                   compact
                   icon={isActive ? 'person-remove-outline' : 'person-add-outline'}

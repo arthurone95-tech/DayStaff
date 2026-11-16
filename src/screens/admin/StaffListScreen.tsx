@@ -70,15 +70,10 @@ export function StaffListScreen() {
               item.staffCode ? `#${item.staffCode}` : 'No staff code'
             }
             badge={
-              <>
-                <Badge
-                  label={item.isActive ? 'Active' : 'Inactive'}
-                  tone={item.isActive ? 'success' : 'neutral'}
-                />
-                {!item.staffPinHash ? (
-                  <Badge label="PIN needed" tone="warning" />
-                ) : null}
-              </>
+              <Badge
+                label={item.isActive ? 'Active' : 'Inactive'}
+                tone={item.isActive ? 'success' : 'neutral'}
+              />
             }
             detail={item.isActive ? 'Tap to edit' : 'Hidden from kiosk'}
             onPress={() =>

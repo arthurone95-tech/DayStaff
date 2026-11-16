@@ -262,7 +262,7 @@ export function AdminSettingsScreen() {
           <View style={styles.field}>
             {editingName ? (
               <TextField
-                label="Company / school name"
+                label="Company name"
                 value={companyName}
                 onChangeText={setCompanyNameState}
                 placeholder="e.g. Greenfield Academy"
@@ -271,7 +271,7 @@ export function AdminSettingsScreen() {
               />
             ) : (
               <>
-                <Text style={styles.pinLabel}>Company / school name</Text>
+                <Text style={styles.pinLabel}>Company name</Text>
                 <View style={styles.nameReadOnly}>
                   <Text
                     style={[
