@@ -105,8 +105,8 @@ export function RegisterStaffScreen() {
     const normalizedCode = normalizeCode(staffCode);
     if (!normalizedCode) {
       next.code = 'Staff code is required.';
-    } else if (normalizedCode.length !== STAFF_CODE_MAX_LENGTH) {
-      next.code = `Use exactly ${STAFF_CODE_MAX_LENGTH} letters or numbers.`;
+    } else if (!/^[A-Z][0-9]$/.test(normalizedCode)) {
+      next.code = 'Use one letter followed by one number.';
     } else if (isStaffCodeTaken(normalizedCode)) {
       next.code = 'That code is already assigned to another staff member.';
     }
@@ -391,6 +391,7 @@ export function RegisterStaffScreen() {
                     {['A', 'B', 'C', 'D', 'E'].map((key) => (
                       <Pressable
                         key={key}
+                        disabled={staffCode.length >= 1}
                         onPress={() => {
                           if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
                             setStaffCode((prev) =>
@@ -412,6 +413,7 @@ export function RegisterStaffScreen() {
                     {['F', 'G', 'H', 'J', 'K'].map((key) => (
                       <Pressable
                         key={key}
+                        disabled={staffCode.length >= 1}
                         onPress={() => {
                           if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
                             setStaffCode((prev) =>
@@ -433,6 +435,7 @@ export function RegisterStaffScreen() {
                     {['0', '1', '2', '3', '4'].map((key) => (
                       <Pressable
                         key={key}
+                        disabled={staffCode.length === 0 || staffCode.length >= 2}
                         onPress={() => {
                           if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
                             setStaffCode((prev) =>
@@ -455,6 +458,7 @@ export function RegisterStaffScreen() {
                     {['5', '6', '7', '8', '9'].map((key) => (
                       <Pressable
                         key={key}
+                        disabled={staffCode.length === 0 || staffCode.length >= 2}
                         onPress={() => {
                           if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
                             setStaffCode((prev) =>
@@ -488,32 +492,27 @@ export function RegisterStaffScreen() {
                       <Text style={styles.customKeyActionLabel}>Backspace</Text>
                     </Pressable>
                     <Pressable
-                      onPress={() => setStaffCodeKeyboardVisible(false)}
+                      onPress={() => {
+                        if (!validateBasic()) {
+                          setStaffCodeKeyboardVisible(true);
+                          return;
+                        }
+                        setStaffCodeKeyboardVisible(false);
+                        setStep(2);
+                      }}
                       style={({ pressed }) => [
                         styles.customKeyAction,
                         styles.customKeyDone,
                         pressed && styles.customKeyPressed,
                       ]}
                     >
-                      <Text style={[styles.customKeyActionLabel, { color: colors.white }]}>Done</Text>
+                      <Text style={[styles.customKeyActionLabel, { color: colors.white }]}>Next</Text>
                     </Pressable>
                   </View>
                 </View>
               ) : null}
 
-              <View style={styles.footerSingle}>
-                <AppButton
-                  title="Next"
-                  onPress={() => {
-                    if (!validateBasic()) {
-                      setStaffCodeKeyboardVisible(true);
-                      return;
-                    }
-                    setStep(2);
-                  }}
-                  size="lg"
-                />
-              </View>
+
             </Card>
           ) : null}
 
