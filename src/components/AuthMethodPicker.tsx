@@ -68,11 +68,6 @@ export function AuthMethodPicker({
             <View style={styles.body}>
               <View style={styles.titleRow}>
                 <Text style={styles.title}>{option.title}</Text>
-                {option.recommended ? (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeLabel}>RECOMMENDED</Text>
-                  </View>
-                ) : null}
               </View>
               <Text style={styles.description}>{option.description}</Text>
             </View>

@@ -337,11 +337,6 @@ export function AdminSettingsScreen() {
               onChange={handleAuthMethodChange}
             />
           </View>
-          <Text style={styles.authNote}>
-            {authMethod === 'SHORT_CODE_QR'
-              ? 'Staff enter their 2-character code, scan a dynamic kiosk QR with a paired phone, and confirm with the phone biometrics. The phone sends a signed verification to the kiosk over the local network. Everything stays on the device.'
-              : 'Attendance identification uses on-device facial recognition against enrolled staff photos. A personal 6-digit PIN is requested only when the face match is ambiguous.'}
-          </Text>
         </Card>
 
 
@@ -492,48 +487,6 @@ export function AdminSettingsScreen() {
           )}
         </Card>
 
-        <Card style={styles.card}>
-          <Text style={styles.cardTitle}>Device biometrics</Text>
-          <Text style={styles.cardHint}>
-            Attendance uses face recognition. Device biometrics are shown here
-            for informational purposes only.
-          </Text>
-
-          <View style={styles.statusList}>
-            <View style={styles.statusRow}>
-              <Text style={styles.statusLabel}>Biometric hardware</Text>
-              <Ionicons
-                name={
-                  biometric?.hasHardware ? 'checkmark-circle' : 'close-circle'
-                }
-                size={18}
-                color={
-                  biometric?.hasHardware ? colors.success : colors.danger
-                }
-              />
-            </View>
-            <View style={styles.statusRow}>
-              <Text style={styles.statusLabel}>Enrolled biometric</Text>
-              <Ionicons
-                name={
-                  biometric?.isEnrolled ? 'checkmark-circle' : 'close-circle'
-                }
-                size={18}
-                color={biometric?.isEnrolled ? colors.success : colors.danger}
-              />
-            </View>
-            <View style={styles.statusRow}>
-              <Text style={styles.statusLabel}>Detected sensor</Text>
-              <Text style={styles.statusValue}>
-                {biometric?.label ?? 'Checking…'}
-              </Text>
-            </View>
-          </View>
-
-          <Text style={styles.biometricMessage}>
-            {biometric?.message ?? 'Checking device biometrics…'}
-          </Text>
-        </Card>
 
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>Privacy & security</Text>
