@@ -410,8 +410,12 @@ export function RegisterStaffScreen() {
            {step === 2 ? (
             <Card style={styles.formCard}>
               <Text style={styles.cardHint}>
-                {scanHint ??
-                  'Tap �Scan face�, look straight at the camera, then turn your head to one side and then the other. The face profile is built from the straight-on photo.'}
+                Tap{' '}
+                <Text style={{ fontWeight: '800', color: colors.slate900 }}>
+                  Scan face
+                </Text>
+                , look straight at the camera, then turn your head to one side and then the other. The face profile is
+                built from the straight-on photo.
               </Text>
               <View style={styles.cameraWrap}>
                 {cameraPermission?.granted ? (
