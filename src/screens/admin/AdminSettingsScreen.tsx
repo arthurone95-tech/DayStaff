@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import {
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -46,14 +47,16 @@ import {
 } from '../../services/biometricService';
 import {
   changeAdminPin,
+  generateAdminRecoveryCode,
   isPinFormatValid,
+  storeAdminRecoveryCode,
 } from '../../services/pinService';
-import { colors, fontSize, spacing } from '../../theme';
+import { colors, fontSize, radius, shadow, spacing } from '../../theme';
 import type { AuthMethod } from '../../types';
 
 export function AdminSettingsScreen() {
   const navigation = useNavigation<RootNavigation>();
-  const { alert } = useAppDialog();
+  const { alert, confirm } = useAppDialog();
 
   const [savedCompanyName, setSavedCompanyName] = useState(getCompanyName());
   const [companyName, setCompanyNameState] = useState(getCompanyName());
@@ -70,6 +73,9 @@ export function AdminSettingsScreen() {
   const [pinEditorOpen, setPinEditorOpen] = useState(false);
 
   const [scanLight, setScanLightState] = useState(getScanLightEnabled());
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  const [recoveryAcknowledged, setRecoveryAcknowledged] = useState(false);
+  const [regeneratingRecovery, setRegeneratingRecovery] = useState(false);
   const [strictness, setStrictnessState] =
     useState<FaceStrictness>(getFaceStrictness());
 
@@ -392,6 +398,50 @@ export function AdminSettingsScreen() {
         </Card>
 
         <Card style={styles.card}>
+          <Text style={styles.cardTitle}>Recovery code</Text>
+          <Text style={styles.cardHint}>
+            Generate a new recovery code if the original was lost. The old code
+            will stop working immediately.
+          </Text>
+          <AppButton
+            title={regeneratingRecovery ? 'Generating…' : 'Regenerate recovery code'}
+            onPress={() => {
+              confirm({
+                tone: 'warning',
+                icon: 'key-outline',
+                title: 'Regenerate recovery code?',
+                message:
+                  'The previous recovery code will no longer work. Save the new code somewhere safe.',
+                confirmLabel: 'Regenerate',
+                onConfirm: async () => {
+                  setRegeneratingRecovery(true);
+                  try {
+                    const code = generateAdminRecoveryCode();
+                    await storeAdminRecoveryCode(code);
+                    setRecoveryAcknowledged(false);
+                    setRecoveryCode(code);
+                  } catch (error) {
+                    alert({
+                      tone: 'danger',
+                      title: 'Could not generate code',
+                      message:
+                        error instanceof Error
+                          ? error.message
+                          : 'Please try again.',
+                    });
+                  } finally {
+                    setRegeneratingRecovery(false);
+                  }
+                },
+              });
+            }}
+            loading={regeneratingRecovery}
+            disabled={regeneratingRecovery}
+            style={styles.pinButton}
+          />
+        </Card>
+
+        <Card style={styles.card}>
           <Text style={styles.cardTitle}>Administrator PIN</Text>
           <Text style={styles.cardHint}>
             The master PIN unlocks the admin dashboard from the kiosk.
@@ -475,6 +525,43 @@ export function AdminSettingsScreen() {
 
           <Text style={styles.version}>DayStaff · v1.1.0 · Offline MVP</Text>
         </ScrollView>
+
+        {recoveryCode ? (
+          <Modal visible transparent animationType="fade" statusBarTranslucent>
+            <View style={styles.recoveryOverlay}>
+              <View style={styles.recoveryCard}>
+                <Text style={styles.cardTitle}>Save your recovery code</Text>
+                <Text style={styles.cardHint}>
+                  This code will not be shown again. Save it somewhere safe.
+                </Text>
+                <View style={styles.recoveryCodeBox}>
+                  <Text style={styles.recoveryCode}>{recoveryCode}</Text>
+                </View>
+                <View style={styles.toggleRow}>
+                  <View style={styles.toggleText}>
+                    <Text style={styles.statusLabel}>I have saved this code</Text>
+                  </View>
+                  <Switch
+                    value={recoveryAcknowledged}
+                    onValueChange={setRecoveryAcknowledged}
+                    trackColor={{ false: colors.slate300, true: colors.primaryLight }}
+                    thumbColor={colors.white}
+                  />
+                </View>
+                <AppButton
+                  title="Done"
+                  onPress={() => {
+                    setRecoveryCode(null);
+                    setRecoveryAcknowledged(false);
+                  }}
+                  size="lg"
+                  disabled={!recoveryAcknowledged}
+                />
+              </View>
+            </View>
+          </Modal>
+        ) : null}
+
         <AdminBottomTabBar navigation={navigation} active="AdminSettings" />
       </KeyboardAvoidingView>
     </Screen>
@@ -637,5 +724,33 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: fontSize.xs,
     color: colors.slate400,
+  },
+  recoveryOverlay: {
+    ...StyleSheet.absoluteFill,    backgroundColor: colors.overlay,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  recoveryCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    ...shadow.modal,
+  },
+  recoveryCodeBox: {
+    marginVertical: spacing.lg,
+    padding: spacing.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.slate100,
+    alignItems: 'center',
+  },
+  recoveryCode: {
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: colors.slate900,
+    fontVariant: ['tabular-nums'],
   },
 });

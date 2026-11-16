@@ -14,6 +14,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from 'react-native';
@@ -352,6 +353,7 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<'start' | 'end' | null>(null);
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  const [recoveryAcknowledged, setRecoveryAcknowledged] = useState(false);
 
   const scrollToTop = () => {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -443,6 +445,7 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
       const generatedCode = generateAdminRecoveryCode();
       await storeAdminRecoveryCode(generatedCode);
       setSetting(SETUP_COMPLETED_SETTING, new Date().toISOString());
+      setRecoveryAcknowledged(false);
       setRecoveryCode(generatedCode);
     } catch (setupError) {
       alert({
@@ -750,16 +753,32 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
                 Keep this code somewhere safe. You can use it to reset the
                 administrator PIN if you forget it.
               </Text>
+              <Text style={styles.cardHint}>
+                This code will not be shown again.
+              </Text>
               <View style={styles.recoveryCodeBox}>
                 <Text style={styles.recoveryCode}>{recoveryCode}</Text>
+              </View>
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleText}>
+                  <Text style={styles.statusLabel}>I have saved this code</Text>
+                </View>
+                <Switch
+                  value={recoveryAcknowledged}
+                  onValueChange={setRecoveryAcknowledged}
+                  trackColor={{ false: colors.slate300, true: colors.primaryLight }}
+                  thumbColor={colors.white}
+                />
               </View>
               <AppButton
                 title="I have saved it"
                 onPress={() => {
+                  setRecoveryAcknowledged(false);
                   setRecoveryCode(null);
                   onComplete();
                 }}
                 size="lg"
+                disabled={!recoveryAcknowledged}
               />
             </View>
           </View>
@@ -1107,6 +1126,21 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: colors.slate400,
     textAlign: 'center',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  toggleText: {
+    flex: 1,
+  },
+  statusLabel: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.slate700,
   },
   recoveryOverlay: {
     flex: 1,
