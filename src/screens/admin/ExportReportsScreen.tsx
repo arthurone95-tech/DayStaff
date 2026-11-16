@@ -111,7 +111,7 @@ export function ExportReportsScreen() {
         title: 'Report ready',
         message: `${result.rowCount} ${noun} included.\n\n${
           result.shared
-            ? 'The native share sheet is open â€” send it via WhatsApp, email or Files.'
+            ? 'The native share sheet is open — send it via WhatsApp, email or Files.'
             : `Sharing is unavailable, so the file was saved to:\n${result.uri}`
         }`,
         buttonLabel: 'Done',
@@ -227,7 +227,7 @@ export function ExportReportsScreen() {
         </Card>
 
         <AppButton
-          title={busy ? 'Generatingâ€¦' : 'Generate & share report'}
+          title={busy ? 'Generating…' : 'Generate & share report'}
           onPress={handleExport}
           loading={busy}
           size="lg"

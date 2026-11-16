@@ -181,7 +181,7 @@ function buildWorkbook(
     ['Registered staff', staff.length],
     [
       'Official hours',
-      `${schedule.startTime} â€“ ${schedule.endTime} (grace ${schedule.lateThresholdMinutes} min)`,
+      `${schedule.startTime} – ${schedule.endTime} (grace ${schedule.lateThresholdMinutes} min)`,
     ],
     [],
   ];
@@ -228,19 +228,23 @@ async function shareFile(
   uri: string,
   format: 'xlsx' | 'csv',
 ): Promise<boolean> {
-  const available = await Sharing.isAvailableAsync();
-  if (!available) {
+  try {
+    const available = await Sharing.isAvailableAsync();
+    if (!available) {
+      return false;
+    }
+    await Sharing.shareAsync(uri, {
+      mimeType: MIME[format],
+      dialogTitle: 'Share DayStaff attendance report',
+      UTI:
+        format === 'xlsx'
+          ? 'org.openxmlformats.spreadsheetml.sheet'
+          : 'public.comma-separated-values-text',
+    });
+    return true;
+  } catch {
     return false;
   }
-  await Sharing.shareAsync(uri, {
-    mimeType: MIME[format],
-    dialogTitle: 'Share DayStaff attendance report',
-    UTI:
-      format === 'xlsx'
-        ? 'org.openxmlformats.spreadsheetml.sheet'
-        : 'public.comma-separated-values-text',
-  });
-  return true;
 }
 
 async function writeReport(
