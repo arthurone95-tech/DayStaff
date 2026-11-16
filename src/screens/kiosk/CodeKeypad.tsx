@@ -167,11 +167,6 @@ export function CodeKeypad({
               {code.length}/{STAFF_CODE_MAX_LENGTH}
             </Text>
           </View>
-          {error ? (
-            <Text style={styles.error}>{error}</Text>
-          ) : hint ? (
-            <Text style={styles.hint}>{hint}</Text>
-          ) : null}
         </View>
         <Pressable
           onPress={clear}
@@ -245,7 +240,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     borderWidth: 1.5,
     borderColor: UI.panelBorder,
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 12,
     marginBottom: 8,
   },
@@ -253,7 +248,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   clearButton: {
-    height: 46,
+    height: 40,
     minWidth: 76,
     borderRadius: 20,
     backgroundColor: 'rgba(12, 36, 74, 0.85)',
@@ -282,7 +277,7 @@ const styles = StyleSheet.create({
   field: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 46,
+    height: 40,
     width: 132,
     borderRadius: 20,
     borderWidth: 1.5,

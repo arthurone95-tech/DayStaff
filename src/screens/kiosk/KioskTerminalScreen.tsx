@@ -69,7 +69,6 @@ export function KioskTerminalScreen() {
   const [modeResetSeconds, setModeResetSeconds] = useState(3);
 
   const [code, setCode] = useState('');
-  const [codeError, setCodeError] = useState<string | undefined>();
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
   const [scanTrigger, setScanTrigger] = useState(0);
 
@@ -95,7 +94,6 @@ export function KioskTerminalScreen() {
       setCompanyName(getCompanyName());
       setModeResetSeconds(getModeResetTimeoutSeconds());
       setCode('');
-      setCodeError(undefined);
       setSelectedStaff(null);
       setFeedback(null);
       setFeedbackVisible(false);
@@ -137,14 +135,12 @@ export function KioskTerminalScreen() {
 
   const resetFlow = useCallback(() => {
     setCode('');
-    setCodeError(undefined);
     setSelectedStaff(null);
     setFaceScanning(false);
   }, []);
 
   const handleCodeChange = useCallback((next: string) => {
     setCode(next.toUpperCase());
-    setCodeError(undefined);
   }, []);
 
   const handleCodeSubmit = useCallback((submittedCode?: string) => {
@@ -152,17 +148,28 @@ export function KioskTerminalScreen() {
     const codeToUse = (submittedCode ?? code).trim().toUpperCase();
     const member = staff.find((item) => item.staffCode?.toUpperCase() === codeToUse);
     if (!member) {
-      setCodeError('That staff code is not recognised. Check with the admin.');
+      alert({
+        tone: 'warning',
+        title: 'Staff code not recognised',
+        message: 'That staff code is not recognised. Check with the admin.',
+        buttonLabel: 'Try again',
+      });
+      setCode('');
       return;
     }
     if (!member.faceSignature) {
-      setCodeError('This staff member has no face profile yet. Ask an admin to register one.');
+      alert({
+        tone: 'warning',
+        title: 'No face profile',
+        message: 'This staff member has no face profile yet. Ask an admin to register one.',
+        buttonLabel: 'Try again',
+      });
+      setCode('');
       return;
     }
     setSelectedStaff(member);
-    setCodeError(undefined);
     setScanTrigger((value) => value + 1);
-  }, [code, faceBusy, staff]);
+  }, [alert, code, faceBusy, staff]);
 
   const handleFaceScanned = useCallback(async (
     frames: string[],
@@ -343,8 +350,6 @@ export function KioskTerminalScreen() {
           <View style={styles.keypadWrap}>
             <CodeKeypad
               code={code}
-              hint={selectedStaff ? `Verifying ${selectedStaff.fullName}...` : 'Enter your 2-character staff code.'}
-              error={codeError}
               disabled={faceBusy || faceScanning}
               onChange={handleCodeChange}
               onSubmit={handleCodeSubmit}
