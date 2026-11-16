@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
 import { Screen } from '../../components/Screen';
@@ -35,9 +35,11 @@ export function HomeScreen({ onGetStarted }: HomeScreenProps) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <View style={styles.logo}>
-            <Ionicons name="finger-print" size={44} color={colors.white} />
-          </View>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <Text style={styles.title}>DayStaff</Text>
           <Text style={styles.subtitle}>Staff attendance terminal</Text>
           <Text style={styles.description}>
