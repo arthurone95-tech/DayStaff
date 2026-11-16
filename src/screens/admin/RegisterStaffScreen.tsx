@@ -27,7 +27,7 @@ import {
 } from '../../config/app';
 import {
   createStaff,
-  isStaffCodeTaken,
+  updateStaff,
 } from '../../database/queries';
 import type { RootNavigation } from '../../navigation/types';
 import type { Staff } from '../../types';
@@ -67,7 +67,7 @@ import { colors, fontSize, radius, shadow, spacing } from '../../theme';
  */
 export function RegisterStaffScreen() {
   const navigation = useNavigation<RootNavigation>();
-  const { alert } = useAppDialog();
+  const { alert, confirm } = useAppDialog();
 
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -230,9 +230,45 @@ export function RegisterStaffScreen() {
         const existing = await findDuplicateFace(signature, undefined, frameEmbeddings);
         if (existing) {
           setDuplicateFaceStaff(existing.staff);
-          setFaceError(
-            `This face is already registered to ${existing.staff.fullName}.`,
-          );
+          confirm({
+            tone: 'warning',
+            icon: 'warning-outline',
+            title: 'Face already registered',
+            message: `This face is already registered under ${existing.staff.fullName} (${existing.staff.staffCode}). Update their existing face scan instead, or cancel?`,
+            confirmLabel: 'Update existing face',
+            cancelLabel: 'Cancel',
+            onConfirm: async () => {
+              try {
+                await updateStaff(existing.staff.id, {
+                  fullName: existing.staff.fullName,
+                  staffCode: existing.staff.staffCode,
+                  photoUri: photoUri ?? frames[0],
+                  faceSignature: signature,
+                });
+                alert({
+                  tone: 'success',
+                  title: 'Face scan updated',
+                  message: `${existing.staff.fullName}'s face scan has been updated.`,
+                });
+                navigation.goBack();
+              } catch (updateError) {
+                alert({
+                  tone: 'danger',
+                  title: 'Could not update face scan',
+                  message:
+                    updateError instanceof Error
+                      ? updateError.message
+                      : 'Please try again.',
+                });
+              }
+            },
+            onCancel: () => {
+              setFaceSignature(null);
+              setPhotoUri(null);
+              setDuplicateFaceStaff(null);
+              setFaceError(null);
+            },
+          });
         }
       } finally {
         setFaceCheckBusy(false);
