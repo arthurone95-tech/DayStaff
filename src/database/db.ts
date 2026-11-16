@@ -10,8 +10,9 @@ import * as SQLite from 'expo-sqlite';
 export const DATABASE_NAME = 'daystaff_v2.db';
 const SCHEMA_VERSION = 6;
 
-/** Two-character alphabet for staff short codes (36 x 36 = 1,296 codes). */
-const STAFF_CODE_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+/** Approved short-code letters and digits. */
+const STAFF_CODE_LETTERS = 'ABCDEFGHJK';
+const STAFF_CODE_DIGITS = '0123456789';
 
 let connection: SQLite.SQLiteDatabase | null = null;
 
@@ -96,7 +97,7 @@ function normalizeStaffCodes(db: SQLite.SQLiteDatabase): void {
       .trim()
       .toUpperCase()
       .replace(/[^A-Z0-9]/g, '');
-    if (/^[A-Z0-9]{2}$/.test(normalized) && !used.has(normalized)) {
+    if (/^[ABCDEFGHJK][0-9]$/.test(normalized) && !used.has(normalized)) {
       used.add(normalized);
       if (row.staff_code !== normalized) {
         renames.push({ id: row.id, code: normalized });
@@ -113,13 +114,17 @@ function normalizeStaffCodes(db: SQLite.SQLiteDatabase): void {
     ]);
   }
 
+  const allCodes: string[] = [];
+  for (const letter of STAFF_CODE_LETTERS) {
+    for (const digit of STAFF_CODE_DIGITS) {
+      allCodes.push(`${letter}${digit}`);
+    }
+  }
   let cursor = 0;
   for (const id of unassigned) {
     let assigned: string | null = null;
-    while (cursor < STAFF_CODE_ALPHABET.length ** 2) {
-      const code =
-        STAFF_CODE_ALPHABET[Math.floor(cursor / STAFF_CODE_ALPHABET.length)] +
-        STAFF_CODE_ALPHABET[cursor % STAFF_CODE_ALPHABET.length];
+    while (cursor < allCodes.length) {
+      const code = allCodes[cursor];
       cursor += 1;
       if (!used.has(code)) {
         used.add(code);

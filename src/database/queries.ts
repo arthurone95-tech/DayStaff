@@ -14,7 +14,8 @@ import type {
 } from '../types';
 import { getDb } from './db';
 
-const STAFF_CODE_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const STAFF_CODE_LETTERS = 'ABCDEFGHJK';
+const STAFF_CODE_DIGITS = '0123456789';
 
 function normalizeStaffCode(value: string | null | undefined): string {
   return (value ?? '')
@@ -37,12 +38,12 @@ export function generateUniqueStaffCode(excludeId?: number): string {
         'SELECT staff_code FROM staff WHERE staff_code IS NOT NULL',
       );
   const used = new Set(rows.map((row) => normalizeStaffCode(row.staff_code)));
-  for (let index = 0; index < STAFF_CODE_ALPHABET.length ** 2; index += 1) {
-    const code =
-      STAFF_CODE_ALPHABET[Math.floor(index / STAFF_CODE_ALPHABET.length)] +
-      STAFF_CODE_ALPHABET[index % STAFF_CODE_ALPHABET.length];
-    if (!used.has(code)) {
-      return code;
+  for (const letter of STAFF_CODE_LETTERS) {
+    for (const digit of STAFF_CODE_DIGITS) {
+      const code = `${letter}${digit}`;
+      if (!used.has(code)) {
+        return code;
+      }
     }
   }
   throw new Error(
@@ -190,7 +191,7 @@ export function createStaff(input: NewStaff): Staff {
   if (
     providedCode &&
     (providedCode.length !== STAFF_CODE_MAX_LENGTH ||
-      !new RegExp(`^[A-Z0-9]{${STAFF_CODE_MAX_LENGTH}}$`).test(providedCode))
+      !/^[ABCDEFGHJK][0-9]$/.test(providedCode))
   ) {
     throw new Error(
       `Staff code must be exactly ${STAFF_CODE_MAX_LENGTH} letters or numbers.`,
@@ -224,7 +225,7 @@ export function updateStaff(id: number, input: NewStaff): Staff {
   if (
     providedCode &&
     (providedCode.length !== STAFF_CODE_MAX_LENGTH ||
-      !new RegExp(`^[A-Z0-9]{${STAFF_CODE_MAX_LENGTH}}$`).test(providedCode))
+      !/^[ABCDEFGHJK][0-9]$/.test(providedCode))
   ) {
     throw new Error(
       `Staff code must be exactly ${STAFF_CODE_MAX_LENGTH} letters or numbers.`,

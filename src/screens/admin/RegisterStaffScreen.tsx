@@ -5,8 +5,10 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
+  Switch,
   ScrollView,
   StyleSheet,
   Text,
@@ -53,7 +55,7 @@ import {
   captureStaffPhoto,
 } from '../../services/photoService';
 import * as ImagePicker from 'expo-image-picker';
-import { colors, fontSize, radius, spacing } from '../../theme';
+import { colors, fontSize, radius, shadow, spacing } from '../../theme';
 
 /**
  * Registration is now three distinct steps:
@@ -67,12 +69,12 @@ export function RegisterStaffScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { alert } = useAppDialog();
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2>(1);
   const [fullName, setFullName] = useState('');
-  const [staffCode, setStaffCode] = useState('');
+  const [consent, setConsent] = useState(false);
+  const [registeredInfo, setRegisteredInfo] = useState<{ name: string; code: string } | null>(null);
   const [errors, setErrors] = useState<{
     name?: string;
-    code?: string;
   }>({});
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -87,33 +89,26 @@ export function RegisterStaffScreen() {
   const [faceCheckBusy, setFaceCheckBusy] = useState(false);
   const [duplicateFaceStaff, setDuplicateFaceStaff] = useState<Staff | null>(null);
   const [saving, setSaving] = useState(false);
-  const [staffCodeKeyboardVisible, setStaffCodeKeyboardVisible] = useState(false);
 
   const cameraRef = useRef<CameraView | null>(null);
   const { pictureSize, chooseSize } = useFacePictureSize(cameraRef);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   const goToPreviousStep = () => {
-    setStep((current) => (current > 1 ? ((current - 1) as 1 | 2 | 3) : current));
+    setStep((current) => (current > 1 ? 1 : current));
   };
 
   const validateBasic = (): boolean => {
-    const next: { name?: string; code?: string } = {};
+    const next: { name?: string } = {};
     if (!fullName.trim()) {
       next.name = 'Full name is required.';
     }
-    const normalizedCode = normalizeCode(staffCode);
-    if (!normalizedCode) {
-      next.code = 'Staff code is required.';
-    } else if (!/^[A-Z][0-9]$/.test(normalizedCode)) {
-      next.code = 'Use one letter followed by one number.';
-    } else if (isStaffCodeTaken(normalizedCode)) {
-      next.code = 'That code is already assigned to another staff member.';
+    if (!consent) {
+      next.name = next.name ?? 'Please confirm biometric consent.';
     }
     setErrors((prev) => ({
       ...prev,
       name: next.name,
-      code: next.code,
     }));
     return Object.keys(next).length === 0;
   };
@@ -202,6 +197,9 @@ export function RegisterStaffScreen() {
         signature = enrollment.signature;
       }
       setFaceSignature(signature);
+      if (frames.length > 0) {
+        setPhotoUri(frames[0]);
+      }
       setScanHint(null);
 
       // Check whether this face is already registered to another staff member.
@@ -239,23 +237,13 @@ export function RegisterStaffScreen() {
       return;
     }
 
-    if (!photoUri) {
-      alert({
-        tone: 'warning',
-        title: 'Profile photo required',
-        message: 'Add a profile photo before saving.',
-      });
-      setStep(2);
-      return;
-    }
-
-    if (!faceSignature) {
+    if (!photoUri || !faceSignature) {
       alert({
         tone: 'warning',
         title: 'Face scan required',
         message: 'Complete the live face scan before saving.',
       });
-      setStep(3);
+      setStep(2);
       return;
     }
 
@@ -271,21 +259,12 @@ export function RegisterStaffScreen() {
 
     setSaving(true);
     try {
-      const normalizedCode = normalizeCode(staffCode);
       const created = createStaff({
         fullName,
-        staffCode: normalizedCode,
         photoUri,
         faceSignature,
       });
-      // Registration complete; return to the staff list.
-      const name = created.fullName;
-      alert({
-        tone: 'success',
-        title: 'Staff registered',
-        message: `${name} has been registered.`,
-      });
-      navigation.goBack();
+      setRegisteredInfo({ name: created.fullName, code: created.staffCode });
     } catch (error) {
       alert({
         tone: 'danger',
@@ -308,17 +287,11 @@ export function RegisterStaffScreen() {
   }
 
   const stepTitle =
-    step === 1
-      ? 'Basic info'
-      : step === 2
-        ? 'Profile photo'
-        : 'Face scan';
+    step === 1 ? 'Basic info' : 'Face scan';
   const stepSubtitle =
     step === 1
-      ? 'Name and unique staff code.'
-      : step === 2
-        ? 'A normal photo for the staff list and reports.'
-        : 'A guided live scan that builds the recognition profile.';
+      ? 'Name and biometric consent.'
+      : 'A guided live scan that builds the recognition profile and profile photo.';
 
   const faceReady = !!faceSignature && !duplicateFaceStaff;
 
@@ -336,7 +309,7 @@ export function RegisterStaffScreen() {
         >
           <View style={styles.stepHeader}>
             <View style={styles.progressRow}>
-              {[1, 2, 3].map((n) => (
+              {[1, 2].map((n) => (
                 <View
                   key={n}
                   style={[
@@ -346,7 +319,7 @@ export function RegisterStaffScreen() {
                 />
               ))}
             </View>
-            <Text style={styles.stepCount}>Step {step} of 3</Text>
+            <Text style={styles.stepCount}>Step {step} of 2</Text>
             <Text style={styles.stepTitle}>{stepTitle}</Text>
             <Text style={styles.stepSubtitle}>{stepSubtitle}</Text>
           </View>
@@ -365,159 +338,6 @@ export function RegisterStaffScreen() {
                 error={errors.name}
                 maxLength={80}
               />
-              <TextField
-                label="Staff code (required)"
-                value={staffCode}
-                onChangeText={(value) => {
-                  setStaffCode(
-                    value
-                      .toUpperCase()
-                      .replace(/[^A-Z0-9]/g, '')
-                      .slice(0, STAFF_CODE_MAX_LENGTH),
-                  );
-                  setErrors((prev) => ({ ...prev, code: undefined }));
-                }}
-                placeholder="e.g. A7"
-                autoCapitalize="characters"
-                maxLength={STAFF_CODE_MAX_LENGTH}
-                error={errors.code}
-                hint={`Exactly two letters or numbers. Leave blank to generate one automatically.`}
-                showSoftInputOnFocus={false}
-                onFocus={() => setStaffCodeKeyboardVisible(true)}
-              />
-              {staffCodeKeyboardVisible ? (
-                <View style={styles.customKeyboard}>
-                  <View style={styles.customKeyboardRow}>
-                    {['A', 'B', 'C', 'D', 'E'].map((key) => (
-                      <Pressable
-                        key={key}
-                        disabled={staffCode.length >= 1}
-                        onPress={() => {
-                          if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
-                            setStaffCode((prev) =>
-                              (prev + key).slice(0, STAFF_CODE_MAX_LENGTH),
-                            );
-                            setErrors((prev) => ({ ...prev, code: undefined }));
-                          }
-                        }}
-                        style={({ pressed }) => [
-                          styles.customKey,
-                          pressed && styles.customKeyPressed,
-                        ]}
-                      >
-                        <Text style={styles.customKeyLabel}>{key}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <View style={styles.customKeyboardRow}>
-                    {['F', 'G', 'H', 'J', 'K'].map((key) => (
-                      <Pressable
-                        key={key}
-                        disabled={staffCode.length >= 1}
-                        onPress={() => {
-                          if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
-                            setStaffCode((prev) =>
-                              (prev + key).slice(0, STAFF_CODE_MAX_LENGTH),
-                            );
-                            setErrors((prev) => ({ ...prev, code: undefined }));
-                          }
-                        }}
-                        style={({ pressed }) => [
-                          styles.customKey,
-                          pressed && styles.customKeyPressed,
-                        ]}
-                      >
-                        <Text style={styles.customKeyLabel}>{key}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <View style={styles.customKeyboardRow}>
-                    {['0', '1', '2', '3', '4'].map((key) => (
-                      <Pressable
-                        key={key}
-                        disabled={staffCode.length === 0 || staffCode.length >= 2}
-                        onPress={() => {
-                          if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
-                            setStaffCode((prev) =>
-                              (prev + key).slice(0, STAFF_CODE_MAX_LENGTH),
-                            );
-                            setErrors((prev) => ({ ...prev, code: undefined }));
-                          }
-                        }}
-                        style={({ pressed }) => [
-                          styles.customKey,
-                          styles.customKeyDigit,
-                          pressed && styles.customKeyPressed,
-                        ]}
-                      >
-                        <Text style={styles.customKeyLabel}>{key}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <View style={styles.customKeyboardRow}>
-                    {['5', '6', '7', '8', '9'].map((key) => (
-                      <Pressable
-                        key={key}
-                        disabled={staffCode.length === 0 || staffCode.length >= 2}
-                        onPress={() => {
-                          if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
-                            setStaffCode((prev) =>
-                              (prev + key).slice(0, STAFF_CODE_MAX_LENGTH),
-                            );
-                            setErrors((prev) => ({ ...prev, code: undefined }));
-                          }
-                        }}
-                        style={({ pressed }) => [
-                          styles.customKey,
-                          styles.customKeyDigit,
-                          pressed && styles.customKeyPressed,
-                        ]}
-                      >
-                        <Text style={styles.customKeyLabel}>{key}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <View style={styles.customKeyboardActions}>
-                    <Pressable
-                      onPress={() => {
-                        setStaffCode((prev) => prev.slice(0, -1));
-                        setErrors((prev) => ({ ...prev, code: undefined }));
-                      }}
-                      style={({ pressed }) => [
-                        styles.customKeyAction,
-                        pressed && styles.customKeyPressed,
-                      ]}
-                    >
-                      <Ionicons name="backspace-outline" size={20} color={colors.slate900} />
-                      <Text style={styles.customKeyActionLabel}>Backspace</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => {
-                        if (!validateBasic()) {
-                          setStaffCodeKeyboardVisible(true);
-                          return;
-                        }
-                        setStaffCodeKeyboardVisible(false);
-                        setStep(2);
-                      }}
-                      style={({ pressed }) => [
-                        styles.customKeyAction,
-                        styles.customKeyDone,
-                        pressed && styles.customKeyPressed,
-                      ]}
-                    >
-                      <Text style={[styles.customKeyActionLabel, { color: colors.white }]}>Next</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ) : null}
-
-
-            </Card>
-          ) : null}
-
-          {step === 2 ? (
-            <Card style={styles.formCard}>
               <View style={styles.consentBox}>
                 <View style={styles.consentHeader}>
                   <Ionicons
@@ -531,88 +351,41 @@ export function RegisterStaffScreen() {
                   By capturing this photo, you confirm employee consent to generate and store a local biometric facial template.
                 </Text>
                 <Text style={styles.consentLine}>
-                  • Storage: 100% local on this device.
+                  � Storage: 100% local on this device.
                 </Text>
                 <Text style={styles.consentLine}>
-                  • Purpose: Workplace attendance verification only.
+                  � Purpose: Workplace attendance verification only.
                 </Text>
                 <Text style={styles.consentLine}>
-                  • Privacy: Biometric data is never uploaded to the cloud or shared with third parties, and can be permanently deleted by an administrator at any time.
+                  � Privacy: Biometric data is never uploaded to the cloud or shared with third parties, and can be permanently deleted by an administrator at any time.
                 </Text>
               </View>
-
-              <View style={styles.previewColumn}>
-                {photoUri ? (
-                  <Avatar
-                    name={fullName || 'New staff'}
-                    photoUri={photoUri}
-                    size={96}
-                  />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Ionicons
-                      name="person-outline"
-                      size={36}
-                      color={colors.slate400}
-                    />
-                  </View>
-                )}
-                <Text style={styles.previewCaption}>
-                  {photoUri
-                    ? 'Photo set. You can replace it below.'
-                    : 'A clear head-and-shoulders photo works best.'}
-                </Text>
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleText}>
+                  <Text style={styles.statusLabel}>I confirm consent</Text>
+                </View>
+                <Switch
+                  value={consent}
+                  onValueChange={setConsent}
+                  trackColor={{ false: colors.slate300, true: colors.primaryLight }}
+                  thumbColor={colors.white}
+                />
               </View>
-
-              <View style={styles.photoButtons}>
-                <View style={styles.photoButtonCell}>
-                  <AppButton
-                    title="Take photo"
-                    onPress={() => void handleTakePhoto(photoCameraType)}
-                    size="sm"
-                  />
-                </View>
-                <View style={styles.photoButtonCell}>
-                  <AppButton
-                    title="From library"
-                    onPress={() => void handleChoosePhoto()}
-                    variant="secondary"
-                    size="sm"
-                  />
-                </View>
-              </View>
-
-              <View style={styles.note}>
-                <Ionicons name="scan-outline" size={16} color={colors.slate500} />
-                <Text style={styles.noteText}>
-                  Face matching runs entirely on this device. A clear,
-                  front-facing profile photo plus a guided scan with head
-                  movement gives the most reliable match.
-                </Text>
-              </View>
-
-              <View style={styles.footerRow}>
-                <View style={styles.footerBack}>
-                  <AppButton
-                    title="Back"
-                    onPress={goToPreviousStep}
-                    variant="secondary"
-                    size="lg"
-                  />
-                </View>
-                <View style={styles.footerPrimary}>
-                  <AppButton
-                    title="Next"
-                    onPress={() => setStep(3)}
-                    size="lg"
-                    disabled={!photoUri}
-                  />
-                </View>
+              <View style={styles.footerSingle}>
+                <AppButton
+                  title="Next"
+                  onPress={() => {
+                    if (!validateBasic()) return;
+                    setStep(2);
+                  }}
+                  size="lg"
+                  disabled={!fullName.trim() || !consent}
+                />
               </View>
             </Card>
           ) : null}
 
-          {step === 3 ? (
+           {step === 2 ? (
             <Card style={styles.formCard}>
               <Text style={styles.cardHint}>
                 {scanHint ??
@@ -708,7 +481,7 @@ export function RegisterStaffScreen() {
                 </Text>
               </View>
 
-              <View style={styles.footerRow}>
+                <View style={styles.footerRow}>
                 <View style={styles.footerBack}>
                   <AppButton
                     title="Back"
@@ -738,6 +511,33 @@ export function RegisterStaffScreen() {
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {registeredInfo ? (
+        <Modal visible transparent animationType="fade" statusBarTranslucent>
+          <View style={styles.recoveryOverlay}>
+            <View style={styles.recoveryCard}>
+              <Text style={styles.cardTitle}>Staff registered</Text>
+              <Text style={styles.cardHint}>
+                Give this short code to the employee.
+              </Text>
+              <View style={styles.recoveryCodeBox}>
+                <Text style={styles.recoveryCode}>{registeredInfo.code}</Text>
+              </View>
+              <Text style={styles.cardHint}>
+                {registeredInfo.name}
+              </Text>
+              <AppButton
+                title="Done"
+                onPress={() => {
+                  setRegisteredInfo(null);
+                  navigation.goBack();
+                }}
+                size="lg"
+              />
+            </View>
+          </View>
+        </Modal>
+      ) : null}
 
     </Screen>
   );
@@ -983,5 +783,56 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.infoDark,
     lineHeight: 18,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  toggleText: {
+    flex: 1,
+  },
+  statusLabel: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.slate700,
+  },
+  cardTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    color: colors.slate900,
+  },
+  recoveryOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  recoveryCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    ...shadow.modal,
+  },
+  recoveryCodeBox: {
+    marginVertical: spacing.lg,
+    padding: spacing.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.slate100,
+    alignItems: 'center',
+  },
+  recoveryCode: {
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: colors.slate900,
+    fontVariant: ['tabular-nums'],
   },
 });
