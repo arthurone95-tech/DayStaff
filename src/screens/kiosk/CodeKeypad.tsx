@@ -295,12 +295,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 6,
     fontVariant: ['tabular-nums'],
+    textAlign: 'center',
   },
   codePlaceholder: {
     color: UI.muted,
     fontSize: 20,
     fontWeight: '500',
-    letterSpacing: 0,
+    letterSpacing: 6,
+    textAlign: 'center',
   },
   displayCount: {
     marginLeft: 8,
