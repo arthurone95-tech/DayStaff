@@ -504,17 +504,7 @@ export function StaffProfileScreen({ navigation, route }: Props) {
                     tone={staff.staffPinHash ? 'success' : 'neutral'}
                   />
                 </InfoRow>
-                <InfoRow
-                  icon="phone-portrait-outline"
-                  label="Paired phone"
-                  last
-                  compact
-                >
-                  <Badge
-                    label={staff.deviceToken ? 'Paired' : 'Not paired'}
-                    tone={staff.deviceToken ? 'success' : 'neutral'}
-                  />
-                </InfoRow>
+
               </View>
 
               {/* ===== VIEW MODE: PRIMARY ACTION ===== */}

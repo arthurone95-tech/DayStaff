@@ -388,51 +388,90 @@ export function RegisterStaffScreen() {
               {staffCodeKeyboardVisible ? (
                 <View style={styles.customKeyboard}>
                   <View style={styles.customKeyboardRow}>
-                    {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K'].map(
-                      (key) => (
-                        <Pressable
-                          key={key}
-                          onPress={() => {
-                            if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
-                              setStaffCode((prev) =>
-                                (prev + key).slice(0, STAFF_CODE_MAX_LENGTH),
-                              );
-                              setErrors((prev) => ({ ...prev, code: undefined }));
-                            }
-                          }}
-                          style={({ pressed }) => [
-                            styles.customKey,
-                            pressed && styles.customKeyPressed,
-                          ]}
-                        >
-                          <Text style={styles.customKeyLabel}>{key}</Text>
-                        </Pressable>
-                      ),
-                    )}
+                    {['A', 'B', 'C', 'D', 'E'].map((key) => (
+                      <Pressable
+                        key={key}
+                        onPress={() => {
+                          if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
+                            setStaffCode((prev) =>
+                              (prev + key).slice(0, STAFF_CODE_MAX_LENGTH),
+                            );
+                            setErrors((prev) => ({ ...prev, code: undefined }));
+                          }
+                        }}
+                        style={({ pressed }) => [
+                          styles.customKey,
+                          pressed && styles.customKeyPressed,
+                        ]}
+                      >
+                        <Text style={styles.customKeyLabel}>{key}</Text>
+                      </Pressable>
+                    ))}
                   </View>
                   <View style={styles.customKeyboardRow}>
-                    {['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
-                      (key) => (
-                        <Pressable
-                          key={key}
-                          onPress={() => {
-                            if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
-                              setStaffCode((prev) =>
-                                (prev + key).slice(0, STAFF_CODE_MAX_LENGTH),
-                              );
-                              setErrors((prev) => ({ ...prev, code: undefined }));
-                            }
-                          }}
-                          style={({ pressed }) => [
-                            styles.customKey,
-                            styles.customKeyDigit,
-                            pressed && styles.customKeyPressed,
-                          ]}
-                        >
-                          <Text style={styles.customKeyLabel}>{key}</Text>
-                        </Pressable>
-                      ),
-                    )}
+                    {['F', 'G', 'H', 'J', 'K'].map((key) => (
+                      <Pressable
+                        key={key}
+                        onPress={() => {
+                          if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
+                            setStaffCode((prev) =>
+                              (prev + key).slice(0, STAFF_CODE_MAX_LENGTH),
+                            );
+                            setErrors((prev) => ({ ...prev, code: undefined }));
+                          }
+                        }}
+                        style={({ pressed }) => [
+                          styles.customKey,
+                          pressed && styles.customKeyPressed,
+                        ]}
+                      >
+                        <Text style={styles.customKeyLabel}>{key}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <View style={styles.customKeyboardRow}>
+                    {['0', '1', '2', '3', '4'].map((key) => (
+                      <Pressable
+                        key={key}
+                        onPress={() => {
+                          if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
+                            setStaffCode((prev) =>
+                              (prev + key).slice(0, STAFF_CODE_MAX_LENGTH),
+                            );
+                            setErrors((prev) => ({ ...prev, code: undefined }));
+                          }
+                        }}
+                        style={({ pressed }) => [
+                          styles.customKey,
+                          styles.customKeyDigit,
+                          pressed && styles.customKeyPressed,
+                        ]}
+                      >
+                        <Text style={styles.customKeyLabel}>{key}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <View style={styles.customKeyboardRow}>
+                    {['5', '6', '7', '8', '9'].map((key) => (
+                      <Pressable
+                        key={key}
+                        onPress={() => {
+                          if (staffCode.length < STAFF_CODE_MAX_LENGTH) {
+                            setStaffCode((prev) =>
+                              (prev + key).slice(0, STAFF_CODE_MAX_LENGTH),
+                            );
+                            setErrors((prev) => ({ ...prev, code: undefined }));
+                          }
+                        }}
+                        style={({ pressed }) => [
+                          styles.customKey,
+                          styles.customKeyDigit,
+                          pressed && styles.customKeyPressed,
+                        ]}
+                      >
+                        <Text style={styles.customKeyLabel}>{key}</Text>
+                      </Pressable>
+                    ))}
                   </View>
                   <View style={styles.customKeyboardActions}>
                     <Pressable
@@ -466,7 +505,10 @@ export function RegisterStaffScreen() {
                 <AppButton
                   title="Next"
                   onPress={() => {
-                    if (!validateBasic()) return;
+                    if (!validateBasic()) {
+                      setStaffCodeKeyboardVisible(true);
+                      return;
+                    }
                     setStep(2);
                   }}
                   size="lg"

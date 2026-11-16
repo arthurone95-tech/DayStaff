@@ -78,9 +78,6 @@ export function StaffRow({
         ) : null}
       </View>
 
-      {onPress ? (
-        <Ionicons name="chevron-forward" size={16} color={colors.slate400} />
-      ) : null}
     </Pressable>
   );
 }
