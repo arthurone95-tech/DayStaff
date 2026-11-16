@@ -28,11 +28,14 @@ import {
   deleteStaffProfile,
   getStaffById,
   setStaffActive,
+  setStaffPhotoAndFaceSignature,
   setStaffPin,
   updateStaff,
 } from '../../database/queries';
 import type { RootStackParamList } from '../../navigation/types';
 import type { Staff } from '../../types';
+import { FaceScanPanel } from '../kiosk/FaceScanPanel';
+import { extractFaceEmbedding, serializeFaceEmbedding } from '../../services/faceEngine';
 import { PhonePairingModal } from '../../components/PhonePairingModal';
 import { STAFF_CODE_MAX_LENGTH } from '../../config/app';
 import { colors, fontSize, radius, shadow, spacing } from '../../theme';
@@ -148,6 +151,8 @@ export function StaffProfileScreen({ navigation, route }: Props) {
   const [pinConfirm, setPinConfirm] = useState('');
   const [pinError, setPinError] = useState('');
   const [pairingOpen, setPairingOpen] = useState(false);
+  const [faceScanOpen, setFaceScanOpen] = useState(false);
+  const [faceBusy, setFaceBusy] = useState(false);
 
   // Hide the header back button (and swipe-back) while editing
   useLayoutEffect(() => {
@@ -176,6 +181,40 @@ export function StaffProfileScreen({ navigation, route }: Props) {
       setPhotoUri(member.photoUri);
     }
     setLoading(false);
+  };
+
+  const handleUpdateFaceScan = async (
+    frames: string[],
+    embedding: number[] | null,
+  ) => {
+    if (!staffId || !staff) return;
+    setFaceBusy(true);
+    try {
+      let liveEmbedding = embedding;
+      if (!liveEmbedding && frames.length > 0) {
+        liveEmbedding = await extractFaceEmbedding(frames[0]);
+      }
+      if (!liveEmbedding) {
+        throw new Error('The scan could not be converted into a face signature.');
+      }
+      const signature = serializeFaceEmbedding(liveEmbedding);
+      setStaffPhotoAndFaceSignature(staffId, frames[0] ?? null, signature);
+      loadStaff(staffId);
+      setFaceScanOpen(false);
+      alert({
+        tone: 'success',
+        title: 'Face scan updated',
+        message: `${staff.fullName}'s face scan has been updated.`,
+      });
+    } catch (error) {
+      alert({
+        tone: 'danger',
+        title: 'Could not update face scan',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
+    } finally {
+      setFaceBusy(false);
+    }
   };
 
   const handleSave = () => {
@@ -529,6 +568,13 @@ export function StaffProfileScreen({ navigation, route }: Props) {
                   title={staff.staffPinHash ? 'Change fallback PIN' : 'Add fallback PIN'}
                   onPress={openPinSheet}
                 />
+                <ActionRow
+                  compact
+                  icon="scan-outline"
+                  title="Update face scan"
+                  subtitle="Rescan face for appearance changes"
+                  onPress={() => setFaceScanOpen(true)}
+                />
 
                 <ActionRow
                   compact
@@ -553,21 +599,13 @@ export function StaffProfileScreen({ navigation, route }: Props) {
             <>
               {/* ===== EDIT MODE: COMPACT HEADER ===== */}
               <View style={styles.editHeader}>
-                <Pressable
-                  onPress={() => setPhotoSheetOpen(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Change profile photo"
-                  style={styles.editAvatarWrap}
-                >
+                <View style={styles.editAvatarWrap}>
                   <Avatar
                     name={fullName || staff.fullName}
                     photoUri={photoUri ?? null}
                     size={88}
                   />
-                  <View style={styles.cameraBadge}>
-                    <Ionicons name="camera" size={14} color="#FFFFFF" />
-                  </View>
-                </Pressable>
+                </View>
                 <View style={styles.editHeaderText}>
                   <Text style={styles.editTitle}>Editing profile</Text>
                   <Text style={styles.editSubtitle} numberOfLines={1}>
@@ -768,14 +806,38 @@ export function StaffProfileScreen({ navigation, route }: Props) {
         </KeyboardAvoidingView>
       </Modal>
 
-      <PhonePairingModal
-        visible={pairingOpen}
-        staff={staff}
-        onClose={() => setPairingOpen(false)}
-        onPaired={() => {
-          if (staffId) loadStaff(staffId);
-        }}
-      />
+      <Modal
+        visible={faceScanOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFaceScanOpen(false)}
+        statusBarTranslucent
+      >
+        <View style={styles.faceScanOverlay}>
+          <View style={styles.faceScanCard}>
+            <Text style={styles.editTitle}>Update face scan</Text>
+            <Text style={styles.editSubtitle}>
+              {staff?.fullName}
+            </Text>
+            <FaceScanPanel
+              busy={faceBusy}
+              profileCount={1}
+              engineAvailable={null}
+              onScanStart={() => {}}
+              onScanEnd={() => {}}
+              onScanned={(frames, embedding) =>
+                void handleUpdateFaceScan(frames, embedding)
+              }
+            />
+            <AppButton
+              title="Close"
+              onPress={() => setFaceScanOpen(false)}
+              variant="ghost"
+              style={styles.pinButtons}
+            />
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -1045,5 +1107,21 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 1,
     maxHeight: '100%',
+  },
+  faceScanOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  faceScanCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    ...shadow.modal,
+    maxHeight: '90%',
   },
 });
