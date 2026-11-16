@@ -17,7 +17,7 @@
  * photos made different people look alike.
  */
 
-import { getShowFaceScores } from './appSettings';
+
 import {
   analyzeFace,
   compareFaceEmbeddings,
@@ -150,7 +150,7 @@ function fail(
  */
 let lastLivenessDebug = '';
 export function getLastLivenessDebug(): string {
-  return getShowFaceScores() ? lastLivenessDebug : '';
+  return '';
 }
 
 function describeAngles(poses: FacePose[]): string {
@@ -158,7 +158,7 @@ function describeAngles(poses: FacePose[]): string {
     .map((pose) => `${Math.round(pose.yaw)}/${Math.round(pose.roll)}`)
     .join(', ');
   lastLivenessDebug = ` [head turn/tilt: ${angles}]`;
-  return getShowFaceScores() ? lastLivenessDebug : '';
+  return '';
 }
 
 /**

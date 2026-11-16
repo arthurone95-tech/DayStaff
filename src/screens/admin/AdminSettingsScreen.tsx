@@ -32,14 +32,12 @@ import {
   getModeResetTimeoutSeconds,
   getQrVerifierUrl,
   getScanLightEnabled,
-  getShowFaceScores,
   setAuthMethod,
   setCompanyName,
   setFaceStrictness,
   setModeResetTimeoutSeconds,
   setQrVerifierUrl,
   setScanLightEnabled,
-  setShowFaceScores,
 } from '../../services/appSettings';
 import {
   type BiometricStatus,
@@ -72,7 +70,6 @@ export function AdminSettingsScreen() {
   const [pinEditorOpen, setPinEditorOpen] = useState(false);
 
   const [scanLight, setScanLightState] = useState(getScanLightEnabled());
-  const [showScores, setShowScoresState] = useState(getShowFaceScores());
   const [strictness, setStrictnessState] =
     useState<FaceStrictness>(getFaceStrictness());
 
@@ -366,25 +363,6 @@ export function AdminSettingsScreen() {
             />
           </View>
 
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleText}>
-              <Text style={styles.statusLabel}>Show match scores</Text>
-              <Text style={styles.cardHint}>
-                Adds the similarity percentage to “face not recognized” and
-                “already registered” messages. Keep on while testing, turn
-                off for daily use.
-              </Text>
-            </View>
-            <Switch
-              value={showScores}
-              onValueChange={(value) => {
-                setShowScoresState(value);
-                setShowFaceScores(value);
-              }}
-              trackColor={{ false: colors.slate300, true: colors.primaryLight }}
-              thumbColor={colors.white}
-            />
-          </View>
 
           <Text style={[styles.statusLabel, styles.strictTitle]}>
             Match strictness

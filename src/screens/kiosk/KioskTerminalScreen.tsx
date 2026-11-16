@@ -25,10 +25,9 @@ import {
   getCompanyName,
   getFaceStrictness,
   getModeResetTimeoutSeconds,
-  getShowFaceScores,
 } from '../../services/appSettings';
 import { clockOutStaff, recordAttendance } from '../../services/attendanceLogic';
-import { getLastLivenessDebug } from '../../services/faceLiveness';
+
 import {
   compareFaceEmbeddings,
   extractFaceEmbedding,
@@ -196,10 +195,7 @@ export function KioskTerminalScreen() {
       const similarity = compareFaceEmbeddings(liveEmbedding, stored);
       if (similarity >= threshold) {
         const result = recordAttendance(selectedStaff, new Date(), 'FACE_BIOMETRIC');
-        const finalResult = getShowFaceScores()
-          ? { ...result, message: `${result.message} (face match ${Math.round(similarity * 100)}%)${getLastLivenessDebug()}` }
-          : result;
-        setFeedback(finalResult);
+        setFeedback(result);
         setSimulated(false);
         setFeedbackVisible(true);
         setTimeout(() => {
@@ -207,13 +203,10 @@ export function KioskTerminalScreen() {
           resetFlow();
         }, 1500);
       } else {
-        const scoreNote = getShowFaceScores()
-          ? ` (best match ${Math.round(similarity * 100)}%, needs ${Math.round(threshold * 100)}%)${getLastLivenessDebug()}`
-          : '';
         alert({
           tone: 'warning',
           title: 'Face not recognized',
-          message: `We could not verify your face for ${selectedStaff.fullName}. Face the camera straight on with good light and try again.${scoreNote}`,
+          message: `We could not verify your face for ${selectedStaff.fullName}. Face the camera straight on with good light and try again.`,
           buttonLabel: 'Try again',
         });
         resetFlow();

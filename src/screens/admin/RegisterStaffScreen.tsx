@@ -40,7 +40,6 @@ import {
 } from '../../services/faceEngine';
 import {
   captureChallengeFrames,
-  getLastLivenessDebug,
   LIVENESS_STEPS,
   verifyLiveness,
 } from '../../services/faceLiveness';
@@ -48,7 +47,6 @@ import {
   createStaffFaceSignature,
   findDuplicateFace,
 } from '../../services/faceRecognitionService';
-import { getShowFaceScores } from '../../services/appSettings';
 import { FACE_PHOTO_QUALITY, useFacePictureSize } from '../../hooks/useFacePictureSize';
 import {
   chooseStaffPhoto,
@@ -212,11 +210,8 @@ export function RegisterStaffScreen() {
         const existing = await findDuplicateFace(signature, undefined, frameEmbeddings);
         if (existing) {
           setDuplicateFaceStaff(existing.staff);
-          const score = getShowFaceScores()
-            ? ` (match ${Math.round(existing.similarity * 100)}%)${getLastLivenessDebug()}`
-            : '';
           setFaceError(
-            `This face is already registered to ${existing.staff.fullName}${score}.`,
+            `This face is already registered to ${existing.staff.fullName}.`,
           );
         }
       } finally {

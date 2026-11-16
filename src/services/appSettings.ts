@@ -15,7 +15,6 @@ import {
   MODE_RESET_TIMEOUT_SETTING,
   QR_VERIFIER_URL_SETTING,
   SCAN_LIGHT_SETTING,
-  SHOW_FACE_SCORES_SETTING,
 } from '../config/app';
 import { getSetting, setSetting } from '../database/queries';
 import type { AuthMethod } from '../types';
@@ -95,17 +94,6 @@ export function setScanLightEnabled(enabled: boolean): void {
   setSetting(SCAN_LIGHT_SETTING, enabled ? '1' : '0');
 }
 
-/**
- * Show similarity scores in "face not recognized" and "already registered"
- * messages. On by default while the matcher is being tuned.
- */
-export function getShowFaceScores(): boolean {
-  return getSetting(SHOW_FACE_SCORES_SETTING) !== '0';
-}
-
-export function setShowFaceScores(show: boolean): void {
-  setSetting(SHOW_FACE_SCORES_SETTING, show ? '1' : '0');
-}
 
 export type FaceStrictness = 'relaxed' | 'balanced' | 'strict';
 
