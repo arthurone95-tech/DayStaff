@@ -1,6 +1,6 @@
 /** Typed accessors for the key/value settings stored in SQLite. */
 
-import { getKioskServerUrl } from './kioskServer';
+// kiosk server removed from active flow; keep a safe default URL.
 import {
   AUTH_METHOD_SETTING,
   COMPANY_NAME_SETTING,
@@ -74,12 +74,8 @@ export function setModeResetTimeoutSeconds(seconds: number): void {
 
 /** Base URL of the static phone verifier page used by the QR flow. */
 export function getQrVerifierUrl(): string {
-  const local = getKioskServerUrl();
-  if (local && local !== 'http://127.0.0.1:8080/') {
-    return local;
-  }
   const value = getSetting(QR_VERIFIER_URL_SETTING)?.trim();
-  return value || local || DEFAULT_QR_VERIFIER_URL;
+  return value || DEFAULT_QR_VERIFIER_URL;
 }
 
 export function setQrVerifierUrl(url: string): void {

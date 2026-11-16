@@ -17,7 +17,7 @@ import { AppButton } from '../../components/AppButton';
 import { useAppDialog } from '../../components/AppDialog';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
-import { PhonePairingModal } from '../../components/PhonePairingModal';
+
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import {
@@ -55,8 +55,6 @@ import {
   captureStaffPhoto,
 } from '../../services/photoService';
 import * as ImagePicker from 'expo-image-picker';
-import { setStaffPinForStaff } from '../../services/staffPinService';
-import { isStaffPinTaken } from '../../services/staffPinService';
 import { colors, fontSize, radius, spacing } from '../../theme';
 
 /**
@@ -77,16 +75,12 @@ export function RegisterStaffScreen() {
   const [errors, setErrors] = useState<{
     name?: string;
     code?: string;
-    pin?: string;
-    pinConfirm?: string;
   }>({});
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [photoCameraType, setPhotoCameraType] = useState<ImagePicker.CameraType>(ImagePicker.CameraType.back);
   const [scanCameraType, setScanCameraType] = useState<ImagePicker.CameraType>(ImagePicker.CameraType.front);
   const [faceSignature, setFaceSignature] = useState<string | null>(null);
-  const [staffPin, setStaffPin] = useState('');
-  const [staffPinConfirm, setStaffPinConfirm] = useState('');
 
   const [faceBusy, setFaceBusy] = useState(false);
   const [faceError, setFaceError] = useState<string | null>(null);
@@ -95,7 +89,6 @@ export function RegisterStaffScreen() {
   const [faceCheckBusy, setFaceCheckBusy] = useState(false);
   const [duplicateFaceStaff, setDuplicateFaceStaff] = useState<Staff | null>(null);
   const [saving, setSaving] = useState(false);
-  const [staffToPair, setStaffToPair] = useState<Staff | null>(null);
   const [staffCodeKeyboardVisible, setStaffCodeKeyboardVisible] = useState(false);
 
   const cameraRef = useRef<CameraView | null>(null);
@@ -112,40 +105,17 @@ export function RegisterStaffScreen() {
       next.name = 'Full name is required.';
     }
     const normalizedCode = normalizeCode(staffCode);
-    if (
-      normalizedCode &&
-      normalizedCode.length !== STAFF_CODE_MAX_LENGTH
-    ) {
+    if (!normalizedCode) {
+      next.code = 'Staff code is required.';
+    } else if (normalizedCode.length !== STAFF_CODE_MAX_LENGTH) {
       next.code = `Use exactly ${STAFF_CODE_MAX_LENGTH} letters or numbers.`;
-    } else if (normalizedCode && isStaffCodeTaken(normalizedCode)) {
+    } else if (isStaffCodeTaken(normalizedCode)) {
       next.code = 'That code is already assigned to another staff member.';
     }
     setErrors((prev) => ({
       ...prev,
       name: next.name,
       code: next.code,
-    }));
-    return Object.keys(next).length === 0;
-  };
-
-  const validatePin = (): boolean => {
-    const next: { pin?: string; pinConfirm?: string } = {};
-    if (!staffPin) {
-      next.pin = 'Enter a 6-digit PIN.';
-    } else if (!/^\d{6}$/.test(staffPin)) {
-      next.pin = 'PIN must be exactly 6 digits.';
-    }
-
-    if (!staffPinConfirm) {
-      next.pinConfirm = 'Re-enter the PIN to confirm.';
-    } else if (staffPin !== staffPinConfirm) {
-      next.pinConfirm = 'PINs do not match.';
-    }
-
-    setErrors((prev) => ({
-      ...prev,
-      pin: next.pin,
-      pinConfirm: next.pinConfirm,
     }));
     return Object.keys(next).length === 0;
   };
@@ -274,11 +244,6 @@ export function RegisterStaffScreen() {
       return;
     }
 
-    if (!validatePin()) {
-      setStep(1);
-      return;
-    }
-
     if (!photoUri) {
       alert({
         tone: 'warning',
@@ -309,23 +274,6 @@ export function RegisterStaffScreen() {
       return;
     }
 
-    // Final PIN uniqueness re-check before saving.
-    setPinCheckBusy(true);
-    try {
-      const taken = await isStaffPinTaken(staffPin);
-      if (taken) {
-        setErrors((prev) => ({
-          ...prev,
-          pin:
-            'This PIN is already assigned to another staff member. Please choose a different PIN.',
-        }));
-        setStep(1);
-        return;
-      }
-    } finally {
-      setPinCheckBusy(false);
-    }
-
     setSaving(true);
     try {
       const normalizedCode = normalizeCode(staffCode);
@@ -335,11 +283,14 @@ export function RegisterStaffScreen() {
         photoUri,
         faceSignature,
       });
-      if (created.id && staffPin) {
-        await setStaffPinForStaff(created.id, staffPin);
-      }
-      // Offer the optional phone pairing step before returning to the list.
-      setStaffToPair(created);
+      // Registration complete; return to the staff list.
+      const name = created.fullName;
+      alert({
+        tone: 'success',
+        title: 'Staff registered',
+        message: `${name} has been registered.`,
+      });
+      navigation.goBack();
     } catch (error) {
       alert({
         tone: 'danger',
@@ -369,7 +320,7 @@ export function RegisterStaffScreen() {
         : 'Face scan';
   const stepSubtitle =
     step === 1
-      ? 'Name, staff code and fallback PIN.'
+      ? 'Name and unique staff code.'
       : step === 2
         ? 'A normal photo for the staff list and reports.'
         : 'A guided live scan that builds the recognition profile.';
@@ -420,7 +371,7 @@ export function RegisterStaffScreen() {
                 maxLength={80}
               />
               <TextField
-                label="Staff code (optional)"
+                label="Staff code (required)"
                 value={staffCode}
                 onChangeText={(value) => {
                   setStaffCode(
@@ -438,37 +389,6 @@ export function RegisterStaffScreen() {
                 hint={`Exactly two letters or numbers. Leave blank to generate one automatically.`}
                 showSoftInputOnFocus={false}
                 onFocus={() => setStaffCodeKeyboardVisible(true)}
-              />
-              <TextField
-                label="Fallback PIN (6 digits)"
-                value={staffPin}
-                onChangeText={(value) => {
-                  setStaffPin(value.replace(/\D/g, '').slice(0, 6));
-                  setErrors((prev) => ({
-                    ...prev,
-                    pin: undefined,
-                    pinConfirm: undefined,
-                  }));
-                }}
-                placeholder="e.g. 123456"
-                keyboardType="number-pad"
-                maxLength={6}
-                secureTextEntry
-                error={errors.pin}
-                hint="Used only when face recognition is ambiguous."
-              />
-              <TextField
-                label="Confirm PIN"
-                value={staffPinConfirm}
-                onChangeText={(value) => {
-                  setStaffPinConfirm(value.replace(/\D/g, '').slice(0, 6));
-                  setErrors((prev) => ({ ...prev, pinConfirm: undefined }));
-                }}
-                placeholder="e.g. 123456"
-                keyboardType="number-pad"
-                maxLength={6}
-                secureTextEntry
-                error={errors.pinConfirm}
               />
               {staffCodeKeyboardVisible ? (
                 <View style={styles.customKeyboard}>
@@ -550,29 +470,11 @@ export function RegisterStaffScreen() {
               <View style={styles.footerSingle}>
                 <AppButton
                   title="Next"
-                  onPress={async () => {
-                    const basicOk = validateBasic();
-                    const pinOk = validatePin();
-                    if (!basicOk || !pinOk) return;
-                    setPinCheckBusy(true);
-                    try {
-                      const taken = await isStaffPinTaken(staffPin);
-                      if (taken) {
-                        setErrors((prev) => ({
-                          ...prev,
-                          pin:
-                            'This PIN is already assigned to another staff member. Please choose a different PIN.',
-                        }));
-                        return;
-                      }
-                      setStep(2);
-                    } finally {
-                      setPinCheckBusy(false);
-                    }
+                  onPress={() => {
+                    if (!validateBasic()) return;
+                    setStep(2);
                   }}
                   size="lg"
-                  loading={pinCheckBusy}
-                  disabled={pinCheckBusy}
                 />
               </View>
             </Card>
@@ -801,26 +703,6 @@ export function RegisterStaffScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {staffToPair ? (
-        <PhonePairingModal
-          visible
-          staff={staffToPair}
-          onClose={() => {
-            const name = staffToPair.fullName;
-            setStaffToPair(null);
-            alert({
-              tone: 'success',
-              title: 'Staff registered',
-              message: `${name} has been registered.`,
-            });
-            navigation.goBack();
-          }}
-          onPaired={() => {
-            // Keep the modal open so the admin sees the success state, then
-            // the Done button closes it and returns to the staff list.
-          }}
-        />
-      ) : null}
     </Screen>
   );
 }

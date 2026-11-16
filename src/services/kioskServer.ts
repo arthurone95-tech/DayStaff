@@ -5,8 +5,18 @@
  * served directly from the kiosk over the local Wi-Fi network, so no public
  * internet host is required.
  */
-import * as Network from 'expo-network';
-import TcpSocket from 'react-native-tcp-socket';
+let Network: any = null;
+let TcpSocket: any = null;
+try {
+  Network = require('expo-network');
+} catch {
+  Network = null;
+}
+try {
+  TcpSocket = require('react-native-tcp-socket');
+} catch {
+  TcpSocket = null;
+}
 
 export const KIOSK_SERVER_PORT = 8080;
 
@@ -55,6 +65,10 @@ export function isPrivateKioskUrl(value: string): boolean {
 export async function startKioskServer(): Promise<string> {
   if (server) {
     return getKioskServerUrl();
+  }
+  if (!TcpSocket || !Network) {
+    currentUrl = `http://127.0.0.1:${KIOSK_SERVER_PORT}/`;
+    return currentUrl;
   }
 
   const ip = await Network.getIpAddressAsync();

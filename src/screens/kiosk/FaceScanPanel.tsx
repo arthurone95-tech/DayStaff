@@ -50,6 +50,8 @@ interface FaceScanPanelProps {
   onScanStart?: () => void;
   onScanEnd?: () => void;
   onUseCode?: () => void;
+  /** Increment to auto-trigger a scan once the camera is ready. */
+  triggerScan?: number;
 }
 
 export function FaceScanPanel({
@@ -61,6 +63,7 @@ export function FaceScanPanel({
   onScanStart,
   onScanEnd,
   onUseCode,
+  triggerScan,
 }: FaceScanPanelProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView | null>(null);
@@ -242,6 +245,15 @@ export function FaceScanPanel({
       onScanEnd?.();
     }
   };
+
+  const lastScannedTriggerRef = useRef<number>(triggerScan ?? 0);
+  useEffect(() => {
+    if (triggerScan === undefined) return;
+    if (triggerScan === lastScannedTriggerRef.current) return;
+    if (!ready || busy || scanning || !cameraRef.current) return;
+    lastScannedTriggerRef.current = triggerScan;
+    void handleScan();
+  }, [triggerScan, ready, busy, scanning]);
 
   if (profileCount === 0) {
     if (engineAvailable === null) {
