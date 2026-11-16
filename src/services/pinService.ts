@@ -14,6 +14,10 @@ import {
 } from '../config/app';
 import { getSetting, setSetting } from '../database/queries';
 
+const ADMIN_PIN_FAILED_ATTEMPTS_SETTING = 'admin_pin_failed_attempts';
+const ADMIN_PIN_LOCKED_UNTIL_SETTING = 'admin_pin_locked_until';
+const ADMIN_RECOVERY_CODE_SETTING = 'admin_recovery_code_hash';
+
 const PIN_SALT = 'daystaff::v1::';
 /** Only used to detect hashes seeded by old versions; it is never accepted. */
 const LEGACY_DEFAULT_PIN = '1234';
@@ -61,6 +65,100 @@ export async function verifyAdminPin(pin: string): Promise<boolean> {
     return false;
   }
   return stored === (await hashPin(pin));
+}
+
+export function getAdminPinFailedAttempts(): number {
+  const value = Number(getSetting(ADMIN_PIN_FAILED_ATTEMPTS_SETTING) ?? '0');
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+export function getAdminPinLockedUntilMs(): number | null {
+  const value = getSetting(ADMIN_PIN_LOCKED_UNTIL_SETTING);
+  if (!value) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function isAdminPinLocked(): boolean {
+  const until = getAdminPinLockedUntilMs();
+  return until !== null && until > Date.now();
+}
+
+export function getAdminPinLockoutRemainingMs(): number {
+  const until = getAdminPinLockedUntilMs();
+  if (!until) {
+    return 0;
+  }
+  return Math.max(0, until - Date.now());
+}
+
+export async function recordAdminPinFailure(): Promise<{
+  attempts: number;
+  lockedUntil: number | null;
+}> {
+  const now = Date.now();
+  const currentUntil = getAdminPinLockedUntilMs();
+  if (currentUntil && currentUntil > now) {
+    return { attempts: getAdminPinFailedAttempts(), lockedUntil: currentUntil };
+  }
+
+  const attempts = getAdminPinFailedAttempts() + 1;
+  setSetting(ADMIN_PIN_FAILED_ATTEMPTS_SETTING, String(attempts));
+
+  let lockedUntil: number | null = null;
+  if (attempts >= 3) {
+    const level = Math.floor((attempts - 1) / 3);
+    const durationMs = 30000 * Math.pow(2, level);
+    lockedUntil = now + durationMs;
+    setSetting(ADMIN_PIN_LOCKED_UNTIL_SETTING, String(lockedUntil));
+  }
+
+  return { attempts, lockedUntil };
+}
+
+export function resetAdminPinFailures(): void {
+  setSetting(ADMIN_PIN_FAILED_ATTEMPTS_SETTING, '0');
+  setSetting(ADMIN_PIN_LOCKED_UNTIL_SETTING, '');
+}
+
+export function generateAdminRecoveryCode(): string {
+  const bytes = Crypto.getRandomBytes(6);
+  const digits = Array.from(bytes.slice(0, 4))
+    .map((value) => String(value % 10))
+    .join('');
+  const letters = Array.from(bytes.slice(4, 6))
+    .map((value) => String.fromCharCode(65 + (value % 26)))
+    .join('');
+  return `DS-${digits}-${letters}`;
+}
+
+export async function storeAdminRecoveryCode(code: string): Promise<void> {
+  setSetting(ADMIN_RECOVERY_CODE_SETTING, await hashPin(code.trim().toUpperCase()));
+}
+
+export async function verifyAdminRecoveryCode(code: string): Promise<boolean> {
+  const stored = getSetting(ADMIN_RECOVERY_CODE_SETTING);
+  if (!stored) {
+    return false;
+  }
+  return stored === (await hashPin(code.trim().toUpperCase()));
+}
+
+export async function resetAdminPinWithRecoveryCode(
+  recoveryCode: string,
+  newPin: string,
+): Promise<void> {
+  const valid = await verifyAdminRecoveryCode(recoveryCode);
+  if (!valid) {
+    throw new Error('Recovery code is incorrect.');
+  }
+  if (!/^\d{4,8}$/.test(newPin)) {
+    throw new Error('New PIN must be 4 to 8 digits.');
+  }
+  setSetting(ADMIN_PIN_SETTING, await hashPin(newPin));
+  resetAdminPinFailures();
 }
 
 export async function changeAdminPin(

@@ -9,6 +9,7 @@ import {
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -31,8 +32,13 @@ import {
   setSetting,
 } from '../../database/queries';
 import { setAuthMethod, setCompanyName } from '../../services/appSettings';
-import { createAdminPin, isSetupPinValid } from '../../services/pinService';
-import { colors, fontSize, radius, spacing } from '../../theme';
+import {
+  createAdminPin,
+  generateAdminRecoveryCode,
+  isSetupPinValid,
+  storeAdminRecoveryCode,
+} from '../../services/pinService';
+import { colors, fontSize, radius, shadow, spacing } from '../../theme';
 import type { AuthMethod } from '../../types';
 import { formatClockTime } from '../../utils/date';
 
@@ -345,6 +351,7 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
   const [error, setError] = useState<string | undefined>();
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<'start' | 'end' | null>(null);
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
 
   const scrollToTop = () => {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -433,8 +440,10 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
 
       // Write the PIN last: until it exists, the app keeps showing setup.
       await createAdminPin(pin);
+      const generatedCode = generateAdminRecoveryCode();
+      await storeAdminRecoveryCode(generatedCode);
       setSetting(SETUP_COMPLETED_SETTING, new Date().toISOString());
-      onComplete();
+      setRecoveryCode(generatedCode);
     } catch (setupError) {
       alert({
         tone: 'danger',
@@ -730,6 +739,31 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
           display="default"
           onChange={handleAndroidPick}
         />
+      ) : null}
+
+      {recoveryCode ? (
+        <Modal visible transparent animationType="fade" statusBarTranslucent>
+          <View style={styles.recoveryOverlay}>
+            <View style={styles.recoveryCard}>
+              <Text style={styles.cardTitle}>Save your recovery code</Text>
+              <Text style={styles.cardHint}>
+                Keep this code somewhere safe. You can use it to reset the
+                administrator PIN if you forget it.
+              </Text>
+              <View style={styles.recoveryCodeBox}>
+                <Text style={styles.recoveryCode}>{recoveryCode}</Text>
+              </View>
+              <AppButton
+                title="I have saved it"
+                onPress={() => {
+                  setRecoveryCode(null);
+                  onComplete();
+                }}
+                size="lg"
+              />
+            </View>
+          </View>
+        </Modal>
       ) : null}
     </Screen>
   );
@@ -1073,5 +1107,34 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: colors.slate400,
     textAlign: 'center',
+  },
+  recoveryOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  recoveryCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    ...shadow.modal,
+  },
+  recoveryCodeBox: {
+    marginVertical: spacing.lg,
+    padding: spacing.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.slate100,
+    alignItems: 'center',
+  },
+  recoveryCode: {
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: colors.slate900,
+    fontVariant: ['tabular-nums'],
   },
 });
