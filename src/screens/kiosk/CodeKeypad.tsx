@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     height: 40,
-    width: 132,
+    width: 156,
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: UI.fieldBorder,
