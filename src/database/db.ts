@@ -8,7 +8,7 @@
 import * as SQLite from 'expo-sqlite';
 
 export const DATABASE_NAME = 'daystaff_v2.db';
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /** Approved short-code letters and digits. */
 const STAFF_CODE_LETTERS = 'ABCDEFGHJK';
