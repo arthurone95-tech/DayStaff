@@ -150,7 +150,6 @@ export function CodeKeypad({
       {/* Staff code card */}
       <View style={styles.display}>
         <View style={styles.displayBody}>
-          <Text style={styles.displayLabel}>Staff code</Text>
           <View style={styles.field}>
             <Text
               style={[styles.code, !code && styles.codePlaceholder]}
