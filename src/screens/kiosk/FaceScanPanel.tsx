@@ -46,7 +46,7 @@ interface FaceScanPanelProps {
     frames: string[],
     embedding: number[] | null,
     frameEmbeddings?: number[][] | null,
-  ) => void;
+  ) => void | Promise<void>;
   onScanStart?: () => void;
   onScanEnd?: () => void;
   onUseCode?: () => void;
@@ -78,6 +78,7 @@ export function FaceScanPanel({
   const { pictureSize, chooseSize } = useFacePictureSize(cameraRef);
   const isFocused = useIsFocused();
   const [cameraRetry, setCameraRetry] = useState(0);
+  const [torchOn, setTorchOn] = useState(false);
 
   // Controlled camera mount recovery. When CameraView fails to mount (onMountError),
   // automatically retry a bounded number of times instead of leaving a black screen
@@ -154,7 +155,7 @@ export function FaceScanPanel({
 
   const scanning = phase !== 'idle';
   // Light is on from the tap until the third photo is taken, then off.
-  const lightOn = lightEnabled && phase === 'capturing';
+  const lightOn = lightEnabled && torchOn;
 
   // Always release the torch when the component unmounts or scanning stops.
   // The CameraView receives enableTorch={scanning}, so when scanning ends the
@@ -184,6 +185,7 @@ export function FaceScanPanel({
     if (busy || scanning || !ready || !cameraRef.current) return;
     setCameraError(null);
     scanTimerStart();
+    setTorchOn(true);
     setPhase('capturing');
     setStepIndex(0);
     setHint(LIVENESS_STEPS[0]?.hint ?? null);
@@ -241,9 +243,14 @@ export function FaceScanPanel({
         return;
       }
 
-      setPhase('idle');
-      setHint(null);
-      onScanned(liveness.frames, liveness.embedding, liveness.embeddings);
+      setPhase('verifying');
+      setHint('Matching your face…');
+      try {
+        await onScanned(liveness.frames, liveness.embedding, liveness.embeddings);
+      } finally {
+        setPhase('idle');
+        setHint(null);
+      }
     } catch (error) {
       const message =
         error instanceof Error
@@ -254,6 +261,7 @@ export function FaceScanPanel({
       setCameraError(message);
       onError?.(message);
     } finally {
+      setTorchOn(false);
       onScanEnd?.();
     }
   };

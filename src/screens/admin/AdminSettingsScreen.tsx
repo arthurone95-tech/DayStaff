@@ -347,9 +347,8 @@ export function AdminSettingsScreen() {
             <View style={styles.toggleText}>
               <Text style={styles.statusLabel}>Screen light while scanning</Text>
               <Text style={styles.cardHint}>
-                Lights up the screen around the camera while the three scan
-                photos are taken, then switches off. Useful in the evening or
-                in dim rooms.
+                Automatically turn on the screen light when capturing photos,
+                then switch it off. Useful in dim lighting or at night.
               </Text>
             </View>
             <Switch

@@ -334,7 +334,7 @@ export function KioskTerminalScreen() {
             engineMessage={faceProfileSummary?.message}
             onScanStart={() => { setFaceScanning(true); }}
             onScanEnd={() => setFaceScanning(false)}
-            onScanned={(frames, embedding) => void handleFaceScanned(frames, embedding)}
+            onScanned={(frames, embedding) => handleFaceScanned(frames, embedding)}
             onError={(message) => {
               alert({ tone: 'danger', title: 'Camera error', message });
               resetFlow();
