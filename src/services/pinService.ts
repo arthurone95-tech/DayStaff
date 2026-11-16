@@ -109,7 +109,7 @@ export async function recordAdminPinFailure(): Promise<{
 
   let lockedUntil: number | null = null;
   if (attempts >= 3) {
-    const level = Math.floor((attempts - 1) / 3);
+    const level = Math.max(0, Math.floor((attempts - 3) / 3));
     const durationMs = 30000 * Math.pow(2, level);
     lockedUntil = now + durationMs;
     setSetting(ADMIN_PIN_LOCKED_UNTIL_SETTING, String(lockedUntil));
