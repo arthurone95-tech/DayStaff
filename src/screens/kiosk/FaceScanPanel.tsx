@@ -50,6 +50,7 @@ interface FaceScanPanelProps {
   onScanStart?: () => void;
   onScanEnd?: () => void;
   onUseCode?: () => void;
+  onCameraError?: (message: string) => void;
   /** Increment to auto-trigger a scan once the camera is ready. */
   triggerScan?: number;
 }
@@ -63,6 +64,7 @@ export function FaceScanPanel({
   onScanStart,
   onScanEnd,
   onUseCode,
+  onCameraError,
   triggerScan,
 }: FaceScanPanelProps) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -112,6 +114,13 @@ export function FaceScanPanel({
       }
     };
   }, [cameraError, ready, mountAttempts]);
+
+  // Surface camera failures as a pop-up instead of inline status text.
+  useEffect(() => {
+    if (cameraError && mountAttempts >= MAX_CAMERA_MOUNT_RETRIES) {
+      onCameraError?.(cameraError);
+    }
+  }, [cameraError, mountAttempts, onCameraError]);
 
   // Remount camera when focus returns
   useEffect(() => {
@@ -394,65 +403,6 @@ export function FaceScanPanel({
       </View>
       </View>
 
-      {/* Step dots */}
-      <View style={styles.dotsRow}>
-        {LIVENESS_STEPS.map((step, index) => (
-          <View
-            key={step.key}
-            style={[
-              styles.dot,
-              scanning && index === stepIndex && styles.dotActive,
-              scanning && index < stepIndex && styles.dotDone,
-            ]}
-          />
-        ))}
-      </View>
-
-      <Text style={styles.instruction}>
-        {hint ??
-          'Position your face inside the oval, then tap “Scan my face” and follow the prompts.'}
-      </Text>
-
-      {cameraError ? (
-        <View style={styles.retryRow}>
-          <Text style={styles.error}>{cameraError}</Text>
-          <AppButton
-            title="Retry camera"
-            onPress={() => {
-              setCameraError(null);
-              setMountAttempts(0);
-              setReady(false);
-              setCameraRetry((r) => r + 1);
-            }}
-            variant="ghost"
-            size="sm"
-          />
-        </View>
-      ) : null}
-
-      <AppButton
-        title={scanning ? 'Scanning…' : busy ? 'Matching…' : 'Scan my face'}
-        onPress={handleScan}
-        loading={busy || scanning}
-        disabled={!ready || busy || scanning}
-        size="lg"
-        style={styles.scanButton}
-        icon={
-          busy || scanning ? undefined : (
-            <Ionicons name="scan-outline" size={20} color={colors.white} />
-          )
-        }
-      />
-
-      {onUseCode ? (
-        <AppButton
-          title="Use staff code instead"
-          onPress={onUseCode}
-          variant="ghost"
-          size="sm"
-          style={styles.useCodeButton}
-        />
-      ) : null}
     </View>
   );
 }

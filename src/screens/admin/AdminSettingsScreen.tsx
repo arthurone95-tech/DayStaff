@@ -344,38 +344,6 @@ export function AdminSettingsScreen() {
           </Text>
         </Card>
 
-        <Card style={styles.card}>
-          <Text style={styles.cardTitle}>Short code + visual QR</Text>
-          <Text style={styles.cardHint}>
-            Controls for the second kiosk method. Face recognition remains the
-            primary method.
-          </Text>
-          <TextField
-            label="Abandoned-mode reset (seconds)"
-            value={modeResetSeconds}
-            onChangeText={(value) =>
-              setModeResetSeconds(value.replace(/\D/g, '').slice(0, 2))
-            }
-            keyboardType="number-pad"
-            placeholder="3"
-            maxLength={2}
-            hint={`If a staff member switches away from the admin default mode and stops interacting, the kiosk returns after ${MIN_MODE_RESET_TIMEOUT_SECONDS}–${MAX_MODE_RESET_TIMEOUT_SECONDS} seconds. Default: 3.`}
-          />
-          <TextField
-            label="Phone verifier address"
-            value={verifierUrl}
-            onChangeText={setVerifierUrl}
-            keyboardType="url"
-            autoCapitalize="none"
-            placeholder="http://127.0.0.1:8080/"
-            hint="Local kiosk server address used when a staff phone loads the verifier. It stays on the local Wi-Fi network and needs no public internet host."
-          />
-          <AppButton
-            title="Save visual QR settings"
-            onPress={handleSaveQrSettings}
-            loading={savingQrSettings}
-          />
-        </Card>
 
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>Face scanner</Text>

@@ -23,6 +23,7 @@ import { useNow } from '../../hooks/useNow';
 import type { RootNavigation } from '../../navigation/types';
 import {
   getCompanyName,
+  getFaceStrictness,
   getModeResetTimeoutSeconds,
   getShowFaceScores,
 } from '../../services/appSettings';
@@ -51,7 +52,12 @@ import { FaceScanPanel } from './FaceScanPanel';
 
 const FEEDBACK_TIMEOUT_MS = 8000;
 const KIOSK_BG = '#06142B';
-const ONE_TO_ONE_THRESHOLD = 0.75;
+function oneToOneThreshold(): number {
+  const strictness = getFaceStrictness();
+  if (strictness === 'relaxed') return 0.7;
+  if (strictness === 'strict') return 0.82;
+  return 0.75;
+}
 
 export function KioskTerminalScreen() {
   const navigation = useNavigation<RootNavigation>();
@@ -179,8 +185,9 @@ export function KioskTerminalScreen() {
       if (!liveEmbedding) {
         throw new Error('The scan could not be converted into a face signature.');
       }
+      const threshold = oneToOneThreshold();
       const similarity = compareFaceEmbeddings(liveEmbedding, stored);
-      if (similarity >= ONE_TO_ONE_THRESHOLD) {
+      if (similarity >= threshold) {
         const result = recordAttendance(selectedStaff, new Date(), 'FACE_BIOMETRIC');
         const finalResult = getShowFaceScores()
           ? { ...result, message: `${result.message} (face match ${Math.round(similarity * 100)}%)${getLastLivenessDebug()}` }
@@ -194,7 +201,7 @@ export function KioskTerminalScreen() {
         }, 1500);
       } else {
         const scoreNote = getShowFaceScores()
-          ? ` (best match ${Math.round(similarity * 100)}%, needs ${Math.round(ONE_TO_ONE_THRESHOLD * 100)}%)${getLastLivenessDebug()}`
+          ? ` (best match ${Math.round(similarity * 100)}%, needs ${Math.round(threshold * 100)}%)${getLastLivenessDebug()}`
           : '';
         alert({
           tone: 'warning',
@@ -328,6 +335,9 @@ export function KioskTerminalScreen() {
             onScanStart={() => { setFaceScanning(true); }}
             onScanEnd={() => setFaceScanning(false)}
             onScanned={(frames, embedding) => void handleFaceScanned(frames, embedding)}
+            onCameraError={(message) => {
+              alert({ tone: 'danger', title: 'Camera error', message });
+            }}
             triggerScan={scanTrigger}
           />
           <View style={styles.keypadWrap}>

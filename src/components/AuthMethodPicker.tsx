@@ -27,13 +27,6 @@ const OPTIONS: Array<{
     icon: 'scan-outline',
     recommended: true,
   },
-  {
-    value: 'SHORT_CODE_QR',
-    title: 'Short code + visual QR',
-    description:
-      'Staff enter their 2-character code, scan a dynamic kiosk QR with a paired phone, and confirm with the phone biometrics. Fully on-device.',
-    icon: 'qr-code-outline',
-  },
 ];
 
 export function AuthMethodPicker({

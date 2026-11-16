@@ -175,39 +175,41 @@ export function CodeKeypad({
         </View>
       </View>
 
-      {/* Letters section */}
-      <View style={[styles.panel, letterDimmed && styles.panelDimmed]}>
-        <SectionHeader label="Select letter" dimmed={letterDimmed} />
-        <View style={styles.gridRow}>
-          {APPROVED_LETTERS.map((key) => (
-            <View key={key} style={styles.letterCell}>
-              <KeyButton
-                value={key}
-                disabled={disabled || letterSelected}
-                dimmed={letterDimmed}
-                onPress={() => handleLetterPress(key)}
-              />
-            </View>
-          ))}
+      {letterSelected ? (
+        /* Numbers section */
+        <View style={[styles.panel, styles.numberPanel]}>
+          <SectionHeader label="Select number" dimmed={false} />
+          <View style={styles.gridRow}>
+            {APPROVED_NUMBERS.map((key) => (
+              <View key={key} style={styles.digitCell}>
+                <KeyButton
+                  value={key}
+                  disabled={disabled || numberSelected}
+                  dimmed={false}
+                  onPress={() => handleNumberPress(key)}
+                />
+              </View>
+            ))}
+          </View>
         </View>
-      </View>
-
-      {/* Numbers section */}
-      <View style={[styles.panel, styles.numberPanel, numberDimmed && styles.panelDimmed]}>
-        <SectionHeader label="Select number" dimmed={numberDimmed} />
-        <View style={styles.gridRow}>
-          {APPROVED_NUMBERS.map((key) => (
-            <View key={key} style={styles.digitCell}>
-              <KeyButton
-                value={key}
-                disabled={disabled || !letterSelected || numberSelected}
-                dimmed={numberDimmed}
-                onPress={() => handleNumberPress(key)}
-              />
-            </View>
-          ))}
+      ) : (
+        /* Letters section */
+        <View style={styles.panel}>
+          <SectionHeader label="Select letter" dimmed={false} />
+          <View style={styles.gridRow}>
+            {APPROVED_LETTERS.map((key) => (
+              <View key={key} style={styles.letterCell}>
+                <KeyButton
+                  value={key}
+                  disabled={disabled}
+                  dimmed={false}
+                  onPress={() => handleLetterPress(key)}
+                />
+              </View>
+            ))}
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Clear action */}
       <View style={styles.actions}>
