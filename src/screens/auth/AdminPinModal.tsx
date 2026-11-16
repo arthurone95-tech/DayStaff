@@ -175,10 +175,12 @@ export function AdminPinModal({
             </View>
 
             <Text style={styles.title}>Administrator access</Text>
-            <Text style={styles.subtitle}>
-              Enter the master PIN you created during setup to manage staff,
-              schedules and reports.
-            </Text>
+            {!locked ? (
+              <Text style={styles.subtitle}>
+                Enter the master PIN you created during setup to manage staff,
+                schedules and reports.
+              </Text>
+            ) : null}
 
             {mode === 'pin' ? (
               <>
@@ -202,7 +204,7 @@ export function AdminPinModal({
                       setError(undefined);
                     }}
                     onSubmit={handleUnlock}
-                    maxLength={8}
+                    maxLength={4}
                     autoFocus
                     error={error}
                     placeholder="••••"
