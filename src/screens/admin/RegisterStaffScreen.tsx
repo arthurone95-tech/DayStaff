@@ -27,7 +27,7 @@ import {
 } from '../../config/app';
 import {
   createStaff,
-  updateStaff,
+  setStaffPhotoAndFaceSignature,
 } from '../../database/queries';
 import type { RootNavigation } from '../../navigation/types';
 import type { Staff } from '../../types';
@@ -239,12 +239,11 @@ export function RegisterStaffScreen() {
             cancelLabel: 'Cancel',
             onConfirm: async () => {
               try {
-                await updateStaff(existing.staff.id, {
-                  fullName: existing.staff.fullName,
-                  staffCode: existing.staff.staffCode,
-                  photoUri: photoUri ?? frames[0],
-                  faceSignature: signature,
-                });
+                setStaffPhotoAndFaceSignature(
+                  existing.staff.id,
+                  photoUri ?? frames[0],
+                  signature,
+                );
                 alert({
                   tone: 'success',
                   title: 'Face scan updated',

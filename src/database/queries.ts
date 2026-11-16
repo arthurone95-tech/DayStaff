@@ -270,6 +270,17 @@ export function setStaffFaceSignature(
   ]);
 }
 
+export function setStaffPhotoAndFaceSignature(
+  id: number,
+  photoUri: string | null,
+  signature: string | null,
+): void {
+  getDb().runSync(
+    'UPDATE staff SET photo_uri = ?, face_signature = ? WHERE id = ?',
+    [photoUri, signature, id],
+  );
+}
+
 /** The secret half of a paired phone credential. Never shown in the UI. */
 export function getStaffDeviceCredential(
   id: number,
