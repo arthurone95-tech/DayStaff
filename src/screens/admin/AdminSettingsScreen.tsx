@@ -45,6 +45,7 @@ import {
   getBiometricLabelSync,
   getBiometricStatus,
 } from '../../services/biometricService';
+import { exportDatabaseBackup } from '../../services/backupService';
 import {
   changeAdminPin,
   generateAdminRecoveryCode,
@@ -87,6 +88,7 @@ export function AdminSettingsScreen() {
   );
   const [verifierUrl, setVerifierUrl] = useState(getQrVerifierUrl());
   const [savingQrSettings, setSavingQrSettings] = useState(false);
+  const [creatingBackup, setCreatingBackup] = useState(false);
   const [biometric, setBiometric] = useState<BiometricStatus | null>(null);
 
   useEffect(() => {
@@ -243,6 +245,30 @@ export function AdminSettingsScreen() {
       );
     } finally {
       setSavingPin(false);
+    }
+  };
+
+  const handleCreateBackup = async () => {
+    if (creatingBackup) return;
+    setCreatingBackup(true);
+    try {
+      const result = await exportDatabaseBackup();
+      alert({
+        tone: 'success',
+        title: 'Backup ready',
+        message: result.shared
+          ? 'Your backup file is ready. Save it to a USB drive, Files, or another device so you can restore it later.'
+          : `Sharing is unavailable, so the backup was saved to:\n${result.uri}`,
+        buttonLabel: 'Done',
+      });
+    } catch (error) {
+      alert({
+        tone: 'danger',
+        title: 'Backup failed',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
+    } finally {
+      setCreatingBackup(false);
     }
   };
 
@@ -514,6 +540,35 @@ export function AdminSettingsScreen() {
           )}
         </Card>
 
+
+        <Card style={styles.card}>
+          <Text style={styles.cardTitle}>Data backup</Text>
+          <Text style={styles.cardHint}>
+            Create a backup of staff profiles, short codes, face scans, and
+            attendance logs. Save it to a USB drive or another device so you can
+            restore it on a replacement tablet without re-scanning faces.
+          </Text>
+          <AppButton
+            title={creatingBackup ? 'Creating backup…' : 'Create backup'}
+            onPress={handleCreateBackup}
+            loading={creatingBackup}
+            disabled={creatingBackup}
+            variant="secondary"
+            icon={
+              !creatingBackup ? (
+                <Ionicons
+                  name="cloud-download-outline"
+                  size={18}
+                  color={colors.primary}
+                />
+              ) : undefined
+            }
+            style={styles.pinButton}
+          />
+          <Text style={styles.cardHint}>
+            To restore on a new device, go to Staff and tap Import.
+          </Text>
+        </Card>
 
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>Privacy & security</Text>
