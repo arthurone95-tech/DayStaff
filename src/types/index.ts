@@ -27,9 +27,13 @@ export type AuthMethod =
  * The method recorded against an individual attendance transaction.
  *
  * `FACE_BIOMETRIC` is used by the face-recognition kiosk; `QR_DEVICE_BOUND`
- * is used by the short-code + two-way visual QR flow.
+ * is used by the short-code + two-way visual QR flow. `MANUAL_OVERRIDE` marks
+ * a clock-in/out entered by an administrator from the attendance screen.
  */
-export type AttendanceAuthMethod = 'FACE_BIOMETRIC' | 'QR_DEVICE_BOUND';
+export type AttendanceAuthMethod =
+  | 'FACE_BIOMETRIC'
+  | 'QR_DEVICE_BOUND'
+  | 'MANUAL_OVERRIDE';
 
 export interface Staff {
   id: number;
@@ -95,6 +99,10 @@ export interface AttendanceLog {
   minutesEarly: number;
   /** How the clock-in/out transaction was authenticated. */
   authMethod: AttendanceAuthMethod;
+  /** True when an admin added or corrected this record manually. */
+  isManualOverride: boolean;
+  /** Short reason entered by the admin for a manual override. */
+  overrideNote: string | null;
 }
 
 export interface StaffDayRecord {

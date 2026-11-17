@@ -127,14 +127,18 @@ export function AdminDashboardScreen() {
                     badge={
                       <Badge
                         label={
-                          record.log.authMethod === 'QR_DEVICE_BOUND'
-                            ? '📱 QR Code'
-                            : '📷 Facial Scan'
+                          record.log.isManualOverride
+                            ? 'Manual override'
+                            : record.log.authMethod === 'QR_DEVICE_BOUND'
+                              ? '📱 QR Code'
+                              : '📷 Facial Scan'
                         }
                         tone={
-                          record.log.authMethod === 'QR_DEVICE_BOUND'
-                            ? 'info'
-                            : 'neutral'
+                          record.log.isManualOverride
+                            ? 'warning'
+                            : record.log.authMethod === 'QR_DEVICE_BOUND'
+                              ? 'info'
+                              : 'neutral'
                         }
                       />
                     }

@@ -94,6 +94,8 @@ interface AttendanceRow {
   clock_out_status: ClockOutStatus | null;
   minutes_early: number;
   auth_method: AttendanceAuthMethod;
+  is_manual_override: number;
+  override_note: string | null;
 }
 
 interface ExportRow extends AttendanceRow {
@@ -128,6 +130,8 @@ const mapLog = (row: AttendanceRow): AttendanceLog => ({
   clockOutStatus: row.clock_out_status,
   minutesEarly: row.minutes_early,
   authMethod: row.auth_method ?? 'FACE_BIOMETRIC',
+  isManualOverride: (row.is_manual_override ?? 0) === 1,
+  overrideNote: row.override_note ?? null,
 });
 
 // ---------------------------------------------------------------------------
@@ -484,11 +488,14 @@ export function insertClockIn(params: {
   status: ClockInStatus;
   minutesLate: number;
   authMethod: AttendanceAuthMethod;
+  isManualOverride?: boolean;
+  overrideNote?: string | null;
 }): AttendanceLog {
   const result = getDb().runSync(
     `INSERT INTO attendance_logs
-       (staff_id, date, clock_in_time, clock_in_status, minutes_late, minutes_early, auth_method)
-     VALUES (?, ?, ?, ?, ?, 0, ?)`,
+       (staff_id, date, clock_in_time, clock_in_status, minutes_late, minutes_early, auth_method,
+        is_manual_override, override_note)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
     [
       params.staffId,
       params.date,
@@ -496,6 +503,8 @@ export function insertClockIn(params: {
       params.status,
       params.minutesLate,
       params.authMethod,
+      params.isManualOverride ? 1 : 0,
+      params.overrideNote ?? null,
     ],
   );
   const log = getDb().getFirstSync<AttendanceRow>(
@@ -508,24 +517,82 @@ export function insertClockIn(params: {
   return mapLog(log);
 }
 
+/** Replace an existing clock-in (used for admin corrections). */
+export function updateClockIn(params: {
+  logId: number;
+  clockInTime: string;
+  status: ClockInStatus;
+  minutesLate: number;
+  authMethod: AttendanceAuthMethod;
+  isManualOverride?: boolean;
+  overrideNote?: string | null;
+}): AttendanceLog {
+  const assignments = [
+    'clock_in_time = ?',
+    'clock_in_status = ?',
+    'minutes_late = ?',
+    'auth_method = ?',
+  ];
+  const values: Array<string | number | null> = [
+    params.clockInTime,
+    params.status,
+    params.minutesLate,
+    params.authMethod,
+  ];
+  if (params.isManualOverride !== undefined) {
+    assignments.push('is_manual_override = ?', 'override_note = ?');
+    values.push(
+      params.isManualOverride ? 1 : 0,
+      params.overrideNote ?? null,
+    );
+  }
+  values.push(params.logId);
+  getDb().runSync(
+    `UPDATE attendance_logs SET ${assignments.join(', ')} WHERE id = ?`,
+    values,
+  );
+  const log = getDb().getFirstSync<AttendanceRow>(
+    'SELECT * FROM attendance_logs WHERE id = ?',
+    [params.logId],
+  );
+  if (!log) {
+    throw new Error('Attendance record not found.');
+  }
+  return mapLog(log);
+}
+
 export function updateClockOut(params: {
   logId: number;
   clockOutTime: string;
   status: ClockOutStatus;
   minutesEarly: number;
   authMethod: AttendanceAuthMethod;
+  isManualOverride?: boolean;
+  overrideNote?: string | null;
 }): AttendanceLog {
+  const assignments = [
+    'clock_out_time = ?',
+    'clock_out_status = ?',
+    'minutes_early = ?',
+    'auth_method = ?',
+  ];
+  const values: Array<string | number | null> = [
+    params.clockOutTime,
+    params.status,
+    params.minutesEarly,
+    params.authMethod,
+  ];
+  if (params.isManualOverride !== undefined) {
+    assignments.push('is_manual_override = ?', 'override_note = ?');
+    values.push(
+      params.isManualOverride ? 1 : 0,
+      params.overrideNote ?? null,
+    );
+  }
+  values.push(params.logId);
   getDb().runSync(
-    `UPDATE attendance_logs
-     SET clock_out_time = ?, clock_out_status = ?, minutes_early = ?, auth_method = ?
-     WHERE id = ?`,
-    [
-      params.clockOutTime,
-      params.status,
-      params.minutesEarly,
-      params.authMethod,
-      params.logId,
-    ],
+    `UPDATE attendance_logs SET ${assignments.join(', ')} WHERE id = ?`,
+    values,
   );
   const log = getDb().getFirstSync<AttendanceRow>(
     'SELECT * FROM attendance_logs WHERE id = ?',
@@ -539,7 +606,8 @@ export function updateClockOut(params: {
 
 export interface AttendanceWithStaffRow {
   staff: Staff;
-  log: AttendanceLog;
+  /** Null means the staff member has no attendance record for that date. */
+  log: AttendanceLog | null;
 }
 
 interface AttendanceWithStaffSqlRow {
@@ -553,6 +621,8 @@ interface AttendanceWithStaffSqlRow {
   clock_out_status: ClockOutStatus | null;
   minutes_early: number;
   auth_method: AttendanceAuthMethod;
+  is_manual_override: number;
+  override_note: string | null;
   staff_pk: number;
   full_name: string;
   staff_code: string | null;
@@ -588,6 +658,8 @@ export function getAttendanceWithStaffForDate(
        l.clock_out_status,
        l.minutes_early,
        l.auth_method,
+       l.is_manual_override,
+       l.override_note,
        s.id AS staff_pk,
        s.full_name,
        s.staff_code,
@@ -609,7 +681,7 @@ export function getAttendanceWithStaffForDate(
     [date],
   );
 
-  return rows.map((row) => ({
+  const entries: AttendanceWithStaffRow[] = rows.map((row) => ({
     staff: mapStaff({
       id: row.staff_pk,
       full_name: row.full_name,
@@ -637,8 +709,34 @@ export function getAttendanceWithStaffForDate(
       clock_out_status: row.clock_out_status,
       minutes_early: row.minutes_early,
       auth_method: row.auth_method,
+      is_manual_override: row.is_manual_override,
+      override_note: row.override_note,
     }),
   }));
+
+  // The attendance screen also lists active staff who have not scanned yet so
+  // an admin can add a manual clock-in for them. Staff created after the
+  // selected date are excluded, and everyone already in a log is skipped.
+  const loggedStaffIds = new Set(rows.map((row) => row.staff_id));
+  const activeStaff = getDb().getAllSync<StaffRow>(
+    `SELECT * FROM staff
+     WHERE is_active = 1
+       AND substr(created_at, 1, 10) <= ?
+     ORDER BY full_name COLLATE NOCASE ASC`,
+    [date],
+  );
+  for (const member of activeStaff) {
+    if (!loggedStaffIds.has(member.id)) {
+      entries.push({ staff: mapStaff(member), log: null });
+    }
+  }
+
+  entries.sort((a, b) =>
+    a.staff.fullName.localeCompare(b.staff.fullName, undefined, {
+      sensitivity: 'base',
+    }),
+  );
+  return entries;
 }
 
 /** Distinct dates that have at least one attendance record. */

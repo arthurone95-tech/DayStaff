@@ -112,7 +112,15 @@ function buildRows(rows: ReportRow[]): (string | number)[][] {
       row.date,
       row.staffName,
       row.staffCode,
-      log ? (log.authMethod === 'QR_DEVICE_BOUND' ? 'QR Code' : 'Facial Scan') : '',
+      log
+        ? log.authMethod === 'QR_DEVICE_BOUND'
+          ? 'QR Code'
+          : log.authMethod === 'MANUAL_OVERRIDE'
+            ? 'Manual override'
+            : 'Facial Scan'
+        : '',
+      log ? (log.isManualOverride ? 'Yes' : 'No') : '',
+      log?.overrideNote ?? '',
       log ? formatTime12h(log.clockInTime) : '',
       log ? (log.clockInStatus === 'late' ? 'Late' : 'On time') : '',
       log ? log.minutesLate : '',
@@ -134,6 +142,8 @@ const HEADERS = [
   'Staff name',
   'Staff code',
   'Auth method',
+  'Manual override',
+  'Override note',
   'Clock in',
   'Clock-in status',
   'Minutes late',
@@ -206,7 +216,9 @@ function buildWorkbook(
     { wch: 12 },
     { wch: 24 },
     { wch: 12 },
-    { wch: 14 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 28 },
     { wch: 12 },
     { wch: 16 },
     { wch: 13 },
@@ -275,7 +287,14 @@ async function writeReport(
   }
 
   const rows: ReportRow[] = [];
-  for (const [date, dateRows] of rowsByDate) {
+  // Single-day exports must still list active staff when nobody scanned at all
+  // (for example, a day the admin is correcting manually).
+  const exportDates = new Set(rowsByDate.keys());
+  if (bounds.startDate === bounds.endDate) {
+    exportDates.add(bounds.startDate);
+  }
+  for (const date of Array.from(exportDates).sort()) {
+    const dateRows = rowsByDate.get(date) ?? [];
     const loggedStaffIds = new Set(dateRows.map((row) => row.log.staffId));
     for (const row of dateRows) {
       rows.push({

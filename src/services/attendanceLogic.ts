@@ -13,6 +13,7 @@ import {
   getLogsForDate,
   getSchedule,
   insertClockIn,
+  updateClockIn,
   updateClockOut,
 } from '../database/queries';
 import type {
@@ -229,6 +230,86 @@ export function clockOutStaff(
   }
 
   return completeClockOut(staff, existing, now, schedule, date, authMethod);
+}
+
+/**
+ * Admin override: add or correct a clock-in for a chosen date.
+ *
+ * The time is treated as a local wall-clock time on that date. If a log
+ * already exists, only the arrival fields are replaced so a manual departure
+ * (or any other profile/log data) is preserved.
+ */
+export function manualClockIn(
+  staff: Staff,
+  dateKey: string,
+  time: string,
+  note: string | null,
+): AttendanceLog {
+  const at = combineDateAndTime(dateKey, time);
+  const schedule = getSchedule();
+  const evaluation = evaluateClockIn(at, schedule, dateKey);
+  const existing = getLogForStaffOnDate(staff.id, dateKey);
+
+  if (existing) {
+    if (
+      existing.clockOutTime &&
+      at.getTime() >= new Date(existing.clockOutTime).getTime()
+    ) {
+      throw new Error('Clock-in time must be before the existing clock-out time.');
+    }
+    return updateClockIn({
+      logId: existing.id,
+      clockInTime: at.toISOString(),
+      status: evaluation.status,
+      minutesLate: evaluation.minutesLate,
+      // Keep the original authentication method so the row still shows that
+      // this staff member uses face scan; the manual flag carries the override.
+      authMethod: existing.authMethod,
+      isManualOverride: true,
+      overrideNote: note,
+    });
+  }
+
+  return insertClockIn({
+    staffId: staff.id,
+    date: dateKey,
+    clockInTime: at.toISOString(),
+    status: evaluation.status,
+    minutesLate: evaluation.minutesLate,
+    authMethod: 'MANUAL_OVERRIDE',
+    isManualOverride: true,
+    overrideNote: note,
+  });
+}
+
+/** Admin override: add or correct a clock-out for a chosen date. */
+export function manualClockOut(
+  staff: Staff,
+  dateKey: string,
+  time: string,
+  note: string | null,
+): AttendanceLog {
+  const existing = getLogForStaffOnDate(staff.id, dateKey);
+  if (!existing) {
+    throw new Error('Add a clock-in before adding a clock-out.');
+  }
+
+  const at = combineDateAndTime(dateKey, time);
+  if (at.getTime() <= new Date(existing.clockInTime).getTime()) {
+    throw new Error('Clock-out time must be after the clock-in time.');
+  }
+
+  const schedule = getSchedule();
+  const evaluation = evaluateClockOut(at, schedule, dateKey);
+  return updateClockOut({
+    logId: existing.id,
+    clockOutTime: at.toISOString(),
+    status: evaluation.status,
+    minutesEarly: evaluation.minutesEarly,
+    authMethod: existing.authMethod,
+    isManualOverride: true,
+    overrideNote: note,
+  });
 }
 
 /** Build the admin dashboard view for a given local date. */

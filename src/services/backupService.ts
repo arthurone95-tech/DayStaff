@@ -43,6 +43,8 @@ export interface BackupAttendanceRow {
   clock_out_status: string | null;
   minutes_early: number;
   auth_method: string;
+  is_manual_override: number;
+  override_note: string | null;
 }
 
 export interface ImportConflict {
@@ -206,7 +208,9 @@ async function openAndReadBackup(pickedUri: string): Promise<BackupSnapshot> {
            ${lh('clock_out_time') ? 'clock_out_time' : 'NULL AS clock_out_time'},
            ${lh('clock_out_status') ? 'clock_out_status' : 'NULL AS clock_out_status'},
            ${lh('minutes_early') ? 'minutes_early' : '0 AS minutes_early'},
-           ${lh('auth_method') ? 'auth_method' : "'FACE_BIOMETRIC' AS auth_method"}
+           ${lh('auth_method') ? 'auth_method' : "'FACE_BIOMETRIC' AS auth_method"},
+           ${lh('is_manual_override') ? 'is_manual_override' : '0 AS is_manual_override'},
+           ${lh('override_note') ? 'override_note' : 'NULL AS override_note'}
          FROM attendance_logs`,
       ) as BackupAttendanceRow[];
     }
@@ -250,8 +254,8 @@ function insertImportedLogs(
     try {
       const result = getDb().runSync(
         `INSERT OR IGNORE INTO attendance_logs
-           (staff_id, date, clock_in_time, clock_in_status, minutes_late, clock_out_time, clock_out_status, minutes_early, auth_method)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (staff_id, date, clock_in_time, clock_in_status, minutes_late, clock_out_time, clock_out_status, minutes_early, auth_method, is_manual_override, override_note)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newStaffId,
           String(log.date),
@@ -262,6 +266,8 @@ function insertImportedLogs(
           log.clock_out_status ?? null,
           Number(log.minutes_early ?? 0),
           (log.auth_method as string) || 'FACE_BIOMETRIC',
+          Number(log.is_manual_override ?? 0) ? 1 : 0,
+          log.override_note ?? null,
         ],
       );
       if (result.changes > 0) {

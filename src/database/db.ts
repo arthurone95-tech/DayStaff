@@ -8,7 +8,7 @@
 import * as SQLite from 'expo-sqlite';
 
 export const DATABASE_NAME = 'daystaff_v2.db';
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 /** Approved short-code letters and digits. */
 const STAFF_CODE_LETTERS = 'ABCDEFGHJK';
@@ -60,7 +60,7 @@ function ensureStaffColumns(db: SQLite.SQLiteDatabase): void {
   }
 }
 
-/** Add the attendance auth-method column to databases created before v5. */
+/** Add attendance columns introduced by newer builds. Idempotent. */
 function ensureAttendanceColumns(db: SQLite.SQLiteDatabase): void {
   const names = new Set(
     db
@@ -70,6 +70,16 @@ function ensureAttendanceColumns(db: SQLite.SQLiteDatabase): void {
   if (!names.has('auth_method')) {
     db.execSync(
       "ALTER TABLE attendance_logs ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'FACE_BIOMETRIC';",
+    );
+  }
+  if (!names.has('is_manual_override')) {
+    db.execSync(
+      'ALTER TABLE attendance_logs ADD COLUMN is_manual_override INTEGER NOT NULL DEFAULT 0;',
+    );
+  }
+  if (!names.has('override_note')) {
+    db.execSync(
+      'ALTER TABLE attendance_logs ADD COLUMN override_note TEXT;',
     );
   }
 }
@@ -198,6 +208,8 @@ function migrate(db: SQLite.SQLiteDatabase): void {
         clock_out_status TEXT CHECK (clock_out_status IN ('on_time', 'early')),
         minutes_early INTEGER NOT NULL DEFAULT 0,
         auth_method TEXT NOT NULL DEFAULT 'FACE_BIOMETRIC',
+        is_manual_override INTEGER NOT NULL DEFAULT 0,
+        override_note TEXT,
         FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE CASCADE,
         UNIQUE (staff_id, date)
       );

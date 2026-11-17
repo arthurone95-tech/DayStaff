@@ -3,7 +3,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import {
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   ScrollViewInstance,
@@ -16,20 +18,24 @@ import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
 import { useAppDialog } from '../../components/AppDialog';
 import { AppButton } from '../../components/AppButton';
 import { Avatar } from '../../components/Avatar';
-import { Badge, type BadgeTone } from '../../components/Badge';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { Screen } from '../../components/Screen';
+import { TextField } from '../../components/TextField';
+import { TimeField } from '../../components/TimeField';
 import {
   getAttendanceDateKeys,
   getAttendanceWithStaffForDate,
+  getSchedule,
   type AttendanceWithStaffRow,
 } from '../../database/queries';
+import { manualClockIn, manualClockOut } from '../../services/attendanceLogic';
 import { exportAttendanceReportForDate } from '../../services/exportService';
 import type { AttendanceFilter, RootNavigation } from '../../navigation/types';
 import { colors, fontSize, radius, spacing } from '../../theme';
 import {
   addDaysToKey,
+  combineDateAndTime,
   formatDateLong,
   formatDateMedium,
   formatTime12h,
@@ -85,56 +91,78 @@ function QuickChip({
 
 function formatStatusSummary(records: AttendanceWithStaffRow[]): string {
   if (records.length === 0) {
-    return 'No records for this day';
+    return 'No staff for this day';
   }
+  const withLog = records.filter((record) => record.log);
   let late = 0;
   let early = 0;
-  for (const { log } of records) {
-    if (log.clockInStatus === 'late') {
+  for (const { log } of withLog) {
+    if (log?.clockInStatus === 'late') {
       late += 1;
     }
-    if (log.clockOutStatus === 'early') {
+    if (log?.clockOutStatus === 'early') {
       early += 1;
     }
   }
-  const parts = [`${records.length} ${records.length === 1 ? 'record' : 'records'}`];
+  const parts = [`${records.length} staff`];
+  parts.push(`${withLog.length} checked in`);
+  const absent = records.length - withLog.length;
+  if (absent > 0) {
+    parts.push(`${absent} absent`);
+  }
   if (late > 0) {
     parts.push(`${late} late`);
   }
   if (early > 0) {
     parts.push(`${early} early exit${early === 1 ? '' : 's'}`);
   }
-  if (late === 0 && early === 0) {
-    parts.push('no late or early exits');
-  }
   return parts.join(' · ');
 }
 
-function AttendanceRecordRow({ record }: { record: AttendanceWithStaffRow }) {
+function isoToLocalTime(iso: string): string {
+  const date = new Date(iso);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(
+    date.getMinutes(),
+  ).padStart(2, '0')}`;
+}
+
+const OVERRIDE_REASONS = [
+  'Camera glare',
+  'Face injury',
+  'Forgot to scan',
+  'New hire',
+];
+
+function AttendanceRecordRow({
+  record,
+  onOverride,
+}: {
+  record: AttendanceWithStaffRow;
+  onOverride: (record: AttendanceWithStaffRow) => void;
+}) {
   const { staff, log } = record;
-  const isLate = log.clockInStatus === 'late';
-  const isEarly = log.clockOutStatus === 'early';
+  const isLate = log?.clockInStatus === 'late';
+  const isEarly = log?.clockOutStatus === 'early';
+  const usesFace =
+    !!staff.faceSignature || log?.authMethod === 'FACE_BIOMETRIC';
+  const isManual = log?.isManualOverride === true;
 
-  const arrivalBadge: { label: string; tone: BadgeTone } = isLate
-    ? { label: `Late ${log.minutesLate}m`, tone: 'danger' }
-    : { label: 'On time', tone: 'success' };
+  const statusLabel = !log
+    ? 'Absent'
+    : isEarly
+      ? `Left early ${log.minutesEarly}m`
+      : isLate
+        ? `Late ${log.minutesLate}m`
+        : 'On time';
+  const statusTone = !log
+    ? styles.statusAbsent
+    : isLate || isEarly
+      ? styles.statusDanger
+      : styles.statusSuccess;
 
-  const departureBadge: { label: string; tone: BadgeTone } = log.clockOutTime
-    ? isEarly
-      ? { label: `Early ${log.minutesEarly}m`, tone: 'danger' }
-      : { label: 'Clocked out', tone: 'success' }
-    : { label: 'No clock-out', tone: 'neutral' };
-
-  const authBadge: { label: string; tone: BadgeTone } =
-    log.authMethod === 'QR_DEVICE_BOUND'
-      ? { label: '📱 QR Code', tone: 'info' }
-      : { label: '📷 Facial Scan', tone: 'neutral' };
-
-  const clockOut = log.clockOutTime
-    ? formatTime12h(log.clockOutTime)
-    : 'Not recorded';
-  const rowToneStyle =
-    isLate || isEarly
+  const rowToneStyle = !log
+    ? styles.recordRowNeutral
+    : isLate || isEarly
       ? styles.recordRowDanger
       : log.clockOutTime
         ? styles.recordRowSuccess
@@ -142,52 +170,71 @@ function AttendanceRecordRow({ record }: { record: AttendanceWithStaffRow }) {
 
   return (
     <View
-      accessible
-      accessibilityLabel={`${staff.fullName}, clocked in ${formatTime12h(
-        log.clockInTime,
-      )}, clocked out ${clockOut}, ${arrivalBadge.label}, ${
-        departureBadge.label
-      }, ${authBadge.label}`}
+      accessibilityLabel={`${staff.fullName}, ${statusLabel}${
+        log
+          ? `, clocked in ${formatTime12h(log.clockInTime)}, clocked out ${
+              log.clockOutTime ? formatTime12h(log.clockOutTime) : 'not yet'
+            }`
+          : ''
+      }${isManual ? ', manual override' : ''}`}
       style={[styles.recordRow, rowToneStyle]}
     >
-      <Avatar name={staff.fullName} photoUri={staff.photoUri} size={46} />
+      <Avatar name={staff.fullName} photoUri={staff.photoUri} size={42} />
 
       <View style={styles.recordBody}>
         <View style={styles.recordTitleRow}>
           <Text style={styles.recordName} numberOfLines={1}>
             {staff.fullName}
           </Text>
+          {usesFace ? (
+            <Ionicons
+              name="camera-outline"
+              size={14}
+              color={colors.slate400}
+              style={styles.faceIcon}
+              accessibilityLabel="Face scan"
+            />
+          ) : null}
           <Text style={styles.recordCode}>
             {staff.staffCode ? `#${staff.staffCode}` : 'No code'}
           </Text>
         </View>
 
         <View style={styles.timeRow}>
-          <View style={styles.timeItem}>
-            <Text style={styles.timeLabel}>IN</Text>
-            <Text style={[styles.timeValue, isLate && styles.timeValueDanger]}>
-              {formatTime12h(log.clockInTime)}
-            </Text>
-          </View>
-          <Ionicons name="arrow-forward" size={13} color={colors.slate400} />
-          <View style={styles.timeItem}>
-            <Text style={styles.timeLabel}>OUT</Text>
-            <Text
-              style={[
-                styles.timeValue,
-                isEarly && styles.timeValueDanger,
-                !log.clockOutTime && styles.timeValueMuted,
-              ]}
-            >
-              {log.clockOutTime ? formatTime12h(log.clockOutTime) : '—'}
-            </Text>
-          </View>
+          <Text style={styles.timeLabel}>IN</Text>
+          <Text style={[styles.timeValue, isLate && styles.timeValueDanger]}>
+            {log ? formatTime12h(log.clockInTime) : '—'}
+          </Text>
+          <Ionicons name="arrow-forward" size={11} color={colors.slate400} />
+          <Text style={styles.timeLabel}>OUT</Text>
+          <Text
+            style={[
+              styles.timeValue,
+              isEarly && styles.timeValueDanger,
+              (!log || !log.clockOutTime) && styles.timeValueMuted,
+            ]}
+          >
+            {log?.clockOutTime ? formatTime12h(log.clockOutTime) : '—'}
+          </Text>
         </View>
 
-        <View style={styles.badges}>
-          <Badge label={arrivalBadge.label} tone={arrivalBadge.tone} />
-          <Badge label={departureBadge.label} tone={departureBadge.tone} />
-          <Badge label={authBadge.label} tone={authBadge.tone} />
+        <View style={styles.statusRow}>
+          <View style={styles.statusLeft}>
+            <Text style={[styles.statusText, statusTone]}>{statusLabel}</Text>
+            {isManual ? <Text style={styles.manualText}>· Manual</Text> : null}
+          </View>
+          <Pressable
+            onPress={() => onOverride(record)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Override attendance for ${staff.fullName}`}
+            style={({ pressed }) => [
+              styles.overrideLink,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.overrideText}>Override</Text>
+          </Pressable>
         </View>
       </View>
     </View>
@@ -218,6 +265,15 @@ export function AttendanceHistoryScreen() {
   const [filter, setFilter] = useState<AttendanceFilter>(routeFilter ?? 'all');
   const scrollRef = useRef<ScrollViewInstance | null>(null);
   const [chipWidths, setChipWidths] = useState<number[]>([]);
+
+  const [overrideRecord, setOverrideRecord] =
+    useState<AttendanceWithStaffRow | null>(null);
+  const [overrideAction, setOverrideAction] = useState<
+    'clock_in' | 'clock_out'
+  >('clock_in');
+  const [overrideTime, setOverrideTime] = useState('08:00');
+  const [overrideNote, setOverrideNote] = useState('');
+  const [overrideError, setOverrideError] = useState<string | null>(null);
 
   const FILTER_ORDER: AttendanceFilter[] = [
     'all',
@@ -357,6 +413,109 @@ export function AttendanceHistoryScreen() {
       });
     } finally {
       setExporting(false);
+    }
+  };
+
+  const openOverride = (record: AttendanceWithStaffRow) => {
+    const log = record.log;
+    const schedule = getSchedule();
+    const now = new Date();
+    setOverrideRecord(record);
+    setOverrideError(null);
+    setOverrideNote(log?.overrideNote ?? '');
+
+    if (!log) {
+      setOverrideAction('clock_in');
+      setOverrideTime(
+        isToday ? isoToLocalTime(now.toISOString()) : schedule.startTime,
+      );
+      return;
+    }
+    if (!log.clockOutTime) {
+      setOverrideAction('clock_out');
+      setOverrideTime(
+        isToday ? isoToLocalTime(now.toISOString()) : schedule.endTime,
+      );
+      return;
+    }
+    setOverrideAction('clock_out');
+    setOverrideTime(isoToLocalTime(log.clockOutTime));
+  };
+
+  const selectOverrideAction = (action: 'clock_in' | 'clock_out') => {
+    setOverrideAction(action);
+    setOverrideError(null);
+    const log = overrideRecord?.log ?? null;
+    const schedule = getSchedule();
+    const now = new Date();
+
+    if (action === 'clock_in') {
+      setOverrideTime(
+        log
+          ? isoToLocalTime(log.clockInTime)
+          : isToday
+            ? isoToLocalTime(now.toISOString())
+            : schedule.startTime,
+      );
+      return;
+    }
+    if (log?.clockOutTime) {
+      setOverrideTime(isoToLocalTime(log.clockOutTime));
+      return;
+    }
+    setOverrideTime(
+      isToday ? isoToLocalTime(now.toISOString()) : schedule.endTime,
+    );
+  };
+
+  const handleSaveOverride = () => {
+    if (!overrideRecord) {
+      return;
+    }
+    if (overrideAction === 'clock_out' && !overrideRecord.log) {
+      setOverrideError('Add a clock-in before adding a clock-out.');
+      return;
+    }
+
+    const at = combineDateAndTime(selectedDateKey, overrideTime);
+    if (isToday && at.getTime() > Date.now() + 60_000) {
+      setOverrideError('Choose a time that is not in the future.');
+      return;
+    }
+
+    const note = overrideNote.trim() || 'Manual override';
+    try {
+      if (overrideAction === 'clock_in') {
+        manualClockIn(
+          overrideRecord.staff,
+          selectedDateKey,
+          overrideTime,
+          note,
+        );
+      } else {
+        manualClockOut(
+          overrideRecord.staff,
+          selectedDateKey,
+          overrideTime,
+          note,
+        );
+      }
+      const staffName = overrideRecord.staff.fullName;
+      setOverrideRecord(null);
+      setRecords(getAttendanceWithStaffForDate(selectedDateKey));
+      setAvailableDates(new Set(getAttendanceDateKeys()));
+      alert({
+        tone: 'success',
+        title: 'Attendance updated',
+        message: `${staffName} — ${
+          overrideAction === 'clock_in' ? 'clock-in' : 'clock-out'
+        } saved at ${formatTime12h(at)}.\n\nFlagged as a manual override in the export.`,
+        buttonLabel: 'Done',
+      });
+    } catch (error) {
+      setOverrideError(
+        error instanceof Error ? error.message : 'Could not save the override.',
+      );
     }
   };
 
@@ -531,10 +690,10 @@ export function AttendanceHistoryScreen() {
         <Card padded={false} style={[styles.listCard, styles.emptyCard]}>
           <EmptyState
             icon="calendar-outline"
-            title="No attendance records found"
-            message={`No staff clocked in on ${formatDateMedium(
+            title="No staff for this date"
+            message={`No staff were registered on ${formatDateMedium(
               selectedDateKey,
-            )}. Use the date bar above to pick another day.`}
+            )}. Use the date bar above to pick another day, or add staff first.`}
           />
         </Card>
       ) : filteredRecords.length === 0 ? (
@@ -542,7 +701,7 @@ export function AttendanceHistoryScreen() {
           <EmptyState
             icon="filter-outline"
             title="No records match"
-            message={`No ${filter} records for ${formatDateMedium(
+            message={`No ${filter.toLowerCase()} records for ${formatDateMedium(
               selectedDateKey,
             )}.`}
           />
@@ -551,8 +710,12 @@ export function AttendanceHistoryScreen() {
         <Card padded={false} style={styles.listCard}>
           <FlatList
             data={filteredRecords}
-            keyExtractor={(item) => String(item.log.id)}
-            renderItem={({ item }) => <AttendanceRecordRow record={item} />}
+            keyExtractor={(item) =>
+              item.log ? `log-${item.log.id}` : `staff-${item.staff.id}`
+            }
+            renderItem={({ item }) => (
+              <AttendanceRecordRow record={item} onOverride={openOverride} />
+            )}
             style={styles.list}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
@@ -890,6 +1053,207 @@ export function AttendanceHistoryScreen() {
           </Card>
         </View>
       </Modal>
+
+      <Modal
+        visible={overrideRecord !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOverrideRecord(null)}
+      >
+        <KeyboardAvoidingView
+          style={styles.overrideOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {overrideRecord ? (
+            <Card style={styles.overrideCard} padded={false}>
+              <ScrollView
+                contentContainerStyle={styles.overrideContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.overrideHeader}>
+                  <View style={styles.overrideHeaderText}>
+                    <Text style={styles.overrideTitle}>Manual override</Text>
+                    <Text style={styles.overrideSubtitle}>
+                      {overrideRecord.staff.fullName}
+                      {overrideRecord.staff.staffCode
+                        ? ` · #${overrideRecord.staff.staffCode}`
+                        : ''}
+                    </Text>
+                    <Text style={styles.overrideDate}>
+                      {formatDateLong(selectedDate)}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setOverrideRecord(null)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close manual override"
+                    style={({ pressed }) => [
+                      styles.closeButton,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Ionicons
+                      name="close"
+                      size={22}
+                      color={colors.slate500}
+                    />
+                  </Pressable>
+                </View>
+
+                <Text style={styles.fieldLabel}>What are you recording?</Text>
+                <View style={styles.overrideToggle}>
+                  {(['clock_in', 'clock_out'] as const).map((action) => {
+                    const active = overrideAction === action;
+                    const disabled =
+                      action === 'clock_out' && !overrideRecord.log;
+                    const log = overrideRecord.log;
+                    const hint =
+                      action === 'clock_in'
+                        ? log
+                          ? `Replace ${formatTime12h(log.clockInTime)}`
+                          : 'Add arrival'
+                        : log?.clockOutTime
+                          ? `Update ${formatTime12h(log.clockOutTime)}`
+                          : log
+                            ? 'Add departure'
+                            : 'Clock in first';
+                    return (
+                      <Pressable
+                        key={action}
+                        onPress={() => selectOverrideAction(action)}
+                        disabled={disabled}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: active, disabled }}
+                        style={({ pressed }) => [
+                          styles.overrideOption,
+                          active && styles.overrideOptionActive,
+                          disabled && styles.overrideOptionDisabled,
+                          pressed && !disabled && styles.pressed,
+                        ]}
+                      >
+                        <Ionicons
+                          name={
+                            action === 'clock_in'
+                              ? 'log-in-outline'
+                              : 'log-out-outline'
+                          }
+                          size={18}
+                          color={
+                            disabled
+                              ? colors.slate300
+                              : active
+                                ? colors.primary
+                                : colors.slate500
+                          }
+                        />
+                        <View style={styles.overrideOptionText}>
+                          <Text
+                            style={[
+                              styles.overrideOptionTitle,
+                              active && styles.overrideOptionTitleActive,
+                              disabled && styles.overrideOptionTitleDisabled,
+                            ]}
+                          >
+                            {action === 'clock_in' ? 'Clock in' : 'Clock out'}
+                          </Text>
+                          <Text style={styles.overrideOptionHint}>{hint}</Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.overrideTimeField}>
+                  <TimeField
+                    label={
+                      overrideAction === 'clock_in'
+                        ? 'Clock-in time'
+                        : 'Clock-out time'
+                    }
+                    value={overrideTime}
+                    onChange={setOverrideTime}
+                  />
+                </View>
+
+                <TextField
+                  label="Reason / note"
+                  value={overrideNote}
+                  onChangeText={setOverrideNote}
+                  placeholder="e.g. Camera glare / Manual override"
+                  maxLength={80}
+                  hint="Saved with this record and shown in exports."
+                />
+
+                <View style={styles.reasonRow}>
+                  {OVERRIDE_REASONS.map((reason) => {
+                    const active = overrideNote === reason;
+                    return (
+                      <Pressable
+                        key={reason}
+                        onPress={() => setOverrideNote(reason)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                        style={({ pressed }) => [
+                          styles.reasonChip,
+                          active && styles.reasonChipActive,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.reasonLabel,
+                            active && styles.reasonLabelActive,
+                          ]}
+                        >
+                          {reason}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {overrideError ? (
+                  <Text style={styles.overrideError}>{overrideError}</Text>
+                ) : null}
+
+                <AppButton
+                  title={
+                    overrideAction === 'clock_in'
+                      ? overrideRecord.log
+                        ? 'Save clock-in'
+                        : 'Clock in'
+                      : overrideRecord.log?.clockOutTime
+                        ? 'Save clock-out'
+                        : 'Clock out'
+                  }
+                  onPress={handleSaveOverride}
+                  size="lg"
+                  icon={
+                    <Ionicons
+                      name="checkmark-circle-outline"
+                      size={18}
+                      color={colors.white}
+                    />
+                  }
+                  style={styles.overrideSave}
+                />
+                <AppButton
+                  title="Cancel"
+                  variant="ghost"
+                  onPress={() => setOverrideRecord(null)}
+                />
+
+                <Text style={styles.overrideFootnote}>
+                  This record will be flagged as a manual override in the
+                  attendance list and in exported reports.
+                </Text>
+              </ScrollView>
+            </Card>
+          ) : null}
+        </KeyboardAvoidingView>
+      </Modal>
       <AdminBottomTabBar navigation={navigation} active="AttendanceHistory" />
     </Screen>
   );
@@ -1019,9 +1383,9 @@ const styles = StyleSheet.create({
   },
   recordRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
     backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -1045,14 +1409,17 @@ const styles = StyleSheet.create({
   },
   recordTitleRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: spacing.sm,
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   recordName: {
     flex: 1,
     fontSize: fontSize.md,
     fontWeight: '700',
     color: colors.slate900,
+  },
+  faceIcon: {
+    marginLeft: spacing.xs,
   },
   recordCode: {
     fontSize: fontSize.xs,
@@ -1063,22 +1430,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  timeItem: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
     gap: spacing.xs,
+    marginTop: 2,
   },
   timeLabel: {
     fontSize: fontSize.xs,
     fontWeight: '800',
     color: colors.slate400,
-    letterSpacing: 0.6,
+    letterSpacing: 0.5,
   },
   timeValue: {
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
     fontWeight: '700',
     color: colors.slate800,
     fontVariant: ['tabular-nums'],
@@ -1089,17 +1451,177 @@ const styles = StyleSheet.create({
   timeValueMuted: {
     color: colors.slate400,
   },
-  badges: {
+  statusRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  statusLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
-    marginTop: spacing.sm,
+  },
+  statusText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+  statusSuccess: {
+    color: colors.successDark,
+  },
+  statusDanger: {
+    color: colors.danger,
+  },
+  statusAbsent: {
+    color: colors.slate400,
+  },
+  manualText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.warningDark,
+  },
+  overrideLink: {
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+  },
+  overrideText: {
+    fontSize: fontSize.xs,
+    fontWeight: '800',
+    color: colors.primary,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: colors.overlay,
     justifyContent: 'center',
     padding: spacing.lg,
+  },
+  overrideOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  overrideCard: {
+    width: '100%',
+    maxWidth: 430,
+    maxHeight: '92%',
+    alignSelf: 'center',
+    overflow: 'hidden',
+  },
+  overrideContent: {
+    padding: spacing.lg,
+  },
+  overrideHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  overrideHeaderText: {
+    flex: 1,
+  },
+  overrideTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    color: colors.slate900,
+  },
+  overrideSubtitle: {
+    marginTop: 2,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.slate700,
+  },
+  overrideDate: {
+    marginTop: 2,
+    fontSize: fontSize.xs,
+    color: colors.slate500,
+  },
+  overrideToggle: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  overrideOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  overrideOptionActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.infoSoft,
+  },
+  overrideOptionDisabled: {
+    opacity: 0.5,
+  },
+  overrideOptionText: {
+    flex: 1,
+  },
+  overrideOptionTitle: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.slate800,
+  },
+  overrideOptionTitleActive: {
+    color: colors.primary,
+  },
+  overrideOptionTitleDisabled: {
+    color: colors.slate400,
+  },
+  overrideOptionHint: {
+    marginTop: 2,
+    fontSize: fontSize.xs,
+    color: colors.slate500,
+  },
+  overrideTimeField: {
+    marginTop: spacing.lg,
+  },
+  reasonRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: -spacing.md,
+    marginBottom: spacing.lg,
+  },
+  reasonChip: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.slate100,
+  },
+  reasonChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  reasonLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.slate700,
+  },
+  reasonLabelActive: {
+    color: colors.white,
+  },
+  overrideError: {
+    marginBottom: spacing.md,
+    fontSize: fontSize.sm,
+    color: colors.danger,
+  },
+  overrideSave: {
+    marginTop: spacing.sm,
+  },
+  overrideFootnote: {
+    marginTop: spacing.md,
+    fontSize: fontSize.xs,
+    lineHeight: 16,
+    color: colors.slate500,
+    textAlign: 'center',
   },
   calendarCard: {
     width: '100%',
