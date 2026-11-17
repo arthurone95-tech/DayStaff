@@ -542,6 +542,27 @@ export function AdminSettingsScreen() {
 
 
         <Card style={styles.card}>
+          <Text style={styles.cardTitle}>Kiosk device</Text>
+          <Text style={styles.cardHint}>
+            Keep the tablet ready for staff check-ins and prevent accidental exits.
+          </Text>
+          <Text style={[styles.statusLabel, styles.strictTitle]}>Keep screen awake</Text>
+          <Text style={styles.cardHint}>
+            DayStaff keeps the screen awake while the kiosk terminal is open so the display does not dim or lock between shifts.
+          </Text>
+          <Text style={[styles.statusLabel, styles.strictTitle]}>Lock the device to DayStaff</Text>
+          <Text style={styles.cardHint}>
+            Use your tablet’s built-in app pinning so staff cannot press Home, switch apps, or change settings:
+          </Text>
+          <Text style={styles.cardHint}>
+            • Android: Settings → Security/Privacy → App pinning (or Screen pinning). Turn it on, open DayStaff, then pin the app from Recents/Overview.
+          </Text>
+          <Text style={styles.cardHint}>
+            • iPad/iPhone: Settings → Accessibility → Guided Access. Turn it on, set a passcode, open DayStaff, then triple-click the Side/Top or Home button to start Guided Access.
+          </Text>
+        </Card>
+
+        <Card style={styles.card}>
           <Text style={styles.cardTitle}>Data backup</Text>
           <Text style={styles.cardHint}>
             Create a backup of staff profiles, short codes, face scans, and

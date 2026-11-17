@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useKeepAwake } from 'expo-keep-awake';
 import {
   ActivityIndicator,
   Modal,
@@ -59,6 +60,7 @@ function oneToOneThreshold(): number {
 }
 
 export function KioskTerminalScreen() {
+  useKeepAwake();
   const navigation = useNavigation<RootNavigation>();
   const now = useNow(1000);
   const { alert } = useAppDialog();
