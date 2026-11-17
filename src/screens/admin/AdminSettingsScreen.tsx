@@ -316,17 +316,16 @@ export function AdminSettingsScreen() {
         message:
           Platform.OS === 'ios'
             ? 'Open Settings → Accessibility → Guided Access on this device.'
-            ? "Open Settings → Accessibility → Guided Access on this device."
-            : "Open Settings on this device, then look for Security/Privacy → App pinning (or Screen pinning).",
-    } catch {
+            : 'Open Settings on this device, then look for Security/Privacy → App pinning (or Screen pinning).',
+      });
     } catch {
       alert({
         tone: 'info',
         title: 'Open settings manually',
         message:
           Platform.OS === 'ios'
-            ? "Open Settings → Accessibility → Guided Access on this device."
-            : "Open Settings on this device, then look for Security/Privacy → App pinning (or Screen pinning).",
+            ? 'Open Settings → Accessibility → Guided Access on this device.'
+            : 'Open Settings on this device, then look for Security/Privacy → App pinning (or Screen pinning).',
       });
     }
   };
