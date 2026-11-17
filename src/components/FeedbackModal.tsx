@@ -151,7 +151,7 @@ export function FeedbackModal({
               />
               <Text style={styles.activeShiftText}>
                 You are still on the clock. Sign out now if you are leaving
-                early, or wait until closing time to sign out automatically.
+                early, or scan again at the end of your shift to clock out.
               </Text>
             </View>
           ) : null}
