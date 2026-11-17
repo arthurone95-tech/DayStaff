@@ -50,7 +50,8 @@ import { AdminPinModal } from '../auth/AdminPinModal';
 import { CodeKeypad } from './CodeKeypad';
 import { FaceScanPanel } from './FaceScanPanel';
 
-const FEEDBACK_TIMEOUT_MS = 8000;
+const SUCCESS_FEEDBACK_MS = 1500;
+const ATTENTION_FEEDBACK_MS = 10000;
 const KIOSK_BG = '#06142B';
 function oneToOneThreshold(): number {
   const strictness = getFaceStrictness();
@@ -140,6 +141,27 @@ export function KioskTerminalScreen() {
     setFaceScanning(false);
   }, []);
 
+  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearFeedbackTimer = useCallback(() => {
+    if (feedbackTimerRef.current) {
+      clearTimeout(feedbackTimerRef.current);
+      feedbackTimerRef.current = null;
+    }
+  }, []);
+  const scheduleFeedbackDismiss = useCallback(
+    (delayMs: number) => {
+      clearFeedbackTimer();
+      feedbackTimerRef.current = setTimeout(() => {
+        feedbackTimerRef.current = null;
+        setFeedbackVisible(false);
+        resetFlow();
+      }, delayMs);
+    },
+    [clearFeedbackTimer, resetFlow],
+  );
+
+  useEffect(() => () => clearFeedbackTimer(), [clearFeedbackTimer]);
+
   const handleCodeChange = useCallback((next: string) => {
     setCode(next.toUpperCase());
   }, []);
@@ -200,10 +222,16 @@ export function KioskTerminalScreen() {
         setFeedback(result);
         setSimulated(false);
         setFeedbackVisible(true);
-        setTimeout(() => {
-          setFeedbackVisible(false);
-          resetFlow();
-        }, 1500);
+
+        // Successful clock-in/out is a confirmation, so the kiosk can move on
+        // quickly. A status result needs the employee to read it and, during
+        // an active shift, choose between clocking out and keeping working.
+        const needsAttention =
+          result.action === 'already_signed_in' ||
+          result.action === 'already_completed';
+        scheduleFeedbackDismiss(
+          needsAttention ? ATTENTION_FEEDBACK_MS : SUCCESS_FEEDBACK_MS,
+        );
       } else {
         alert({
           tone: 'warning',
@@ -225,7 +253,7 @@ export function KioskTerminalScreen() {
       setFaceBusy(false);
       setFaceScanning(false);
     }
-  }, [alert, faceBusy, resetFlow, selectedStaff]);
+  }, [alert, faceBusy, resetFlow, scheduleFeedbackDismiss, selectedStaff]);
 
   const handleManualSignOut = useCallback(() => {
     if (operationRef.current || !feedback || feedback.action !== 'already_signed_in') return;
@@ -235,10 +263,7 @@ export function KioskTerminalScreen() {
       setFeedback(result);
       setSimulated(false);
       setFeedbackVisible(true);
-      setTimeout(() => {
-        setFeedbackVisible(false);
-        resetFlow();
-      }, 1500);
+      scheduleFeedbackDismiss(SUCCESS_FEEDBACK_MS);
     } catch (error) {
       setFeedbackVisible(false);
       alert({
@@ -249,10 +274,12 @@ export function KioskTerminalScreen() {
     } finally {
       operationRef.current = false;
     }
-  }, [alert, feedback, resetFlow]);
+  }, [alert, feedback, scheduleFeedbackDismiss]);
 
   const closeFeedback = () => {
+    clearFeedbackTimer();
     setFeedbackVisible(false);
+    resetFlow();
   };
 
   const faceProfileCount =
