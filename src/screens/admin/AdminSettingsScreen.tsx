@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import {
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -214,11 +215,11 @@ export function AdminSettingsScreen() {
   const handleChangePin = async () => {
     setPinError(undefined);
     if (!isPinFormatValid(currentPin)) {
-      setPinError('Enter your current 4–8 digit PIN.');
+      setPinError('Enter your current 4â€“8 digit PIN.');
       return;
     }
     if (!isPinFormatValid(newPin)) {
-      setPinError('The new PIN must be 4–8 digits.');
+      setPinError('The new PIN must be 4â€“8 digits.');
       return;
     }
     if (newPin !== confirmPin) {
@@ -272,6 +273,63 @@ export function AdminSettingsScreen() {
     }
   };
 
+  const handleOpenPinningSettings = async () => {
+    try {
+      if (Platform.OS === 'android') {
+        try {
+          await Linking.sendIntent('android.settings.SECURITY_SETTINGS');
+          return;
+        } catch {
+          // Some devices expose app pinning elsewhere; fall through.
+        }
+        try {
+          await Linking.sendIntent('android.settings.SETTINGS');
+          return;
+        } catch {
+          await Linking.openSettings();
+          return;
+        }
+      }
+
+      if (Platform.OS === 'ios') {
+        const urls = [
+          'App-prefs:ACCESSIBILITY',
+          'App-prefs:root=ACCESSIBILITY',
+          'app-settings:',
+        ];
+        for (const url of urls) {
+          try {
+            const supported = await Linking.canOpenURL(url);
+            if (supported) {
+              await Linking.openURL(url);
+              return;
+            }
+          } catch {
+            // try next
+          }
+        }
+      }
+
+      alert({
+        tone: 'info',
+        title: 'Open settings manually',
+        message:
+          Platform.OS === 'ios'
+            ? 'Open Settings → Accessibility → Guided Access on this device.'
+            ? "Open Settings → Accessibility → Guided Access on this device."
+            : "Open Settings on this device, then look for Security/Privacy → App pinning (or Screen pinning).",
+    } catch {
+    } catch {
+      alert({
+        tone: 'info',
+        title: 'Open settings manually',
+        message:
+          Platform.OS === 'ios'
+            ? "Open Settings → Accessibility → Guided Access on this device."
+            : "Open Settings on this device, then look for Security/Privacy → App pinning (or Screen pinning).",
+      });
+    }
+  };
   return (
     <Screen>
       <KeyboardAvoidingView
@@ -399,7 +457,7 @@ export function AdminSettingsScreen() {
             Match strictness
           </Text>
           <Text style={styles.cardHint}>
-            Stricter means fewer wrong matches but more “not recognized”
+            Stricter means fewer wrong matches but more â€œnot recognizedâ€
             messages. Balanced is recommended; use Relaxed only if real staff
             keep failing.
           </Text>
@@ -430,7 +488,7 @@ export function AdminSettingsScreen() {
             will stop working immediately.
           </Text>
           <AppButton
-            title={regeneratingRecovery ? 'Generating…' : 'Regenerate recovery code'}
+            title={regeneratingRecovery ? 'Generatingâ€¦' : 'Regenerate recovery code'}
             onPress={() => {
               confirm({
                 tone: 'warning',
@@ -546,19 +604,57 @@ export function AdminSettingsScreen() {
           <Text style={styles.cardHint}>
             Keep the tablet ready for staff check-ins and prevent accidental exits.
           </Text>
+
           <Text style={[styles.statusLabel, styles.strictTitle]}>Keep screen awake</Text>
           <Text style={styles.cardHint}>
-            DayStaff keeps the screen awake while the kiosk terminal is open so the display does not dim or lock between shifts.
+            While the kiosk terminal is open, DayStaff keeps the screen on so it does not dim or lock between shifts.
           </Text>
-          <Text style={[styles.statusLabel, styles.strictTitle]}>Lock the device to DayStaff</Text>
-          <Text style={styles.cardHint}>
-            Use your tablet’s built-in app pinning so staff cannot press Home, switch apps, or change settings:
+
+          <Text style={[styles.statusLabel, styles.strictTitle]}>
+            {Platform.OS === 'android' ? 'Lock to DayStaff (App pinning)' : Platform.OS === 'ios' ? 'Lock to DayStaff (Guided Access)' : 'Lock to DayStaff'}
           </Text>
+          {Platform.OS === 'android' ? (
+            <>
+              <Text style={styles.cardHint}>
+                App pinning stops staff from pressing Home, switching apps, or changing tablet settings.
+              </Text>
+              <Text style={styles.cardHint}>1. Tap â€œOpen device settingsâ€ below.</Text>
+              <Text style={styles.cardHint}>2. Turn on App pinning / Screen pinning (usually in Security or Privacy).</Text>
+              <Text style={styles.cardHint}>3. Open DayStaff and go to the kiosk screen.</Text>
+              <Text style={styles.cardHint}>4. Open Recent apps, then tap Pin on DayStaff.</Text>
+              <Text style={styles.cardHint}>To unpin later, use your deviceâ€™s unpin gesture/buttons and enter the device PIN/password.</Text>
+            </>
+          ) : Platform.OS === 'ios' ? (
+            <>
+              <Text style={styles.cardHint}>
+                Guided Access stops staff from leaving DayStaff, switching apps, or changing settings.
+              </Text>
+              <Text style={styles.cardHint}>1. Tap â€œOpen device settingsâ€ below.</Text>
+              <Text style={styles.cardHint}>2. Go to Accessibility â†’ Guided Access and turn it on. Set a passcode staff donâ€™t know.</Text>
+              <Text style={styles.cardHint}>3. Open DayStaff and go to the kiosk screen.</Text>
+              <Text style={styles.cardHint}>4. Triple-click the Side/Top button (or Home button) and tap Start.</Text>
+              <Text style={styles.cardHint}>To end later, triple-click the same button, enter the passcode, then tap End.</Text>
+            </>
+          ) : (
+            <Text style={styles.cardHint}>
+              Use your deviceâ€™s built-in app pinning or guided access feature to keep this device locked to DayStaff.
+            </Text>
+          )}
+          <AppButton
+            title="Open device settings"
+            onPress={handleOpenPinningSettings}
+            variant="secondary"
+            icon={
+              <Ionicons
+                name="settings-outline"
+                size={18}
+                color={colors.primary}
+              />
+            }
+            style={styles.pinButton}
+          />
           <Text style={styles.cardHint}>
-            • Android: Settings → Security/Privacy → App pinning (or Screen pinning). Turn it on, open DayStaff, then pin the app from Recents/Overview.
-          </Text>
-          <Text style={styles.cardHint}>
-            • iPad/iPhone: Settings → Accessibility → Guided Access. Turn it on, set a passcode, open DayStaff, then triple-click the Side/Top or Home button to start Guided Access.
+            If it doesnâ€™t open the exact screen, use the steps above to find {Platform.OS === 'ios' ? 'Guided Access' : 'App pinning'} in Settings.
           </Text>
         </Card>
 
@@ -570,7 +666,7 @@ export function AdminSettingsScreen() {
             restore it on a replacement tablet without re-scanning faces.
           </Text>
           <AppButton
-            title={creatingBackup ? 'Creating backup…' : 'Create backup'}
+            title={creatingBackup ? 'Creating backupâ€¦' : 'Create backup'}
             onPress={handleCreateBackup}
             loading={creatingBackup}
             disabled={creatingBackup}
@@ -599,7 +695,7 @@ export function AdminSettingsScreen() {
           </Text>
         </Card>
 
-          <Text style={styles.version}>DayStaff · v1.1.0 · Offline MVP</Text>
+          <Text style={styles.version}>DayStaff Â· v1.1.0 Â· Offline MVP</Text>
         </ScrollView>
 
         {recoveryCode ? (
