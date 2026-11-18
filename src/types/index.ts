@@ -29,11 +29,13 @@ export type AuthMethod =
  * `FACE_BIOMETRIC` is used by the face-recognition kiosk; `QR_DEVICE_BOUND`
  * is used by the short-code + two-way visual QR flow. `MANUAL_OVERRIDE` marks
  * a clock-in/out entered by an administrator from the attendance screen.
+ * `face_pin` marks a look-alike staff member verified by face plus personal PIN.
  */
 export type AttendanceAuthMethod =
   | 'FACE_BIOMETRIC'
   | 'QR_DEVICE_BOUND'
-  | 'MANUAL_OVERRIDE';
+  | 'MANUAL_OVERRIDE'
+  | 'face_pin';
 
 export interface Staff {
   id: number;
@@ -43,6 +45,20 @@ export interface Staff {
   photoUri: string | null;
   /** Visual fingerprint of the profile photo, used by face mode. */
   faceSignature: string | null;
+  /** JSON array of individual enrollment embeddings, used for multi-frame matching. */
+  faceEmbeddings: number[][] | null;
+  /** Look-alike group identifier shared by twins or similar faces. */
+  similarGroupId: string | null;
+  /** Whether this staff member must enter a personal PIN after face verification. */
+  requiresPin: boolean;
+  /** Hashed personal PIN for look-alike staff (never plaintext). */
+  personalPinHash: string | null;
+  /** Per-staff salt for the personal PIN hash. */
+  personalPinSalt: string | null;
+  /** Consecutive failed personal PIN attempts. */
+  personalPinFailedAttempts: number;
+  /** Millisecond timestamp until which personal PIN entry is locked, or null. */
+  personalPinLockedUntil: number | null;
   /** Hashed staff fallback PIN (never plaintext). */
   staffPinHash: string | null;
   /** Per-staff salt for the PIN hash. */
@@ -70,6 +86,7 @@ export interface NewStaff {
   staffCode?: string;
   photoUri: string | null;
   faceSignature: string | null;
+  faceEmbeddings?: number[][] | null;
   staffPinHash?: string | null;
   staffPinSalt?: string | null;
 }

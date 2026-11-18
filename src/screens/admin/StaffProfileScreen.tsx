@@ -24,18 +24,35 @@ import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { useAppDialog } from '../../components/AppDialog';
 import {
+  clearPersonalPinFailures,
   clearStaffDeviceCredential,
   deleteStaffProfile,
   getStaffById,
+  getStaffByGroup,
   setStaffActive,
+  setStaffFaceEmbeddings,
   setStaffPhotoAndFaceSignature,
   setStaffPin,
   updateStaff,
 } from '../../database/queries';
 import type { RootStackParamList } from '../../navigation/types';
 import type { Staff } from '../../types';
+import { AdminPinModal } from '../auth/AdminPinModal';
+import { PersonalPinModal } from '../../components/PersonalPinModal';
 import { FaceScanPanel } from '../kiosk/FaceScanPanel';
-import { extractFaceEmbedding, serializeFaceEmbedding } from '../../services/faceEngine';
+import {
+  analyzeFace,
+  extractFaceEmbedding,
+  prepareFaceEngine,
+  prepareFacePhoto,
+  serializeFaceEmbedding,
+} from '../../services/faceEngine';
+import {
+  filterEnrollmentFrames,
+  hashPersonalPin,
+  isPersonalPinUsedByGroup,
+  setPersonalStaffPin,
+} from '../../services/lookalikeService';
 import { PhonePairingModal } from '../../components/PhonePairingModal';
 import { STAFF_CODE_MAX_LENGTH } from '../../config/app';
 import { colors, fontSize, radius, shadow, spacing } from '../../theme';
@@ -153,6 +170,8 @@ export function StaffProfileScreen({ navigation, route }: Props) {
   const [pairingOpen, setPairingOpen] = useState(false);
   const [faceScanOpen, setFaceScanOpen] = useState(false);
   const [faceBusy, setFaceBusy] = useState(false);
+  const [adminPinVisible, setAdminPinVisible] = useState(false);
+  const [personalPinVisible, setPersonalPinVisible] = useState(false);
 
   // Hide the header back button (and swipe-back) while editing
   useLayoutEffect(() => {
@@ -190,15 +209,28 @@ export function StaffProfileScreen({ navigation, route }: Props) {
     if (!staffId || !staff) return;
     setFaceBusy(true);
     try {
+      const engineReady = await prepareFaceEngine();
+      let keptEmbeddings: number[][] = [];
       let liveEmbedding = embedding;
-      if (!liveEmbedding && frames.length > 0) {
+      if (frames.length > 0 && engineReady) {
+        const analyses = await Promise.all(
+          frames.map((uri) => prepareFacePhoto(uri).then((upright) => analyzeFace(upright))),
+        );
+        const kept = filterEnrollmentFrames(analyses);
+        keptEmbeddings = kept.map((analysis) => analysis.embedding);
+        liveEmbedding = keptEmbeddings[0] ?? liveEmbedding;
+      } else if (!liveEmbedding && frames.length > 0) {
         liveEmbedding = await extractFaceEmbedding(frames[0]);
+        keptEmbeddings = liveEmbedding ? [liveEmbedding] : [];
       }
       if (!liveEmbedding) {
         throw new Error('The scan could not be converted into a face signature.');
       }
       const signature = serializeFaceEmbedding(liveEmbedding);
       setStaffPhotoAndFaceSignature(staffId, frames[0] ?? null, signature);
+      if (keptEmbeddings.length > 0) {
+        setStaffFaceEmbeddings(staffId, keptEmbeddings);
+      }
       loadStaff(staffId);
       setFaceScanOpen(false);
       alert({
@@ -543,6 +575,14 @@ export function StaffProfileScreen({ navigation, route }: Props) {
                     tone={staff.staffPinHash ? 'success' : 'neutral'}
                   />
                 </InfoRow>
+                {staff.requiresPin ? (
+                  <InfoRow icon="key-outline" label="Personal PIN" compact last>
+                    <Badge
+                      label={staff.personalPinHash ? 'Set' : 'Not set'}
+                      tone={staff.personalPinHash ? 'success' : 'neutral'}
+                    />
+                  </InfoRow>
+                ) : null}
 
               </View>
 
@@ -575,6 +615,15 @@ export function StaffProfileScreen({ navigation, route }: Props) {
                   subtitle="Rescan face for appearance changes"
                   onPress={() => setFaceScanOpen(true)}
                 />
+                {staff.requiresPin ? (
+                  <ActionRow
+                    compact
+                    icon="key-outline"
+                    title="Reset personal PIN"
+                    subtitle="Change the look-alike PIN"
+                    onPress={() => setAdminPinVisible(true)}
+                  />
+                ) : null}
 
                 <ActionRow
                   compact
@@ -838,6 +887,51 @@ export function StaffProfileScreen({ navigation, route }: Props) {
           </View>
         </View>
       </Modal>
+
+      <AdminPinModal
+        visible={adminPinVisible}
+        onClose={() => setAdminPinVisible(false)}
+        onSuccess={() => {
+          setAdminPinVisible(false);
+          setPersonalPinVisible(true);
+        }}
+      />
+
+      <PersonalPinModal
+        visible={personalPinVisible}
+        staffId={staff?.id ?? null}
+        personName={staff?.fullName ?? ''}
+        personPhotoUri={staff?.photoUri ?? null}
+        mode="create"
+        onClose={() => setPersonalPinVisible(false)}
+        onSuccess={async (pin) => {
+          if (!staffId || !staff) return;
+          const groupMembers = staff.similarGroupId
+            ? getStaffByGroup(staff.similarGroupId).filter((member) => member.id !== staff.id)
+            : [];
+          for (const member of groupMembers) {
+            if (await isPersonalPinUsedByGroup(member.id, pin, [member])) {
+              alert({
+                tone: 'danger',
+                title: 'PIN already in use',
+                message: 'PINs must be different for look-alikes.',
+              });
+              setPersonalPinVisible(true);
+              return;
+            }
+          }
+          await setPersonalStaffPin(staffId, pin);
+          clearPersonalPinFailures(staffId);
+          loadStaff(staffId);
+          setPersonalPinVisible(false);
+          alert({
+            tone: 'success',
+            title: 'Personal PIN saved',
+            message: `${staff.fullName}'s personal PIN has been updated.`,
+          });
+        }}
+      />
+
     </Screen>
   );
 }

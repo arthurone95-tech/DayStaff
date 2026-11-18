@@ -16,6 +16,7 @@ import { DEFAULT_COMPANY_NAME, QR_SUCCESS_RESET_MS } from '../../config/app';
 import { AppButton } from '../../components/AppButton';
 import { useAppDialog } from '../../components/AppDialog';
 import { FeedbackModal } from '../../components/FeedbackModal';
+import { PersonalPinModal } from '../../components/PersonalPinModal';
 import { Screen } from '../../components/Screen';
 import {
   getActiveStaff,
@@ -28,6 +29,10 @@ import {
   getModeResetTimeoutSeconds,
 } from '../../services/appSettings';
 import { clockOutStaff, recordAttendance } from '../../services/attendanceLogic';
+import {
+  LOOKALIKE_FACE_THRESHOLD,
+  maxFaceSimilarity,
+} from '../../services/lookalikeService';
 
 import {
   compareFaceEmbeddings,
@@ -46,6 +51,7 @@ import type {
 } from '../../types';
 import { formatDateLong, formatTime24h } from '../../utils/date';
 import { enableKiosk, isKioskLockTaskAvailable } from '../../services/kioskLockTask';
+import { playErrorSound, playSuccessSound } from '../../services/kioskSound';
 import { AdminPinModal } from '../auth/AdminPinModal';
 import { CodeKeypad } from './CodeKeypad';
 import { FaceScanPanel } from './FaceScanPanel';
@@ -86,6 +92,8 @@ export function KioskTerminalScreen() {
   const [feedbackVisible, setFeedbackVisible] = useState(false);
   const [simulated, setSimulated] = useState(false);
   const [pinVisible, setPinVisible] = useState(false);
+  const [personalPinVisible, setPersonalPinVisible] = useState(false);
+  const [personalPinStaff, setPersonalPinStaff] = useState<Staff | null>(null);
   const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
 
   useFocusEffect(
@@ -162,15 +170,21 @@ export function KioskTerminalScreen() {
 
   useEffect(() => () => clearFeedbackTimer(), [clearFeedbackTimer]);
 
+  useEffect(() => {
+    void import('../../services/kioskSound').then((m) => m.preloadKioskSounds()).catch(() => {});
+  }, []);
+
+
   const handleCodeChange = useCallback((next: string) => {
     setCode(next.toUpperCase());
   }, []);
 
   const handleCodeSubmit = useCallback((submittedCode?: string) => {
-    if (operationRef.current || faceBusy) return;
+    if (operationRef.current || faceBusy || personalPinVisible) return;
     const codeToUse = (submittedCode ?? code).trim().toUpperCase();
     const member = staff.find((item) => item.staffCode?.toUpperCase() === codeToUse);
     if (!member) {
+      void playErrorSound();
       alert({
         tone: 'warning',
         title: 'Staff code not recognised',
@@ -181,6 +195,7 @@ export function KioskTerminalScreen() {
       return;
     }
     if (!member.faceSignature) {
+      void playErrorSound();
       alert({
         tone: 'warning',
         title: 'No face profile',
@@ -198,7 +213,7 @@ export function KioskTerminalScreen() {
     frames: string[],
     embedding: number[] | null,
   ) => {
-    if (!selectedStaff || operationRef.current || faceBusy) return;
+    if (!selectedStaff || operationRef.current || faceBusy || personalPinVisible) return;
     operationRef.current = true;
     setFaceBusy(true);
     try {
@@ -215,11 +230,35 @@ export function KioskTerminalScreen() {
       if (!liveEmbedding) {
         throw new Error('The scan could not be converted into a face signature.');
       }
-      const threshold = oneToOneThreshold();
-      const similarity = compareFaceEmbeddings(liveEmbedding, stored);
+      const threshold = selectedStaff.requiresPin
+        ? LOOKALIKE_FACE_THRESHOLD
+        : oneToOneThreshold();
+      const similarity = maxFaceSimilarity(selectedStaff, liveEmbedding);
       if (similarity >= threshold) {
+        if (selectedStaff.requiresPin && !selectedStaff.personalPinHash) {
+          void playErrorSound();
+              alert({
+            tone: 'danger',
+            title: 'PIN not set',
+            message: 'PIN not set. Please ask the administrator.',
+            buttonLabel: 'OK',
+          });
+          resetFlow();
+          return;
+        }
+
+        if (selectedStaff.requiresPin) {
+          setPersonalPinStaff(selectedStaff);
+          setPersonalPinVisible(true);
+          setFaceBusy(false);
+          operationRef.current = false;
+          setFaceScanning(false);
+          return;
+        }
+
         const result = recordAttendance(selectedStaff, new Date(), 'FACE_BIOMETRIC');
-        setFeedback(result);
+        void playSuccessSound();
+          setFeedback(result);
         setSimulated(false);
         setFeedbackVisible(true);
 
@@ -233,7 +272,8 @@ export function KioskTerminalScreen() {
           needsAttention ? ATTENTION_FEEDBACK_MS : SUCCESS_FEEDBACK_MS,
         );
       } else {
-        alert({
+        void playErrorSound();
+          alert({
           tone: 'warning',
           title: 'Face not recognized',
           message: `We could not verify your face for ${selectedStaff.fullName}. Face the camera straight on with good light and try again.`,
@@ -242,6 +282,7 @@ export function KioskTerminalScreen() {
         resetFlow();
       }
     } catch (error) {
+      void playErrorSound();
       alert({
         tone: 'danger',
         title: 'Face check unavailable',
@@ -260,12 +301,14 @@ export function KioskTerminalScreen() {
     operationRef.current = true;
     try {
       const result = clockOutStaff(feedback.staff, new Date(), 'FACE_BIOMETRIC');
+      void playSuccessSound();
       setFeedback(result);
       setSimulated(false);
       setFeedbackVisible(true);
       scheduleFeedbackDismiss(SUCCESS_FEEDBACK_MS);
     } catch (error) {
       setFeedbackVisible(false);
+      void playErrorSound();
       alert({
         tone: 'danger',
         title: 'Could not sign out',
@@ -280,6 +323,30 @@ export function KioskTerminalScreen() {
     clearFeedbackTimer();
     setFeedbackVisible(false);
     resetFlow();
+  };
+
+  const closePersonalPin = () => {
+    setPersonalPinVisible(false);
+    setPersonalPinStaff(null);
+    resetFlow();
+    setCode('');
+    setSelectedStaff(null);
+  };
+
+  const handlePersonalPinSuccess = (pin: string) => {
+    if (!personalPinStaff) return;
+    const result = recordAttendance(personalPinStaff, new Date(), 'face_pin');
+    void playSuccessSound();
+    setPersonalPinVisible(false);
+    setPersonalPinStaff(null);
+    setFeedback(result);
+    setSimulated(false);
+    setFeedbackVisible(true);
+    const needsAttention =
+      result.action === 'already_signed_in' || result.action === 'already_completed';
+    scheduleFeedbackDismiss(
+      needsAttention ? ATTENTION_FEEDBACK_MS : SUCCESS_FEEDBACK_MS,
+    );
   };
 
   const faceProfileCount =
@@ -365,7 +432,7 @@ export function KioskTerminalScreen() {
             onScanEnd={() => setFaceScanning(false)}
             onScanned={(frames, embedding) => handleFaceScanned(frames, embedding)}
             onError={(message) => {
-              alert({ tone: 'danger', title: 'Camera error', message });
+                      alert({ tone: 'danger', title: 'Camera error', message });
               resetFlow();
             }}
             triggerScan={scanTrigger}
@@ -394,6 +461,16 @@ export function KioskTerminalScreen() {
         simulated={simulated}
         onClose={closeFeedback}
         onSignOut={feedback?.action === 'already_signed_in' ? handleManualSignOut : undefined}
+      />
+
+      <PersonalPinModal
+        visible={personalPinVisible}
+        staffId={personalPinStaff?.id ?? null}
+        personName={personalPinStaff?.fullName ?? ''}
+        personPhotoUri={personalPinStaff?.photoUri ?? null}
+        mode="verify"
+        onClose={closePersonalPin}
+        onSuccess={handlePersonalPinSuccess}
       />
 
       <AdminPinModal

@@ -20,6 +20,7 @@ import { useAppDialog } from '../../components/AppDialog';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
 
+import { PersonalPinModal } from '../../components/PersonalPinModal';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import {
@@ -27,12 +28,28 @@ import {
 } from '../../config/app';
 import {
   createStaff,
+  getStaffByGroup,
+  setPersonalStaffPin,
+  setSimilarGroup,
+  setStaffFaceEmbeddings,
   setStaffPhotoAndFaceSignature,
 } from '../../database/queries';
+import { getDb } from '../../database/db';
+import { AdminPinModal } from '../auth/AdminPinModal';
 import type { RootNavigation } from '../../navigation/types';
 import type { Staff } from '../../types';
 import {
+  LOOKALIKE_FACE_THRESHOLD,
+  createLookalikeGroupId,
+  DUPLICATE_GUARD_THRESHOLD,
+  ENROLL_OUTLIER_MIN_SIMILARITY,
+  filterEnrollmentFrames,
+  hashPersonalPin,
+  isPersonalPinUsedByGroup,
+} from '../../services/lookalikeService';
+import {
   analyzeFace,
+  compareFaceEmbeddings,
   FaceEngineUnavailableError,
   FacePhotoError,
   prepareFaceEngine,
@@ -41,6 +58,7 @@ import {
   type FaceAnalysis,
 } from '../../services/faceEngine';
 import {
+  averageEmbeddings,
   captureChallengeFrames,
   LIVENESS_STEPS,
   verifyLiveness,
@@ -67,7 +85,7 @@ import { colors, fontSize, radius, shadow, spacing } from '../../theme';
  */
 export function RegisterStaffScreen() {
   const navigation = useNavigation<RootNavigation>();
-  const { alert, confirm } = useAppDialog();
+  const { alert, confirm, actions } = useAppDialog();
 
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -111,6 +129,17 @@ export function RegisterStaffScreen() {
   const [faceCheckBusy, setFaceCheckBusy] = useState(false);
   const [duplicateFaceStaff, setDuplicateFaceStaff] = useState<Staff | null>(null);
   const [saving, setSaving] = useState(false);
+  const [faceEmbeddings, setFaceEmbeddings] = useState<number[][] | null>(null);
+  const [profileFaceSignature, setProfileFaceSignature] = useState<string | null>(null);
+  const [lookalikeMode, setLookalikeMode] = useState(false);
+  const [adminPinVisible, setAdminPinVisible] = useState(false);
+  const [personalPinVisible, setPersonalPinVisible] = useState(false);
+  const [personalPinPerson, setPersonalPinPerson] = useState<{ fullName: string; photoUri: string | null } | null>(null);
+  const [personalPinCreateMode, setPersonalPinCreateMode] = useState(true);
+  const [lookalikeStage, setLookalikeStage] = useState<'new' | 'existing'>('new');
+  const [lookalikeMatchedStaff, setLookalikeMatchedStaff] = useState<Staff | null>(null);
+  const [lookalikeNewPin, setLookalikeNewPin] = useState<string | null>(null);
+  const [lookalikeExistingPin, setLookalikeExistingPin] = useState<string | null>(null);
 
   const cameraRef = useRef<CameraView | null>(null);
   const { pictureSize, chooseSize } = useFacePictureSize(cameraRef);
@@ -176,7 +205,10 @@ export function RegisterStaffScreen() {
     // Every scan starts clean. Before, a previous "already registered" result
     // stayed set forever, so Save stayed blocked until the screen was closed.
     setFaceSignature(null);
+    setProfileFaceSignature(null);
+    setFaceEmbeddings(null);
     setDuplicateFaceStaff(null);
+    setLookalikeMode(false);
     try {
       const engineReady = await prepareFaceEngine();
       const shutter = () =>
@@ -200,8 +232,10 @@ export function RegisterStaffScreen() {
       );
       setScanHint('Building face profile…');
 
-      let signature: string;
+      let straightSignature: string;
+      let profileSignature: string;
       let frameEmbeddings: number[][] | null = null;
+      let keptEmbeddings: number[][] = [];
       if (engineReady) {
         // Same head-turn check as the kiosk, so a photo cannot be enrolled.
         const liveness = await verifyLiveness(frames, jobs);
@@ -210,15 +244,57 @@ export function RegisterStaffScreen() {
             liveness.message ?? 'The head-turn check failed. Please try again.',
           );
         }
-        signature = serializeFaceEmbedding(liveness.embedding);
+        // Collect one more straight-on frame when possible, without adding a tap.
+        const allEmbeddings: number[][] = [...(liveness.embeddings ?? [])];
+        const allFrames: string[] = [...frames];
+        if (cameraRef.current) {
+          setScanHint('One more straight-on photo…');
+          await new Promise((resolve) => setTimeout(resolve, 700));
+          try {
+            const photo = await cameraRef.current.takePictureAsync({
+              quality: FACE_PHOTO_QUALITY,
+              base64: false,
+              skipProcessing: false,
+            });
+            if (photo?.uri) {
+              const upright = await prepareFacePhoto(photo.uri);
+              const analysis = await analyzeFace(upright);
+              const similarity = compareFaceEmbeddings(analysis.embedding, liveness.embedding);
+              if (
+                analysis.pose &&
+                analysis.pose.faceWidthRatio >= 0.2 &&
+                similarity >= ENROLL_OUTLIER_MIN_SIMILARITY
+              ) {
+                allFrames.push(photo.uri);
+                allEmbeddings.push(analysis.embedding);
+              }
+            }
+          } catch {
+            // The extra frame is optional.
+          }
+        }
+        const filtered = filterEnrollmentFrames(
+          allEmbeddings.map((embedding) => ({ embedding })),
+        );
+        keptEmbeddings = filtered.map((item) => item.embedding);
+        if (keptEmbeddings.length === 0) {
+          keptEmbeddings = [liveness.embedding];
+        }
+        const averaged = averageEmbeddings(keptEmbeddings);
+        straightSignature = serializeFaceEmbedding(liveness.embedding);
+        profileSignature = serializeFaceEmbedding(averaged ?? liveness.embedding);
         frameEmbeddings = liveness.embeddings;
       } else {
         const enrollment = await createStaffFaceSignature(frames, {
           allowLegacy: true,
         });
-        signature = enrollment.signature;
+        straightSignature = enrollment.signature;
+        profileSignature = enrollment.signature;
+        keptEmbeddings = [];
       }
-      setFaceSignature(signature);
+      setFaceSignature(straightSignature);
+      setProfileFaceSignature(profileSignature);
+      setFaceEmbeddings(keptEmbeddings.length > 0 ? keptEmbeddings : null);
       if (frames.length > 0) {
         setPhotoUri(frames[0]);
       }
@@ -227,46 +303,66 @@ export function RegisterStaffScreen() {
       // Check whether this face is already registered to another staff member.
       setFaceCheckBusy(true);
       try {
-        const existing = await findDuplicateFace(signature, undefined, frameEmbeddings);
+        const existing = await findDuplicateFace(straightSignature, undefined, frameEmbeddings);
         if (existing) {
           setDuplicateFaceStaff(existing.staff);
-          confirm({
+          actions({
             tone: 'warning',
             icon: 'warning-outline',
             title: 'Face already registered',
-            message: `This face is already registered under ${existing.staff.fullName} (${existing.staff.staffCode}). Update their existing face scan instead, or cancel?`,
-            confirmLabel: 'Update existing face',
-            cancelLabel: 'Cancel',
-            onConfirm: async () => {
-              try {
-                setStaffPhotoAndFaceSignature(
-                  existing.staff.id,
-                  photoUri ?? frames[0],
-                  signature,
-                );
-                alert({
-                  tone: 'success',
-                  title: 'Face scan updated',
-                  message: `${existing.staff.fullName}'s face scan has been updated.`,
-                });
-                navigation.goBack();
-              } catch (updateError) {
-                alert({
-                  tone: 'danger',
-                  title: 'Could not update face scan',
-                  message:
-                    updateError instanceof Error
-                      ? updateError.message
-                      : 'Please try again.',
-                });
-              }
-            },
-            onCancel: () => {
-              setFaceSignature(null);
-              setPhotoUri(null);
-              setDuplicateFaceStaff(null);
-              setFaceError(null);
-            },
+            message: `This face is already registered under ${existing.staff.fullName} (${existing.staff.staffCode}).`,
+            actions: [
+              {
+                label: 'Update existing face',
+                onPress: async () => {
+                  try {
+                    setStaffPhotoAndFaceSignature(
+                      existing.staff.id,
+                      photoUri ?? frames[0],
+                      profileSignature,
+                    );
+                    if (keptEmbeddings.length > 0) {
+                      setStaffFaceEmbeddings(existing.staff.id, keptEmbeddings);
+                    }
+                    alert({
+                      tone: 'success',
+                      title: 'Face scan updated',
+                      message: `${existing.staff.fullName}'s face scan has been updated.`,
+                    });
+                    navigation.goBack();
+                  } catch (updateError) {
+                    alert({
+                      tone: 'danger',
+                      title: 'Could not update face scan',
+                      message:
+                        updateError instanceof Error
+                          ? updateError.message
+                          : 'Please try again.',
+                    });
+                  }
+                },
+              },
+              {
+                label: 'Different person (Twin / Look-alike)',
+                onPress: () => {
+                  setLookalikeMatchedStaff(existing.staff);
+                  setAdminPinVisible(true);
+                },
+              },
+              {
+                label: 'Cancel',
+                tone: 'cancel',
+                onPress: () => {
+                  setFaceSignature(null);
+                  setProfileFaceSignature(null);
+                  setFaceEmbeddings(null);
+                  setPhotoUri(null);
+                  setDuplicateFaceStaff(null);
+                  setFaceError(null);
+                  setLookalikeMode(false);
+                },
+              },
+            ],
           });
         }
       } finally {
@@ -304,8 +400,9 @@ export function RegisterStaffScreen() {
       return;
     }
 
-    // Block save if this face is already registered to someone else.
-    if (duplicateFaceStaff) {
+    // Block save if this face is already registered to someone else, unless the
+    // admin chose the look-alike path.
+    if (duplicateFaceStaff && !lookalikeMode) {
       alert({
         tone: 'danger',
         title: 'Face already registered',
@@ -314,14 +411,65 @@ export function RegisterStaffScreen() {
       return;
     }
 
+    if (lookalikeMode && lookalikeMatchedStaff && lookalikeNewPin && lookalikeExistingPin) {
+      if (lookalikeNewPin === lookalikeExistingPin) {
+        alert({
+          tone: 'danger',
+          title: 'PINs must be different',
+          message: 'PINs must be different for look-alikes.',
+        });
+        setLookalikeStage('new');
+        setPersonalPinPerson({
+          fullName,
+          photoUri: photoUri ?? null,
+        });
+        setPersonalPinVisible(true);
+        return;
+      }
+      const groupMembers = lookalikeMatchedStaff.similarGroupId
+        ? getStaffByGroup(lookalikeMatchedStaff.similarGroupId)
+        : [];
+      const otherMembers = groupMembers.filter((member) => member.id !== lookalikeMatchedStaff.id);
+      for (const member of otherMembers) {
+        if (await isPersonalPinUsedByGroup(member.id, lookalikeNewPin, [member])) {
+          alert({
+            tone: 'danger',
+            title: 'PIN already in use',
+            message: 'PINs must be different for look-alikes.',
+          });
+          setLookalikeStage('new');
+          setPersonalPinPerson({
+            fullName,
+            photoUri: photoUri ?? null,
+          });
+          setPersonalPinVisible(true);
+          return;
+        }
+      }
+    }
+
     setSaving(true);
     try {
       const created = createStaff({
         fullName,
         photoUri,
-        faceSignature,
+        faceSignature: profileFaceSignature,
+        faceEmbeddings: faceEmbeddings ?? null,
       });
+      if (lookalikeMode && lookalikeMatchedStaff && lookalikeNewPin && lookalikeExistingPin) {
+        const groupId =
+          lookalikeMatchedStaff.similarGroupId ?? createLookalikeGroupId();
+        const newHash = await hashPersonalPin(lookalikeNewPin);
+        const existingHash = await hashPersonalPin(lookalikeExistingPin);
+        getDb().withTransactionSync(() => {
+          setPersonalStaffPin(created.id, newHash.hash, newHash.salt);
+          setPersonalStaffPin(lookalikeMatchedStaff.id, existingHash.hash, existingHash.salt);
+          setSimilarGroup([created.id, lookalikeMatchedStaff.id], groupId);
+        });
+      }
       setRegisteredInfo({ name: created.fullName, code: created.staffCode });
+      setLookalikeMode(false);
+      setDuplicateFaceStaff(null);
     } catch (error) {
       alert({
         tone: 'danger',
@@ -350,7 +498,7 @@ export function RegisterStaffScreen() {
       ? 'Name and biometric consent.'
       : 'A guided live scan that builds the recognition profile and profile photo.';
 
-  const faceReady = !!faceSignature && !duplicateFaceStaff;
+  const faceReady = !!profileFaceSignature && !duplicateFaceStaff;
 
   return (
     <Screen>
@@ -574,6 +722,167 @@ export function RegisterStaffScreen() {
           </View>
         </Modal>
       ) : null}
+
+      <AdminPinModal
+        visible={adminPinVisible}
+        onClose={() => {
+          setAdminPinVisible(false);
+          actions({
+            tone: 'warning',
+            icon: 'warning-outline',
+            title: 'Face already registered',
+            message: `This face is already registered under ${lookalikeMatchedStaff?.fullName ?? ''} (${lookalikeMatchedStaff?.staffCode ?? ''}).`,
+            actions: [
+              {
+                label: 'Update existing face',
+                onPress: async () => {
+                  if (!lookalikeMatchedStaff) return;
+                  try {
+                    setStaffPhotoAndFaceSignature(
+                      lookalikeMatchedStaff.id,
+                      photoUri ?? null,
+                      profileFaceSignature ?? faceSignature ?? '',
+                    );
+                    if (faceEmbeddings) {
+                      setStaffFaceEmbeddings(lookalikeMatchedStaff.id, faceEmbeddings);
+                    }
+                    alert({
+                      tone: 'success',
+                      title: 'Face scan updated',
+                      message: `${lookalikeMatchedStaff.fullName}'s face scan has been updated.`,
+                    });
+                    navigation.goBack();
+                  } catch (updateError) {
+                    alert({
+                      tone: 'danger',
+                      title: 'Could not update face scan',
+                      message:
+                        updateError instanceof Error
+                          ? updateError.message
+                          : 'Please try again.',
+                    });
+                  }
+                },
+              },
+              {
+                label: 'Different person (Twin / Look-alike)',
+                onPress: () => {
+                  setAdminPinVisible(true);
+                },
+              },
+              {
+                label: 'Cancel',
+                tone: 'cancel',
+                onPress: () => {
+                  setFaceSignature(null);
+                  setProfileFaceSignature(null);
+                  setFaceEmbeddings(null);
+                  setPhotoUri(null);
+                  setDuplicateFaceStaff(null);
+                  setFaceError(null);
+                  setLookalikeMode(false);
+                },
+              },
+            ],
+          });
+        }}
+        onSuccess={() => {
+          setAdminPinVisible(false);
+          setLookalikeStage('new');
+          setLookalikeNewPin(null);
+          setLookalikeExistingPin(null);
+          setPersonalPinPerson({
+            fullName,
+            photoUri: photoUri ?? null,
+          });
+          setPersonalPinCreateMode(true);
+          setPersonalPinVisible(true);
+        }}
+      />
+
+      <PersonalPinModal
+        visible={personalPinVisible}
+        personName={
+          personalPinPerson?.fullName ??
+          (lookalikeStage === 'existing' ? lookalikeMatchedStaff?.fullName ?? '' : fullName)
+        }
+        personPhotoUri={
+          personalPinPerson?.photoUri ??
+          (lookalikeStage === 'existing' ? lookalikeMatchedStaff?.photoUri ?? null : photoUri)
+        }
+        mode="create"
+        onClose={() => {
+          setPersonalPinVisible(false);
+          setFaceSignature(null);
+          setProfileFaceSignature(null);
+          setFaceEmbeddings(null);
+          setPhotoUri(null);
+          setDuplicateFaceStaff(null);
+          setFaceError(null);
+          setLookalikeMode(false);
+          setLookalikeMatchedStaff(null);
+          setLookalikeStage('new');
+          setLookalikeNewPin(null);
+          setLookalikeExistingPin(null);
+        }}
+        onSuccess={async (pin) => {
+          if (lookalikeStage === 'new') {
+            setLookalikeNewPin(pin);
+            setLookalikeStage('existing');
+            setPersonalPinPerson({
+              fullName: lookalikeMatchedStaff?.fullName ?? '',
+              photoUri: lookalikeMatchedStaff?.photoUri ?? null,
+            });
+            setPersonalPinVisible(true);
+            return;
+          }
+
+          if (pin === lookalikeNewPin) {
+            alert({
+              tone: 'danger',
+              title: 'PINs must be different',
+              message: 'PINs must be different for look-alikes.',
+            });
+            setLookalikeNewPin(null);
+            setLookalikeStage('new');
+            setPersonalPinPerson({
+              fullName,
+              photoUri: photoUri ?? null,
+            });
+            setPersonalPinVisible(true);
+            return;
+          }
+
+          const groupMembers = lookalikeMatchedStaff?.similarGroupId
+            ? getStaffByGroup(lookalikeMatchedStaff.similarGroupId)
+            : [];
+          const otherMembers = groupMembers.filter(
+            (member) => member.id !== lookalikeMatchedStaff?.id,
+          );
+          for (const member of otherMembers) {
+            if (await isPersonalPinUsedByGroup(member.id, pin, [member])) {
+              alert({
+                tone: 'danger',
+                title: 'PIN already in use',
+                message: 'PINs must be different for look-alikes.',
+              });
+              setLookalikeNewPin(null);
+              setLookalikeStage('new');
+              setPersonalPinPerson({
+                fullName,
+                photoUri: photoUri ?? null,
+              });
+              setPersonalPinVisible(true);
+              return;
+            }
+          }
+
+          setLookalikeExistingPin(pin);
+          setLookalikeMode(true);
+          setDuplicateFaceStaff(null);
+          setPersonalPinVisible(false);
+        }}
+      />
 
     </Screen>
   );

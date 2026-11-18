@@ -20,6 +20,13 @@ export interface BackupStaffRow {
   staff_code: string | null;
   photo_uri: string | null;
   face_signature: string | null;
+  face_embeddings: string | null;
+  similar_group_id: string | null;
+  requires_pin: number;
+  personal_pin_hash: string | null;
+  personal_pin_salt: string | null;
+  personal_pin_failed_attempts: number;
+  personal_pin_locked_until: number | null;
   staff_pin_hash: string | null;
   staff_pin_salt: string | null;
   pin_failed_attempts: number;
@@ -176,6 +183,13 @@ async function openAndReadBackup(pickedUri: string): Promise<BackupSnapshot> {
          ${has('staff_code') ? 'staff_code' : 'NULL AS staff_code'},
          ${has('photo_uri') ? 'photo_uri' : 'NULL AS photo_uri'},
          ${has('face_signature') ? 'face_signature' : 'NULL AS face_signature'},
+          ${has('face_embeddings') ? 'face_embeddings' : 'NULL AS face_embeddings'},
+          ${has('similar_group_id') ? 'similar_group_id' : 'NULL AS similar_group_id'},
+          ${has('requires_pin') ? 'requires_pin' : '0 AS requires_pin'},
+          ${has('personal_pin_hash') ? 'personal_pin_hash' : 'NULL AS personal_pin_hash'},
+          ${has('personal_pin_salt') ? 'personal_pin_salt' : 'NULL AS personal_pin_salt'},
+          ${has('personal_pin_failed_attempts') ? 'personal_pin_failed_attempts' : '0 AS personal_pin_failed_attempts'},
+          ${has('personal_pin_locked_until') ? 'personal_pin_locked_until' : 'NULL AS personal_pin_locked_until'},
          ${has('staff_pin_hash') ? 'staff_pin_hash' : 'NULL AS staff_pin_hash'},
          ${has('staff_pin_salt') ? 'staff_pin_salt' : 'NULL AS staff_pin_salt'},
          ${has('pin_failed_attempts') ? 'pin_failed_attempts' : '0 AS pin_failed_attempts'},
@@ -331,27 +345,35 @@ export async function importBackupMerge(
       const code = normalizeCode(staff.staff_code);
       try {
         const result = getDb().runSync(
-          `INSERT INTO staff
-             (full_name, staff_code, photo_uri, face_signature, staff_pin_hash, staff_pin_salt,
-              pin_failed_attempts, pin_locked_until, device_token, device_secret, device_public_key,
+           `INSERT INTO staff
+             (full_name, staff_code, photo_uri, face_signature, face_embeddings, staff_pin_hash, staff_pin_salt,
+              pin_failed_attempts, pin_locked_until, similar_group_id, requires_pin, personal_pin_hash, personal_pin_salt,
+              personal_pin_failed_attempts, personal_pin_locked_until, device_token, device_secret, device_public_key,
               device_paired_at, is_active, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            staff.full_name,
-            code,
-            staff.photo_uri ?? null,
-            staff.face_signature ?? null,
-            staff.staff_pin_hash ?? null,
-            staff.staff_pin_salt ?? null,
-            Number(staff.pin_failed_attempts ?? 0),
-            staff.pin_locked_until ?? null,
-            staff.device_token ?? null,
-            staff.device_secret ?? null,
-            staff.device_public_key ?? null,
-            staff.device_paired_at ?? null,
-            staff.is_active ? 1 : 0,
-            staff.created_at || new Date().toISOString(),
-          ],
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           [
+             staff.full_name,
+             code,
+             staff.photo_uri ?? null,
+             staff.face_signature ?? null,
+             staff.face_embeddings ?? null,
+             staff.staff_pin_hash ?? null,
+             staff.staff_pin_salt ?? null,
+             Number(staff.pin_failed_attempts ?? 0),
+             staff.pin_locked_until ?? null,
+             staff.similar_group_id ?? null,
+             Number(staff.requires_pin ?? 0) ? 1 : 0,
+             staff.personal_pin_hash ?? null,
+             staff.personal_pin_salt ?? null,
+             Number(staff.personal_pin_failed_attempts ?? 0),
+             staff.personal_pin_locked_until ?? null,
+             staff.device_token ?? null,
+             staff.device_secret ?? null,
+             staff.device_public_key ?? null,
+             staff.device_paired_at ?? null,
+             staff.is_active ? 1 : 0,
+             staff.created_at || new Date().toISOString(),
+           ],
         );
         const newId = Number(result.lastInsertRowId);
         idMap.set(staff.id, newId);

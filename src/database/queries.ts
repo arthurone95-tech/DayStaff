@@ -64,10 +64,17 @@ interface StaffRow {
   staff_code: string | null;
   photo_uri: string | null;
   face_signature: string | null;
+  face_embeddings: string | null;
   staff_pin_hash: string | null;
   staff_pin_salt: string | null;
   pin_failed_attempts: number;
   pin_locked_until: string | null;
+  similar_group_id: string | null;
+  requires_pin: number;
+  personal_pin_hash: string | null;
+  personal_pin_salt: string | null;
+  personal_pin_failed_attempts: number;
+  personal_pin_locked_until: number | null;
   device_token: string | null;
   device_secret: string | null;
   device_paired_at: string | null;
@@ -103,21 +110,48 @@ interface ExportRow extends AttendanceRow {
   staff_code: string | null;
 }
 
-const mapStaff = (row: StaffRow): Staff => ({
-  id: row.id,
-  fullName: row.full_name,
-  staffCode: row.staff_code ?? '',
-  photoUri: row.photo_uri,
-  faceSignature: row.face_signature,
-  staffPinHash: row.staff_pin_hash,
-  staffPinSalt: row.staff_pin_salt,
-  pinFailedAttempts: row.pin_failed_attempts ?? 0,
-  pinLockedUntil: row.pin_locked_until,
-  deviceToken: row.device_token ?? null,
-  devicePairedAt: row.device_paired_at ?? null,
-  isActive: row.is_active,
-  createdAt: row.created_at,
-});
+const mapStaff = (row: StaffRow): Staff => {
+  let faceEmbeddings: number[][] | null = null;
+  if (row.face_embeddings) {
+    try {
+      const parsed = JSON.parse(row.face_embeddings);
+      if (
+        Array.isArray(parsed) &&
+        parsed.every(
+          (item) =>
+            Array.isArray(item) &&
+            item.every((value) => typeof value === 'number' && Number.isFinite(value)),
+        )
+      ) {
+        faceEmbeddings = parsed as number[][];
+      }
+    } catch {
+      faceEmbeddings = null;
+    }
+  }
+  return {
+    id: row.id,
+    fullName: row.full_name,
+    staffCode: row.staff_code ?? '',
+    photoUri: row.photo_uri,
+    faceSignature: row.face_signature,
+    faceEmbeddings,
+    similarGroupId: row.similar_group_id ?? null,
+    requiresPin: (row.requires_pin ?? 0) === 1,
+    personalPinHash: row.personal_pin_hash ?? null,
+    personalPinSalt: row.personal_pin_salt ?? null,
+    personalPinFailedAttempts: row.personal_pin_failed_attempts ?? 0,
+    personalPinLockedUntil: row.personal_pin_locked_until ?? null,
+    staffPinHash: row.staff_pin_hash,
+    staffPinSalt: row.staff_pin_salt,
+    pinFailedAttempts: row.pin_failed_attempts ?? 0,
+    pinLockedUntil: row.pin_locked_until,
+    deviceToken: row.device_token ?? null,
+    devicePairedAt: row.device_paired_at ?? null,
+    isActive: row.is_active,
+    createdAt: row.created_at,
+  };
+};
 
 const mapLog = (row: AttendanceRow): AttendanceLog => ({
   id: row.id,
@@ -204,13 +238,14 @@ export function createStaff(input: NewStaff): Staff {
   const staffCode = providedCode || generateUniqueStaffCode();
   const result = getDb().runSync(
     `INSERT INTO staff
-       (full_name, staff_code, photo_uri, face_signature, staff_pin_hash, staff_pin_salt, pin_failed_attempts, pin_locked_until, is_active, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 0, NULL, 1, ?)`,
+       (full_name, staff_code, photo_uri, face_signature, face_embeddings, staff_pin_hash, staff_pin_salt, pin_failed_attempts, pin_locked_until, similar_group_id, requires_pin, personal_pin_hash, personal_pin_salt, personal_pin_failed_attempts, personal_pin_locked_until, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, 0, NULL, NULL, 0, NULL, 1, ?)`,
     [
       input.fullName.trim(),
       staffCode,
       input.photoUri,
       input.faceSignature,
+      input.faceEmbeddings ? JSON.stringify(input.faceEmbeddings) : null,
       input.staffPinHash ?? null,
       input.staffPinSalt ?? null,
       createdAt,
@@ -282,6 +317,86 @@ export function setStaffPhotoAndFaceSignature(
   getDb().runSync(
     'UPDATE staff SET photo_uri = ?, face_signature = ? WHERE id = ?',
     [photoUri, signature, id],
+  );
+}
+
+export function setStaffFaceEmbeddings(
+  id: number,
+  embeddings: number[][] | null,
+): void {
+  getDb().runSync('UPDATE staff SET face_embeddings = ? WHERE id = ?', [
+    embeddings ? JSON.stringify(embeddings) : null,
+    id,
+  ]);
+}
+
+export function getStaffByGroup(groupId: string): Staff[] {
+  const rows = getDb().getAllSync<StaffRow>(
+    'SELECT * FROM staff WHERE similar_group_id = ? ORDER BY full_name COLLATE NOCASE ASC',
+    [groupId],
+  );
+  return rows.map(mapStaff);
+}
+
+export function setPersonalStaffPin(
+  id: number,
+  hash: string,
+  salt: string,
+): void {
+  getDb().runSync(
+    'UPDATE staff SET personal_pin_hash = ?, personal_pin_salt = ?, personal_pin_failed_attempts = 0, personal_pin_locked_until = NULL WHERE id = ?',
+    [hash, salt, id],
+  );
+}
+
+export function recordPersonalPinFailure(id: number): {
+  attempts: number;
+  lockedUntil: number | null;
+} {
+  const row = getDb().getFirstSync<{
+    personal_pin_failed_attempts: number | null;
+    personal_pin_locked_until: number | null;
+  }>(
+    'SELECT personal_pin_failed_attempts, personal_pin_locked_until FROM staff WHERE id = ?',
+    [id],
+  );
+  const now = Date.now();
+  const currentUntil = row?.personal_pin_locked_until ?? null;
+  if (currentUntil && currentUntil > now) {
+    return {
+      attempts: row?.personal_pin_failed_attempts ?? 0,
+      lockedUntil: currentUntil,
+    };
+  }
+
+  const attempts = (row?.personal_pin_failed_attempts ?? 0) + 1;
+  let lockedUntil: number | null = null;
+  if (attempts >= 3) {
+    const level = Math.max(0, Math.floor((attempts - 3) / 3));
+    const durationSeconds =
+      [30, 60, 120, 240][Math.min(level, 3)] ?? 240;
+    lockedUntil = now + durationSeconds * 1000;
+  }
+  getDb().runSync(
+    'UPDATE staff SET personal_pin_failed_attempts = ?, personal_pin_locked_until = ? WHERE id = ?',
+    [attempts, lockedUntil, id],
+  );
+  return { attempts, lockedUntil };
+}
+
+export function clearPersonalPinFailures(id: number): void {
+  getDb().runSync(
+    'UPDATE staff SET personal_pin_failed_attempts = 0, personal_pin_locked_until = NULL WHERE id = ?',
+    [id],
+  );
+}
+
+export function setSimilarGroup(staffIds: number[], groupId: string): void {
+  if (staffIds.length === 0) return;
+  const placeholders = staffIds.map(() => '?').join(', ');
+  getDb().runSync(
+    `UPDATE staff SET similar_group_id = ?, requires_pin = 1 WHERE id IN (${placeholders})`,
+    [groupId, ...staffIds],
   );
 }
 
@@ -628,10 +743,17 @@ interface AttendanceWithStaffSqlRow {
   staff_code: string | null;
   photo_uri: string | null;
   face_signature: string | null;
+  face_embeddings: string | null;
   staff_pin_hash: string | null;
   staff_pin_salt: string | null;
   pin_failed_attempts: number;
   pin_locked_until: string | null;
+  similar_group_id: string | null;
+  requires_pin: number;
+  personal_pin_hash: string | null;
+  personal_pin_salt: string | null;
+  personal_pin_failed_attempts: number;
+  personal_pin_locked_until: number | null;
   device_token: string | null;
   device_secret: string | null;
   device_paired_at: string | null;
@@ -665,10 +787,17 @@ export function getAttendanceWithStaffForDate(
        s.staff_code,
        s.photo_uri,
        s.face_signature,
+       s.face_embeddings,
        s.staff_pin_hash,
        s.staff_pin_salt,
        s.pin_failed_attempts,
        s.pin_locked_until,
+       s.similar_group_id,
+       s.requires_pin,
+       s.personal_pin_hash,
+       s.personal_pin_salt,
+       s.personal_pin_failed_attempts,
+       s.personal_pin_locked_until,
        s.device_token,
        s.device_secret,
        s.device_paired_at,
@@ -688,10 +817,17 @@ export function getAttendanceWithStaffForDate(
       staff_code: row.staff_code,
       photo_uri: row.photo_uri,
       face_signature: row.face_signature,
+      face_embeddings: row.face_embeddings ?? null,
       staff_pin_hash: row.staff_pin_hash,
       staff_pin_salt: row.staff_pin_salt,
       pin_failed_attempts: row.pin_failed_attempts ?? 0,
       pin_locked_until: row.pin_locked_until,
+      similar_group_id: row.similar_group_id ?? null,
+      requires_pin: row.requires_pin ?? 0,
+      personal_pin_hash: row.personal_pin_hash ?? null,
+      personal_pin_salt: row.personal_pin_salt ?? null,
+      personal_pin_failed_attempts: row.personal_pin_failed_attempts ?? 0,
+      personal_pin_locked_until: row.personal_pin_locked_until ?? null,
       device_token: row.device_token,
       device_secret: row.device_secret,
       device_paired_at: row.device_paired_at,

@@ -8,7 +8,7 @@
 import * as SQLite from 'expo-sqlite';
 
 export const DATABASE_NAME = 'daystaff_v2.db';
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 /** Approved short-code letters and digits. */
 const STAFF_CODE_LETTERS = 'ABCDEFGHJK';
@@ -52,6 +52,13 @@ function ensureStaffColumns(db: SQLite.SQLiteDatabase): void {
     ['device_secret', 'TEXT'],
     ['device_public_key', 'TEXT'],
     ['device_paired_at', 'TEXT'],
+    ['similar_group_id', 'TEXT'],
+    ['requires_pin', 'INTEGER NOT NULL DEFAULT 0'],
+    ['personal_pin_hash', 'TEXT'],
+    ['personal_pin_salt', 'TEXT'],
+    ['personal_pin_failed_attempts', 'INTEGER NOT NULL DEFAULT 0'],
+    ['personal_pin_locked_until', 'INTEGER'],
+    ['face_embeddings', 'TEXT'],
   ];
   for (const [name, type] of needed) {
     if (!names.has(name)) {
@@ -177,10 +184,17 @@ function migrate(db: SQLite.SQLiteDatabase): void {
         staff_code TEXT,
         photo_uri TEXT,
         face_signature TEXT,
+        face_embeddings TEXT,
         staff_pin_hash TEXT,
         staff_pin_salt TEXT,
         pin_failed_attempts INTEGER NOT NULL DEFAULT 0,
         pin_locked_until TEXT,
+        similar_group_id TEXT,
+        requires_pin INTEGER NOT NULL DEFAULT 0,
+        personal_pin_hash TEXT,
+        personal_pin_salt TEXT,
+        personal_pin_failed_attempts INTEGER NOT NULL DEFAULT 0,
+        personal_pin_locked_until INTEGER,
         device_token TEXT,
         device_secret TEXT,
         device_public_key TEXT,
