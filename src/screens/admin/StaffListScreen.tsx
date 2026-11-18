@@ -1,7 +1,13 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import {
+  FlatList,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
 import { AppButton } from '../../components/AppButton';
@@ -19,14 +25,25 @@ import {
   type ImportConflict,
   type BackupSnapshot,
 } from '../../services/backupService';
-import { colors, fontSize, spacing } from '../../theme';
+import { colors, fontSize, radius, spacing } from '../../theme';
 import type { Staff } from '../../types';
 
 export function StaffListScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { alert, confirm } = useAppDialog();
   const [staff, setStaff] = useState<Staff[]>([]);
+  const [search, setSearch] = useState('');
   const [importing, setImporting] = useState(false);
+
+  const filteredStaff = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return staff;
+    return staff.filter((member) => {
+      const name = member.fullName.toLowerCase();
+      const code = (member.staffCode ?? '').toLowerCase();
+      return name.includes(query) || code.includes(query);
+    });
+  }, [staff, search]);
 
   const refresh = useCallback(() => {
     setStaff(getAllStaff());
@@ -131,7 +148,7 @@ export function StaffListScreen() {
   return (
     <Screen>
       <FlatList
-        data={staff}
+        data={filteredStaff}
         keyExtractor={(item) => String(item.id)}
         style={styles.list}
         contentContainerStyle={styles.content}
@@ -175,19 +192,33 @@ export function StaffListScreen() {
                 <Text style={styles.summary}>
                   {staff.length} total · {activeCount} active · {staff.length - activeCount} deactivated
                 </Text>
-                <Text style={styles.hint}>
-                  Tap a staff member to view their profile or edit their details.
-                </Text>
+                <TextInput
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="Staff code or name"
+                  placeholderTextColor={colors.slate400}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.searchInput}
+                />
               </>
             ) : null}
           </View>
         }
         ListEmptyComponent={
-          <EmptyState
-            icon="people-outline"
-            title="No staff registered"
-            message="Add staff so they can clock in and out at this terminal."
-          />
+          staff.length === 0 ? (
+            <EmptyState
+              icon="people-outline"
+              title="No staff registered"
+              message="Add staff so they can clock in and out at this terminal."
+            />
+          ) : (
+            <EmptyState
+              icon="search-outline"
+              title="No staff match"
+              message="Try a different name or staff code."
+            />
+          )
         }
         renderItem={({ item }) => (
           <StaffRow
@@ -240,5 +271,16 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     fontSize: fontSize.xs,
     color: colors.slate500,
+  },
+  searchInput: {
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    fontSize: fontSize.md,
+    color: colors.slate900,
   },
 });

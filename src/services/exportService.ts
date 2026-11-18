@@ -85,7 +85,7 @@ function statusLabel(row: ReportRow): string {
     case 'late':
       return 'Late';
     case 'clocked_out':
-      return 'Clocked out';
+      return 'Out';
     case 'early_exit':
       return 'Early exit';
     default:
@@ -121,6 +121,7 @@ function buildRows(rows: ReportRow[]): (string | number)[][] {
         : '',
       log ? (log.isManualOverride ? 'Yes' : 'No') : '',
       log?.overrideNote ?? '',
+      log?.overrideRecordedAt ?? '',
       log ? formatTime12h(log.clockInTime) : '',
       log ? (log.clockInStatus === 'late' ? 'Late' : 'On time') : '',
       log ? log.minutesLate : '',
@@ -144,6 +145,7 @@ const HEADERS = [
   'Auth method',
   'Manual override',
   'Override note',
+  'Override recorded at',
   'Clock in',
   'Clock-in status',
   'Minutes late',

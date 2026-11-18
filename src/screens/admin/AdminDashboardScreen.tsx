@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 import { AdminBottomTabBar } from '../../components/AdminBottomTabBar';
@@ -76,7 +76,7 @@ export function AdminDashboardScreen() {
             label="Total staff"
             value={summary.totalStaff}
             tone="neutral"
-            onPress={() => navigation.navigate('AttendanceHistory', { filter: 'all' })}
+            onPress={() => navigation.navigate('StaffList')}
           />
           <StatTile
             label="Present"
@@ -100,7 +100,7 @@ export function AdminDashboardScreen() {
             label="Early exit"
             value={summary.earlyExit}
             tone="danger"
-            onPress={() => navigation.navigate('AttendanceHistory', { filter: 'earlyExit' })}
+            onPress={() => navigation.navigate('AttendanceHistory', { filter: 'clockedOut' })}
           />
           <StatTile
             label="Absent"
@@ -187,24 +187,38 @@ export function AdminDashboardScreen() {
               message="All active staff have clocked in today."
             />
           ) : (
-            pendingRecords.map((record) => (
-              <StaffRow
-                key={record.staff.id}
-                staff={record.staff}
-                badge={<Badge label="Not clocked in" tone="neutral" />}
-                caption={
-                  record.staff.staffCode
-                    ? `#${record.staff.staffCode}`
-                    : 'No staff code'
-                }
-                detail="No clock-in recorded"
-                onPress={() =>
-                  navigation.navigate('StaffProfile', {
-                    staffId: record.staff.id,
-                  })
-                }
-              />
-            ))
+            <>
+              {pendingRecords.slice(0, 5).map((record) => (
+                <StaffRow
+                  key={record.staff.id}
+                  staff={record.staff}
+                  badge={<Badge label="Not clocked in" tone="neutral" />}
+                  caption={
+                    record.staff.staffCode
+                      ? `#${record.staff.staffCode}`
+                      : 'No staff code'
+                  }
+                  detail="No clock-in recorded"
+                  onPress={() =>
+                    navigation.navigate('StaffProfile', {
+                      staffId: record.staff.id,
+                    })
+                  }
+                />
+              ))}
+              {pendingRecords.length > 5 ? (
+                <Pressable
+                  onPress={() =>
+                    navigation.navigate('AttendanceHistory', { filter: 'absent' })
+                  }
+                  style={styles.viewAllLink}
+                >
+                  <Text style={styles.viewAllText}>
+                    View all ({pendingRecords.length})
+                  </Text>
+                </Pressable>
+              ) : null}
+            </>
           )}
         </Card>
 
@@ -291,5 +305,14 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.slate400,
     textAlign: 'center',
+  },
+  viewAllLink: {
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  viewAllText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.primary,
   },
 });

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps 
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import {
-  FlatList,
+  Animated,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -11,6 +12,7 @@ import {
   ScrollViewInstance,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -30,6 +32,7 @@ import {
   type AttendanceWithStaffRow,
 } from '../../database/queries';
 import { manualClockIn, manualClockOut } from '../../services/attendanceLogic';
+import { getAttendanceOverrideEditWindowDays } from '../../services/appSettings';
 import { exportAttendanceReportForDate } from '../../services/exportService';
 import type { AttendanceFilter, RootNavigation } from '../../navigation/types';
 import { colors, fontSize, radius, spacing } from '../../theme';
@@ -49,6 +52,11 @@ const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const DAY_CELL_WIDTH = '14.2857%';
 
 type ExportFormat = 'xlsx' | 'csv';
+
+// The pinned pills bar must be opaque so list rows slide *under* it instead of
+// showing through. This has to match the page background that <Screen> uses.
+// If you see a colour band behind the pills, change this one value.
+const PAGE_BACKGROUND = colors.slate50;
 
 function QuickChip({
   label,
@@ -120,9 +128,11 @@ const OVERRIDE_REASONS = [
 function AttendanceRecordRow({
   record,
   onOverride,
+  overrideAvailable = true,
 }: {
   record: AttendanceWithStaffRow;
-  onOverride: (record: AttendanceWithStaffRow) => void;
+  onOverride?: (record: AttendanceWithStaffRow) => void;
+  overrideAvailable?: boolean;
 }) {
   const { staff, log } = record;
   const isLate = log?.clockInStatus === 'late';
@@ -134,15 +144,17 @@ function AttendanceRecordRow({
   const statusLabel = !log
     ? 'Absent'
     : isEarly
-      ? `Left early ${log.minutesEarly}m`
+      ? `Early Exit (-${Math.floor(log.minutesEarly / 60)}h ${log.minutesEarly % 60}m)`
       : isLate
         ? `Late ${log.minutesLate}m`
         : 'On time';
   const statusTone = !log
     ? styles.statusAbsent
-    : isLate || isEarly
-      ? styles.statusDanger
-      : styles.statusSuccess;
+    : isEarly
+      ? styles.statusWarning
+      : isLate
+        ? styles.statusDanger
+        : styles.statusSuccess;
 
   const rowToneStyle = !log
     ? styles.recordRowNeutral
@@ -207,18 +219,24 @@ function AttendanceRecordRow({
             <Text style={[styles.statusText, statusTone]}>{statusLabel}</Text>
             {isManual ? <Text style={styles.manualText}>· Manual</Text> : null}
           </View>
-          <Pressable
-            onPress={() => onOverride(record)}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`Override attendance for ${staff.fullName}`}
-            style={({ pressed }) => [
-              styles.overrideLink,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.overrideText}>Override</Text>
-          </Pressable>
+          {onOverride ? (
+            <Pressable
+              onPress={() => onOverride(record)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Override attendance for ${staff.fullName}`}
+              style={({ pressed }) => [
+                styles.overrideLink,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.overrideText}>Override</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.lockedText}>
+              {overrideAvailable ? 'Locked' : 'Locked'}
+            </Text>
+          )}
         </View>
       </View>
     </View>
@@ -232,6 +250,26 @@ export function AttendanceHistoryScreen() {
     ?.filter;
   const { alert } = useAppDialog();
   const today = todayKey();
+  const overrideWindowDays = getAttendanceOverrideEditWindowDays();
+  const isDateLocked = (dateKey: string): boolean => {
+    if (dateKey > today) return true;
+    const todayDate = new Date(`${today}T00:00:00`);
+    const selectedDate = new Date(`${dateKey}T00:00:00`);
+    const diffDays = Math.round(
+      (todayDate.getTime() - selectedDate.getTime()) / 86400000,
+    );
+    return diffDays > overrideWindowDays - 1;
+  };
+  const canOverrideRecord = (
+    record: AttendanceWithStaffRow,
+    dateKey: string,
+  ): boolean => {
+    if (isDateLocked(dateKey)) return false;
+    const log = record.log;
+    if (!log) return true;
+    if (!log.clockOutTime) return true;
+    return false;
+  };
 
   const [selectedDateKey, setSelectedDateKey] = useState(today);
   const [records, setRecords] = useState<AttendanceWithStaffRow[]>([]);
@@ -248,7 +286,42 @@ export function AttendanceHistoryScreen() {
   const [exporting, setExporting] = useState(false);
   const [filter, setFilter] = useState<AttendanceFilter>(routeFilter ?? 'all');
   const scrollRef = useRef<ScrollViewInstance | null>(null);
+  const filterScrollOffset = useRef(0);
+  const [filterViewportWidth, setFilterViewportWidth] = useState(0);
   const [chipWidths, setChipWidths] = useState<number[]>([]);
+
+  // Collapsing hero: the hero scrolls away, the pills stay pinned.
+  const listScrollRef = useRef<any>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const scrollOffset = useRef(0);
+  const [heroHeight, setHeroHeight] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+
+  // Search: lives in the pinned pills row and replaces the pills while open.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [pillsBarHeight, setPillsBarHeight] = useState(0);
+  const collapseDistance = Math.max(heroHeight, 1);
+  const headerTranslateY = scrollY.interpolate({
+    inputRange: [0, collapseDistance],
+    outputRange: [0, -collapseDistance],
+    extrapolate: 'clamp',
+  });
+  const dividerOpacity = scrollY.interpolate({
+    inputRange: [Math.max(collapseDistance - 12, 0), collapseDistance],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+  const handleListScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    {
+      useNativeDriver: true,
+      listener: (e: any) => {
+        scrollOffset.current = e.nativeEvent.contentOffset.y;
+      },
+    },
+  );
 
   const [overrideRecord, setOverrideRecord] =
     useState<AttendanceWithStaffRow | null>(null);
@@ -258,13 +331,13 @@ export function AttendanceHistoryScreen() {
   const [overrideTime, setOverrideTime] = useState('08:00');
   const [overrideNote, setOverrideNote] = useState('');
   const [overrideError, setOverrideError] = useState<string | null>(null);
+  const [earlyExitsExpanded, setEarlyExitsExpanded] = useState(true);
+  const [regularExpanded, setRegularExpanded] = useState(true);
 
   const FILTER_ORDER: AttendanceFilter[] = [
-    'all',
     'present',
     'late',
     'clockedOut',
-    'earlyExit',
     'absent',
   ];
 
@@ -291,13 +364,48 @@ export function AttendanceHistoryScreen() {
 
   useEffect(() => {
     const activeIndex = FILTER_ORDER.indexOf(filter);
-    if (activeIndex >= 0 && scrollRef.current) {
-      scrollRef.current.scrollTo({
-        x: chipOffsets[activeIndex],
-        animated: true,
-      });
+    if (activeIndex < 0 || !scrollRef.current) return;
+    const activeOffset = chipOffsets[activeIndex];
+    const activeWidth = chipWidths[activeIndex] ?? 0;
+    const viewportWidth = filterViewportWidth || 1;
+    const currentOffset = filterScrollOffset.current;
+    const contentWidth = chipWidths.reduce(
+      (total, width) => total + width + spacing.sm,
+      0,
+    );
+    const maxOffset = Math.max(0, contentWidth - viewportWidth);
+
+    // Keep the active pill AND its neighbours (the one before and the one
+    // after) fully in view, so the next pill you are likely to tap is never
+    // half hidden. `edgeGap` is the breathing room kept at each end.
+    const edgeGap = spacing.sm;
+    const leftIndex = Math.max(activeIndex - 1, 0);
+    const rightIndex = Math.min(activeIndex + 1, FILTER_ORDER.length - 1);
+    if (
+      chipOffsets[leftIndex] === undefined ||
+      chipOffsets[rightIndex] === undefined
+    ) {
+      return; // pills not measured yet
     }
-  }, [filter, chipOffsets]);
+    const wantLeft = chipOffsets[leftIndex] - edgeGap;
+    const wantRight =
+      chipOffsets[rightIndex] + (chipWidths[rightIndex] ?? 0) + edgeGap;
+
+    let targetOffset = currentOffset;
+    if (wantRight - wantLeft > viewportWidth) {
+      // Not enough room for three pills: just centre the active one.
+      targetOffset = activeOffset + activeWidth / 2 - viewportWidth / 2;
+    } else if (wantRight > currentOffset + viewportWidth) {
+      targetOffset = wantRight - viewportWidth;
+    } else if (wantLeft < currentOffset) {
+      targetOffset = wantLeft;
+    } else {
+      // Active pill and both neighbours are already visible; do not move.
+      return;
+    }
+    targetOffset = Math.max(0, Math.min(maxOffset, targetOffset));
+    scrollRef.current.scrollTo({ x: targetOffset, animated: true });
+  }, [filter, chipOffsets, chipWidths, filterViewportWidth, searchOpen]);
 
   useFocusEffect(
     useCallback(() => {
@@ -528,6 +636,29 @@ export function AttendanceHistoryScreen() {
     [records, filter],
   );
 
+  const clockedOutGroups = useMemo(() => {
+    const all = records.filter(
+      (record) => !!record.log && !!record.log.clockOutTime,
+    );
+    const early = all
+      .filter((record) => record.log?.clockOutStatus === 'early')
+      .sort((a, b) => {
+        const diff =
+          new Date(b.log!.clockOutTime!).getTime() -
+          new Date(a.log!.clockOutTime!).getTime();
+        if (diff !== 0) return diff;
+        return (b.log?.minutesEarly ?? 0) - (a.log?.minutesEarly ?? 0);
+      });
+    const regular = all
+      .filter((record) => record.log?.clockOutStatus !== 'early')
+      .sort(
+        (a, b) =>
+          new Date(b.log!.clockOutTime!).getTime() -
+          new Date(a.log!.clockOutTime!).getTime(),
+      );
+    return { early, regular };
+  }, [records]);
+
   const filterCounts = useMemo(() => {
     const counts: Record<AttendanceFilter, number> = {
       all: records.length,
@@ -554,6 +685,53 @@ export function AttendanceHistoryScreen() {
 
   const summary = formatStatusSummary(records);
 
+  // Switching pills while the hero is hidden: keep the hero hidden and show the
+  // new list from its first row, instead of landing in the middle of it.
+  const snapListBelowHero = () => {
+    if (scrollOffset.current > heroHeight) {
+      listScrollRef.current?.scrollTo({ y: heroHeight, animated: false });
+    }
+  };
+
+  const selectFilter = (next: AttendanceFilter) => {
+    setFilter(next);
+    snapListBelowHero();
+  };
+
+  // Search looks at everyone for the selected day (it ignores the pills), by
+  // name or staff code. An empty query shows everyone.
+  const searchResults = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return records;
+    return records.filter(
+      (record) =>
+        record.staff.fullName.toLowerCase().includes(query) ||
+        String(record.staff.staffCode ?? '')
+          .toLowerCase()
+          .includes(query),
+    );
+  }, [records, searchQuery]);
+
+  const openSearch = () => {
+    setSearchOpen(true);
+    // Tuck the hero away so there is room above the keyboard.
+    if (heroHeight > 0 && scrollOffset.current < heroHeight) {
+      listScrollRef.current?.scrollTo({ y: heroHeight, animated: true });
+    }
+  };
+
+  const closeSearch = () => {
+    Keyboard.dismiss();
+    setSearchOpen(false);
+    setSearchQuery('');
+    filterScrollOffset.current = 0;
+  };
+
+  const handleSearchChange = (text: string) => {
+    setSearchQuery(text);
+    snapListBelowHero();
+  };
+
   useEffect(() => {
     if (routeFilter) {
       setFilter(routeFilter);
@@ -562,150 +740,343 @@ export function AttendanceHistoryScreen() {
 
   return (
     <Screen>
-      <View style={styles.topArea}>
-        <Card>
-          <View style={styles.topHeader}>
-            <View style={styles.topHeaderText}>
-              <Text style={styles.eyebrow}>Attendance history</Text>
-              <Text style={styles.recordSummary}>{summary}</Text>
-            </View>
-            <AppButton
-              title="Export"
-              size="sm"
-              fullWidth={false}
-              disabled={records.length === 0}
-              onPress={() => setExportVisible(true)}
-              icon={
-                <Ionicons
-                  name="download-outline"
-                  size={16}
-                  color={colors.white}
-                />
-              }
-              style={styles.exportButton}
-            />
-          </View>
-
-          <View style={styles.dateNavRow}>
-            <Pressable
-              onPress={() => shiftDay(-1)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Previous day"
-              style={({ pressed }) => [
-                styles.dayNavButton,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Ionicons
-                name="chevron-back"
-                size={22}
-                color={colors.primary}
-              />
-            </Pressable>
-
-            <Pressable
-              onPress={openCalendar}
-              accessibilityRole="button"
-              accessibilityLabel="Choose a date"
-              style={({ pressed }) => [
-                styles.dateCenter,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.dateTitle}>
-                {formatDateLong(selectedDate)}
-              </Text>
-              <Text style={styles.dateHint}>Tap to pick a date</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => shiftDay(1)}
-              disabled={isToday}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Next day"
-              accessibilityState={{ disabled: isToday }}
-              style={({ pressed }) => [
-                styles.dayNavButton,
-                isToday && styles.dayNavButtonDisabled,
-                pressed && !isToday && styles.pressed,
-              ]}
-            >
-              <Ionicons
-                name="chevron-forward"
-                size={22}
-                color={isToday ? colors.slate300 : colors.primary}
-              />
-            </Pressable>
-          </View>
-        </Card>
-      </View>
-
-      <View style={styles.filterRow}>
-        <ScrollView
-          ref={scrollRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterContent}
+      <View
+        style={styles.collapseRoot}
+        onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
+      >
+        <Animated.ScrollView
+          ref={listScrollRef}
+          onScroll={handleListScroll}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={[
+            styles.collapseContent,
+            {
+              // Space for the hero + pills that float above the list.
+              paddingTop: headerHeight,
+              // Always allow the hero to fully collapse, even on short lists,
+              // so switching pills never makes the hero jump back in.
+              minHeight: viewportHeight + heroHeight,
+            },
+          ]}
         >
-          {(
-            [
-              { key: 'all', label: 'All' },
-              { key: 'present', label: 'On time' },
-              { key: 'late', label: 'Late' },
-              { key: 'clockedOut', label: 'Clocked out' },
-              { key: 'earlyExit', label: 'Early exit' },
-              { key: 'absent', label: 'Absent' },
-            ] as { key: AttendanceFilter; label: string }[]
-          ).map((item, index) => (
-            <QuickChip
-              key={item.key}
-              label={`${item.label} (${filterCounts[item.key]})`}
-              active={filter === item.key}
-              onPress={() => setFilter(item.key)}
-              onLayout={handleChipLayout(index)}
-            />
-          ))}
-        </ScrollView>
-      </View>
+          {records.length === 0 ? (
+            <Card padded={false} style={[styles.listCard, styles.emptyCard]}>
+              <EmptyState
+                icon="calendar-outline"
+                title="No staff for this date"
+                message={`No staff were registered on ${formatDateMedium(
+                  selectedDateKey,
+                )}. Use the date bar above to pick another day, or add staff first.`}
+              />
+            </Card>
+          ) : searchOpen ? (
+            searchResults.length === 0 ? (
+              <Card padded={false} style={[styles.listCard, styles.emptyCard]}>
+                <EmptyState
+                  icon="search-outline"
+                  title="No staff match"
+                  message={`No one on ${formatDateMedium(
+                    selectedDateKey,
+                  )} matches "${searchQuery.trim()}".`}
+                />
+              </Card>
+            ) : (
+              <Card padded={false} style={styles.listCard}>
+                <View style={styles.listContent}>
+                  {searchResults.map((item) => (
+                    <AttendanceRecordRow
+                      key={item.log ? `log-${item.log.id}` : `staff-${item.staff.id}`}
+                      record={item}
+                      onOverride={
+                        canOverrideRecord(item, selectedDateKey)
+                          ? openOverride
+                          : undefined
+                      }
+                      overrideAvailable={canOverrideRecord(item, selectedDateKey)}
+                    />
+                  ))}
+                </View>
+              </Card>
+            )
+          ) : filter === 'clockedOut' &&
+            clockedOutGroups.early.length === 0 &&
+            clockedOutGroups.regular.length === 0 ? (
+            <Card padded={false} style={[styles.listCard, styles.emptyCard]}>
+              <EmptyState
+                icon="filter-outline"
+                title="No records match"
+                message={`No Clocked Out records for ${formatDateMedium(
+                  selectedDateKey,
+                )}.`}
+              />
+            </Card>
+          ) : filter === 'clockedOut' ? (
+            <Card padded={false} style={styles.listCard}>
+              {clockedOutGroups.early.length > 0 ? (
+                <View>
+                  <Pressable
+                    style={styles.accordionHeader}
+                    onPress={() => setEarlyExitsExpanded((value) => !value)}
+                  >
+                    <Text style={styles.accordionTitle}>
+                      {'\u{1F7E0}'} Early Exits ({clockedOutGroups.early.length})
+                    </Text>
+                    <Text style={styles.accordionIcon}>
+                      {earlyExitsExpanded ? '\u25BC' : '\u25B6'}
+                    </Text>
+                  </Pressable>
+                  {earlyExitsExpanded
+                    ? clockedOutGroups.early.map((item) => (
+                        <AttendanceRecordRow
+                          key={item.log ? `log-${item.log.id}` : `staff-${item.staff.id}`}
+                          record={item}
+                          onOverride={
+                            canOverrideRecord(item, selectedDateKey)
+                              ? openOverride
+                              : undefined
+                          }
+                          overrideAvailable={canOverrideRecord(item, selectedDateKey)}
+                        />
+                      ))
+                    : null}
+                </View>
+              ) : null}
+              {clockedOutGroups.regular.length > 0 ? (
+                <View>
+                  <Pressable
+                    style={styles.accordionHeader}
+                    onPress={() => setRegularExpanded((value) => !value)}
+                  >
+                    <Text style={styles.accordionTitle}>
+                      {'\u{1F535}'} Regular ({clockedOutGroups.regular.length})
+                    </Text>
+                    <Text style={styles.accordionIcon}>
+                      {regularExpanded ? '\u25BC' : '\u25B6'}
+                    </Text>
+                  </Pressable>
+                  {regularExpanded
+                    ? clockedOutGroups.regular.map((item) => (
+                        <AttendanceRecordRow
+                          key={item.log ? `log-${item.log.id}` : `staff-${item.staff.id}`}
+                          record={item}
+                          onOverride={
+                            canOverrideRecord(item, selectedDateKey)
+                              ? openOverride
+                              : undefined
+                          }
+                          overrideAvailable={canOverrideRecord(item, selectedDateKey)}
+                        />
+                      ))
+                    : null}
+                </View>
+              ) : null}
+            </Card>
+          ) : filteredRecords.length === 0 ? (
+            <Card padded={false} style={[styles.listCard, styles.emptyCard]}>
+              <EmptyState
+                icon="filter-outline"
+                title="No records match"
+                message={`No ${filter.toLowerCase()} records for ${formatDateMedium(
+                  selectedDateKey,
+                )}.`}
+              />
+            </Card>
+          ) : (
+            <Card padded={false} style={styles.listCard}>
+              <View style={styles.listContent}>
+                {filteredRecords.map((item) => (
+                  <AttendanceRecordRow
+                    key={item.log ? `log-${item.log.id}` : `staff-${item.staff.id}`}
+                    record={item}
+                    onOverride={
+                      canOverrideRecord(item, selectedDateKey)
+                        ? openOverride
+                        : undefined
+                    }
+                    overrideAvailable={canOverrideRecord(item, selectedDateKey)}
+                  />
+                ))}
+              </View>
+            </Card>
+          )}
+        </Animated.ScrollView>
 
-      {records.length === 0 ? (
-        <Card padded={false} style={[styles.listCard, styles.emptyCard]}>
-          <EmptyState
-            icon="calendar-outline"
-            title="No staff for this date"
-            message={`No staff were registered on ${formatDateMedium(
-              selectedDateKey,
-            )}. Use the date bar above to pick another day, or add staff first.`}
-          />
-        </Card>
-      ) : filteredRecords.length === 0 ? (
-        <Card padded={false} style={[styles.listCard, styles.emptyCard]}>
-          <EmptyState
-            icon="filter-outline"
-            title="No records match"
-            message={`No ${filter.toLowerCase()} records for ${formatDateMedium(
-              selectedDateKey,
-            )}.`}
-          />
-        </Card>
-      ) : (
-        <Card padded={false} style={styles.listCard}>
-          <FlatList
-            data={filteredRecords}
-            keyExtractor={(item) =>
-              item.log ? `log-${item.log.id}` : `staff-${item.staff.id}`
-            }
-            renderItem={({ item }) => (
-              <AttendanceRecordRow record={item} onOverride={openOverride} />
+        <Animated.View
+          style={[
+            styles.stickyHeader,
+            { transform: [{ translateY: headerTranslateY }] },
+          ]}
+          onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+        >
+          <View onLayout={(e) => setHeroHeight(e.nativeEvent.layout.height)}>
+            <View style={styles.topArea}>
+              <Card>
+                <View style={styles.topHeader}>
+                  <View style={styles.topHeaderText}>
+                    <Text style={styles.eyebrow}>Attendance history</Text>
+                    <Text style={styles.recordSummary}>{summary}</Text>
+                  </View>
+                  <AppButton
+                    title="Export"
+                    size="sm"
+                    fullWidth={false}
+                    disabled={records.length === 0}
+                    onPress={() => setExportVisible(true)}
+                    icon={
+                      <Ionicons
+                        name="download-outline"
+                        size={16}
+                        color={colors.white}
+                      />
+                    }
+                    style={styles.exportButton}
+                  />
+                </View>
+
+                <View style={styles.dateNavRow}>
+                  <Pressable
+                    onPress={() => shiftDay(-1)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Previous day"
+                    style={({ pressed }) => [
+                      styles.dayNavButton,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Ionicons
+                      name="chevron-back"
+                      size={22}
+                      color={colors.primary}
+                    />
+                  </Pressable>
+
+                  <Pressable
+                    onPress={openCalendar}
+                    accessibilityRole="button"
+                    accessibilityLabel="Choose a date"
+                    style={({ pressed }) => [
+                      styles.dateCenter,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={styles.dateTitle}>
+                      {formatDateLong(selectedDate)}
+                    </Text>
+                    <Text style={styles.dateHint}>Tap to pick a date</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => shiftDay(1)}
+                    disabled={isToday}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Next day"
+                    accessibilityState={{ disabled: isToday }}
+                    style={({ pressed }) => [
+                      styles.dayNavButton,
+                      isToday && styles.dayNavButtonDisabled,
+                      pressed && !isToday && styles.pressed,
+                    ]}
+                  >
+                    <Ionicons
+                      name="chevron-forward"
+                      size={22}
+                      color={isToday ? colors.slate300 : colors.primary}
+                    />
+                  </Pressable>
+                </View>
+              </Card>
+            </View>
+          </View>
+          <View style={styles.filterRow}>
+            {searchOpen ? (
+              <View
+                style={[
+                  styles.searchField,
+                  pillsBarHeight > 0 && { height: pillsBarHeight },
+                ]}
+              >
+                <Ionicons name="search" size={16} color={colors.slate400} />
+                <TextInput
+                  value={searchQuery}
+                  onChangeText={handleSearchChange}
+                  placeholder="Search name or code"
+                  placeholderTextColor={colors.slate400}
+                  style={styles.searchInput}
+                  autoFocus
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  accessibilityLabel="Search staff by name or code"
+                />
+                <Pressable
+                  onPress={closeSearch}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close search"
+                >
+                  <Ionicons name="close" size={18} color={colors.slate500} />
+                </Pressable>
+              </View>
+            ) : (
+              <>
+                <ScrollView
+                  ref={scrollRef}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.filterContent}
+                  style={styles.filterScroll}
+                  onLayout={(e) => {
+                    setFilterViewportWidth(e.nativeEvent.layout.width);
+                    setPillsBarHeight(e.nativeEvent.layout.height);
+                  }}
+                  onScroll={(e) => {
+                    filterScrollOffset.current = e.nativeEvent.contentOffset.x;
+                  }}
+                  scrollEventThrottle={16}
+                >
+                  {(
+                    [
+                      { key: 'present', label: 'On time' },
+                      { key: 'late', label: 'Late' },
+                      { key: 'clockedOut', label: 'Out' },
+                      { key: 'absent', label: 'Absent' },
+                    ] as { key: AttendanceFilter; label: string }[]
+                  ).map((item, index) => (
+                    <QuickChip
+                      key={item.key}
+                      label={`${item.label} (${filterCounts[item.key]})`}
+                      active={filter === item.key}
+                      onPress={() => selectFilter(item.key)}
+                      onLayout={handleChipLayout(index)}
+                    />
+                  ))}
+                </ScrollView>
+                <View style={styles.filterDivider} />
+                <Pressable
+                  onPress={openSearch}
+                  accessibilityRole="button"
+                  accessibilityLabel="Search staff"
+                  style={({ pressed }) => [
+                    styles.searchButton,
+                    pressed && styles.chipPressed,
+                  ]}
+                >
+                  <Ionicons name="search" size={18} color={colors.primary} />
+                </Pressable>
+              </>
             )}
-            style={styles.list}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
+          </View>
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.headerDivider, { opacity: dividerOpacity }]}
           />
-        </Card>
-      )}
+        </Animated.View>
+      </View>
 
       <Modal
         visible={calendarVisible}
@@ -1090,16 +1461,18 @@ export function AttendanceHistoryScreen() {
                 <View style={styles.overrideToggle}>
                   {(['clock_in', 'clock_out'] as const).map((action) => {
                     const active = overrideAction === action;
-                    const disabled =
-                      action === 'clock_out' && !overrideRecord.log;
                     const log = overrideRecord.log;
+                    const disabled =
+                      (action === 'clock_out' && !log) ||
+                      (action === 'clock_in' && !!log) ||
+                      (action === 'clock_out' && !!log?.clockOutTime);
                     const hint =
                       action === 'clock_in'
                         ? log
-                          ? `Replace ${formatTime12h(log.clockInTime)}`
+                          ? 'Locked (clock-in already recorded)'
                           : 'Add arrival'
                         : log?.clockOutTime
-                          ? `Update ${formatTime12h(log.clockOutTime)}`
+                          ? 'Locked (clock-out already recorded)'
                           : log
                             ? 'Add departure'
                             : 'Clock in first';
@@ -1341,16 +1714,79 @@ const styles = StyleSheet.create({
   chipLabelActive: {
     color: colors.white,
   },
+  collapseRoot: {
+    flex: 1,
+    overflow: 'hidden',
+  },
+  collapseContent: {
+    flexGrow: 1,
+  },
+  stickyHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    backgroundColor: PAGE_BACKGROUND,
+  },
+  headerDivider: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+  },
   filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  filterScroll: {
+    flex: 1,
+  },
+  filterDivider: {
+    alignSelf: 'stretch',
+    width: 1,
+    marginVertical: spacing.xs,
+    backgroundColor: colors.slate300,
+  },
+  searchButton: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.slate100,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  searchField: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 0,
+    fontSize: fontSize.sm,
+    color: colors.slate900,
   },
   filterContent: {
     gap: spacing.sm,
     paddingRight: spacing.lg,
   },
   listCard: {
-    flex: 1,
+    flexGrow: 1,
     marginHorizontal: spacing.lg,
     marginTop: spacing.md,
     marginBottom: spacing.lg,
@@ -1358,9 +1794,6 @@ const styles = StyleSheet.create({
   },
   emptyCard: {
     justifyContent: 'center',
-  },
-  list: {
-    flex: 1,
   },
   listContent: {
     paddingBottom: spacing.sm,
@@ -1458,6 +1891,9 @@ const styles = StyleSheet.create({
   statusDanger: {
     color: colors.danger,
   },
+  statusWarning: {
+    color: colors.warning,
+  },
   statusAbsent: {
     color: colors.slate400,
   },
@@ -1474,6 +1910,30 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: '800',
     color: colors.primary,
+  },
+  accordionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.slate50,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  accordionTitle: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.slate800,
+  },
+  accordionIcon: {
+    fontSize: fontSize.xs,
+    color: colors.slate500,
+  },
+  lockedText: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: colors.slate400,
   },
   modalOverlay: {
     flex: 1,

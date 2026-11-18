@@ -37,7 +37,7 @@ export function dayStatusMeta(status: DayStatus): {
     case 'late':
       return { label: 'Late', tone: 'warning' };
     case 'clocked_out':
-      return { label: 'Clocked out', tone: 'info' };
+      return { label: 'Out', tone: 'info' };
     case 'early_exit':
       return { label: 'Early exit', tone: 'danger' };
     default:

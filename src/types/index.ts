@@ -120,6 +120,8 @@ export interface AttendanceLog {
   isManualOverride: boolean;
   /** Short reason entered by the admin for a manual override. */
   overrideNote: string | null;
+  /** When an admin recorded a manual override (ISO timestamp). */
+  overrideRecordedAt: string | null;
 }
 
 export interface StaffDayRecord {

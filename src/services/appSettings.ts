@@ -14,6 +14,8 @@ import {
   MIN_MODE_RESET_TIMEOUT_SECONDS,
   MODE_RESET_TIMEOUT_SETTING,
   QR_VERIFIER_URL_SETTING,
+  ATTENDANCE_OVERRIDE_EDIT_WINDOW_SETTING,
+  KIOSK_SOUND_EFFECTS_SETTING,
   SCAN_LIGHT_SETTING,
 } from '../config/app';
 import { getSetting, setSetting } from '../database/queries';
@@ -104,4 +106,37 @@ export function getFaceStrictness(): FaceStrictness {
 
 export function setFaceStrictness(level: FaceStrictness): void {
   setSetting(FACE_STRICTNESS_SETTING, level);
+}
+
+// sound test marker removed
+
+// ---------------------------------------------------------------------------
+// Kiosk sound effects
+// ---------------------------------------------------------------------------
+
+/** Whether the kiosk plays success/error audio cues (defaults to ON). */
+export function getKioskSoundEffectsEnabled(): boolean {
+  const value = getSetting(KIOSK_SOUND_EFFECTS_SETTING);
+  if (value === null || value === undefined) return true;
+  return value !== '0';
+}
+
+export function setKioskSoundEffectsEnabled(enabled: boolean): void {
+  setSetting(KIOSK_SOUND_EFFECTS_SETTING, enabled ? '1' : '0');
+}
+
+// ---------------------------------------------------------------------------
+// Attendance override edit window
+// ---------------------------------------------------------------------------
+
+export function getAttendanceOverrideEditWindowDays(): number {
+  const value = getSetting(ATTENDANCE_OVERRIDE_EDIT_WINDOW_SETTING);
+  return value === '1' ? 1 : 3;
+}
+
+export function setAttendanceOverrideEditWindowDays(days: number): void {
+  setSetting(
+    ATTENDANCE_OVERRIDE_EDIT_WINDOW_SETTING,
+    days === 1 ? '1' : '3',
+  );
 }

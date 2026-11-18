@@ -27,6 +27,8 @@ import type {
   Schedule,
   Staff,
 } from '../types';
+import { getAttendanceOverrideEditWindowDays } from './appSettings';
+
 import {
   combineDateAndTime,
   formatDuration,
@@ -239,36 +241,40 @@ export function clockOutStaff(
  * already exists, only the arrival fields are replaced so a manual departure
  * (or any other profile/log data) is preserved.
  */
+function assertEditableAttendanceDate(dateKey: string): void {
+  const today = toDateKey(new Date());
+  if (dateKey > today) {
+    throw new Error('Cannot edit attendance for a future date.');
+  }
+  const todayDate = new Date(`${today}T00:00:00`).getTime();
+  const selectedDate = new Date(`${dateKey}T00:00:00`).getTime();
+  const diffDays = Math.round((todayDate - selectedDate) / 86400000);
+  const windowDays = getAttendanceOverrideEditWindowDays();
+  if (diffDays > windowDays - 1) {
+    throw new Error(
+      `This date is locked. Overrides are only allowed within the last ${windowDays} day(s).`,
+    );
+  }
+}
+
 export function manualClockIn(
   staff: Staff,
   dateKey: string,
   time: string,
   note: string | null,
 ): AttendanceLog {
+  assertEditableAttendanceDate(dateKey);
+
+  const existing = getLogForStaffOnDate(staff.id, dateKey);
+  if (existing) {
+    throw new Error(
+      'This staff member already has a clock-in for this date; the original biometric scan is locked.',
+    );
+  }
+
   const at = combineDateAndTime(dateKey, time);
   const schedule = getSchedule();
   const evaluation = evaluateClockIn(at, schedule, dateKey);
-  const existing = getLogForStaffOnDate(staff.id, dateKey);
-
-  if (existing) {
-    if (
-      existing.clockOutTime &&
-      at.getTime() >= new Date(existing.clockOutTime).getTime()
-    ) {
-      throw new Error('Clock-in time must be before the existing clock-out time.');
-    }
-    return updateClockIn({
-      logId: existing.id,
-      clockInTime: at.toISOString(),
-      status: evaluation.status,
-      minutesLate: evaluation.minutesLate,
-      // Keep the original authentication method so the row still shows that
-      // this staff member uses face scan; the manual flag carries the override.
-      authMethod: existing.authMethod,
-      isManualOverride: true,
-      overrideNote: note,
-    });
-  }
 
   return insertClockIn({
     staffId: staff.id,
@@ -279,6 +285,7 @@ export function manualClockIn(
     authMethod: 'MANUAL_OVERRIDE',
     isManualOverride: true,
     overrideNote: note,
+    overrideRecordedAt: new Date().toISOString(),
   });
 }
 
@@ -289,9 +296,16 @@ export function manualClockOut(
   time: string,
   note: string | null,
 ): AttendanceLog {
+  assertEditableAttendanceDate(dateKey);
+
   const existing = getLogForStaffOnDate(staff.id, dateKey);
   if (!existing) {
     throw new Error('Add a clock-in before adding a clock-out.');
+  }
+  if (existing.clockOutTime) {
+    throw new Error(
+      'This staff member already has a clock-out for this date; the original scan is locked.',
+    );
   }
 
   const at = combineDateAndTime(dateKey, time);
@@ -309,6 +323,7 @@ export function manualClockOut(
     authMethod: existing.authMethod,
     isManualOverride: true,
     overrideNote: note,
+    overrideRecordedAt: new Date().toISOString(),
   });
 }
 

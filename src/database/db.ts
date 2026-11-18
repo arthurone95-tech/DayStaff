@@ -89,6 +89,11 @@ function ensureAttendanceColumns(db: SQLite.SQLiteDatabase): void {
       'ALTER TABLE attendance_logs ADD COLUMN override_note TEXT;',
     );
   }
+  if (!names.has('override_recorded_at')) {
+    db.execSync(
+      'ALTER TABLE attendance_logs ADD COLUMN override_recorded_at TEXT;',
+    );
+  }
 }
 
 /**
@@ -224,6 +229,7 @@ function migrate(db: SQLite.SQLiteDatabase): void {
         auth_method TEXT NOT NULL DEFAULT 'FACE_BIOMETRIC',
         is_manual_override INTEGER NOT NULL DEFAULT 0,
         override_note TEXT,
+        override_recorded_at TEXT,
         FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE CASCADE,
         UNIQUE (staff_id, date)
       );

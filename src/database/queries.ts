@@ -103,6 +103,7 @@ interface AttendanceRow {
   auth_method: AttendanceAuthMethod;
   is_manual_override: number;
   override_note: string | null;
+  override_recorded_at: string | null;
 }
 
 interface ExportRow extends AttendanceRow {
@@ -166,6 +167,7 @@ const mapLog = (row: AttendanceRow): AttendanceLog => ({
   authMethod: row.auth_method ?? 'FACE_BIOMETRIC',
   isManualOverride: (row.is_manual_override ?? 0) === 1,
   overrideNote: row.override_note ?? null,
+  overrideRecordedAt: row.override_recorded_at ?? null,
 });
 
 // ---------------------------------------------------------------------------
@@ -605,12 +607,13 @@ export function insertClockIn(params: {
   authMethod: AttendanceAuthMethod;
   isManualOverride?: boolean;
   overrideNote?: string | null;
+  overrideRecordedAt?: string | null;
 }): AttendanceLog {
   const result = getDb().runSync(
     `INSERT INTO attendance_logs
        (staff_id, date, clock_in_time, clock_in_status, minutes_late, minutes_early, auth_method,
-        is_manual_override, override_note)
-     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+        is_manual_override, override_note, override_recorded_at)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
     [
       params.staffId,
       params.date,
@@ -620,6 +623,7 @@ export function insertClockIn(params: {
       params.authMethod,
       params.isManualOverride ? 1 : 0,
       params.overrideNote ?? null,
+      params.overrideRecordedAt ?? null,
     ],
   );
   const log = getDb().getFirstSync<AttendanceRow>(
@@ -641,6 +645,7 @@ export function updateClockIn(params: {
   authMethod: AttendanceAuthMethod;
   isManualOverride?: boolean;
   overrideNote?: string | null;
+  overrideRecordedAt?: string | null;
 }): AttendanceLog {
   const assignments = [
     'clock_in_time = ?',
@@ -655,10 +660,11 @@ export function updateClockIn(params: {
     params.authMethod,
   ];
   if (params.isManualOverride !== undefined) {
-    assignments.push('is_manual_override = ?', 'override_note = ?');
+    assignments.push('is_manual_override = ?', 'override_note = ?', 'override_recorded_at = ?');
     values.push(
       params.isManualOverride ? 1 : 0,
       params.overrideNote ?? null,
+      params.overrideRecordedAt ?? null,
     );
   }
   values.push(params.logId);
@@ -684,6 +690,7 @@ export function updateClockOut(params: {
   authMethod: AttendanceAuthMethod;
   isManualOverride?: boolean;
   overrideNote?: string | null;
+  overrideRecordedAt?: string | null;
 }): AttendanceLog {
   const assignments = [
     'clock_out_time = ?',
@@ -698,10 +705,11 @@ export function updateClockOut(params: {
     params.authMethod,
   ];
   if (params.isManualOverride !== undefined) {
-    assignments.push('is_manual_override = ?', 'override_note = ?');
+    assignments.push('is_manual_override = ?', 'override_note = ?', 'override_recorded_at = ?');
     values.push(
       params.isManualOverride ? 1 : 0,
       params.overrideNote ?? null,
+      params.overrideRecordedAt ?? null,
     );
   }
   values.push(params.logId);
@@ -738,6 +746,7 @@ interface AttendanceWithStaffSqlRow {
   auth_method: AttendanceAuthMethod;
   is_manual_override: number;
   override_note: string | null;
+  override_recorded_at: string | null;
   staff_pk: number;
   full_name: string;
   staff_code: string | null;
@@ -782,6 +791,7 @@ export function getAttendanceWithStaffForDate(
        l.auth_method,
        l.is_manual_override,
        l.override_note,
+       l.override_recorded_at,
        s.id AS staff_pk,
        s.full_name,
        s.staff_code,
@@ -847,6 +857,7 @@ export function getAttendanceWithStaffForDate(
       auth_method: row.auth_method,
       is_manual_override: row.is_manual_override,
       override_note: row.override_note,
+      override_recorded_at: row.override_recorded_at,
     }),
   }));
 
