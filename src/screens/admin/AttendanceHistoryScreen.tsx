@@ -94,27 +94,11 @@ function formatStatusSummary(records: AttendanceWithStaffRow[]): string {
     return 'No staff for this day';
   }
   const withLog = records.filter((record) => record.log);
-  let late = 0;
-  let early = 0;
-  for (const { log } of withLog) {
-    if (log?.clockInStatus === 'late') {
-      late += 1;
-    }
-    if (log?.clockOutStatus === 'early') {
-      early += 1;
-    }
-  }
   const parts = [`${records.length} staff`];
   parts.push(`${withLog.length} checked in`);
   const absent = records.length - withLog.length;
   if (absent > 0) {
     parts.push(`${absent} absent`);
-  }
-  if (late > 0) {
-    parts.push(`${late} late`);
-  }
-  if (early > 0) {
-    parts.push(`${early} early exit${early === 1 ? '' : 's'}`);
   }
   return parts.join(' · ');
 }
@@ -668,7 +652,7 @@ export function AttendanceHistoryScreen() {
           {(
             [
               { key: 'all', label: 'All' },
-              { key: 'present', label: 'Present' },
+              { key: 'present', label: 'On time' },
               { key: 'late', label: 'Late' },
               { key: 'clockedOut', label: 'Clocked out' },
               { key: 'earlyExit', label: 'Early exit' },
