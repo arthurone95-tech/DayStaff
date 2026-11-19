@@ -25,6 +25,15 @@ import { EmptyState } from '../../components/EmptyState';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { TimeField } from '../../components/TimeField';
+import DateTimePicker, {
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
+import {
+  TimePickerSheet,
+  TimeRow,
+  dateToTime,
+  timeToDate,
+} from '../../components/TimePickerSheet';
 import {
   getAttendanceDateKeys,
   getAttendanceWithStaffForDate,
@@ -53,9 +62,11 @@ const DAY_CELL_WIDTH = '14.2857%';
 
 type ExportFormat = 'xlsx' | 'csv';
 
+// Persists the last selected filter pill across tab switches and kiosk visits.
+let persistedAttendanceFilter: AttendanceFilter = 'present';
+
 // The pinned pills bar must be opaque so list rows slide *under* it instead of
 // showing through. This has to match the page background that <Screen> uses.
-// If you see a colour band behind the pills, change this one value.
 const PAGE_BACKGROUND = colors.slate50;
 
 function QuickChip({
@@ -260,17 +271,6 @@ export function AttendanceHistoryScreen() {
     );
     return diffDays > overrideWindowDays - 1;
   };
-  const canOverrideRecord = (
-    record: AttendanceWithStaffRow,
-    dateKey: string,
-  ): boolean => {
-    if (isDateLocked(dateKey)) return false;
-    const log = record.log;
-    if (!log) return true;
-    if (!log.clockOutTime) return true;
-    return false;
-  };
-
   const [selectedDateKey, setSelectedDateKey] = useState(today);
   const [records, setRecords] = useState<AttendanceWithStaffRow[]>([]);
   const [availableDates, setAvailableDates] = useState<Set<string>>(
@@ -284,7 +284,13 @@ export function AttendanceHistoryScreen() {
   const [exportVisible, setExportVisible] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('xlsx');
   const [exporting, setExporting] = useState(false);
-  const [filter, setFilter] = useState<AttendanceFilter>(routeFilter ?? 'all');
+
+  const initialFilter: AttendanceFilter =
+    routeFilter && routeFilter !== 'all'
+      ? routeFilter
+      : persistedAttendanceFilter;
+  const [filter, setFilter] = useState<AttendanceFilter>(initialFilter);
+
   const scrollRef = useRef<ScrollViewInstance | null>(null);
   const filterScrollOffset = useRef(0);
   const [filterViewportWidth, setFilterViewportWidth] = useState(0);
@@ -297,6 +303,11 @@ export function AttendanceHistoryScreen() {
   const [heroHeight, setHeroHeight] = useState(0);
   const [headerHeight, setHeaderHeight] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+
+  // Sticky accordion bar measurements for the "Out" (clockedOut) grouped view
+  const [accordionRowHeight, setAccordionRowHeight] = useState(0);
+  const [regularSectionY, setRegularSectionY] = useState(0);
+  const [scrollPosY, setScrollPosY] = useState(0);
 
   // Search: lives in the pinned pills row and replaces the pills while open.
   const [searchOpen, setSearchOpen] = useState(false);
@@ -318,7 +329,9 @@ export function AttendanceHistoryScreen() {
     {
       useNativeDriver: true,
       listener: (e: any) => {
-        scrollOffset.current = e.nativeEvent.contentOffset.y;
+        const y = e.nativeEvent.contentOffset.y;
+        scrollOffset.current = y;
+        setScrollPosY(y);
       },
     },
   );
@@ -329,9 +342,12 @@ export function AttendanceHistoryScreen() {
     'clock_in' | 'clock_out'
   >('clock_in');
   const [overrideTime, setOverrideTime] = useState('08:00');
+  const [overrideTimeEditing, setOverrideTimeEditing] = useState(false);
   const [overrideNote, setOverrideNote] = useState('');
   const [overrideError, setOverrideError] = useState<string | null>(null);
-  const [earlyExitsExpanded, setEarlyExitsExpanded] = useState(true);
+
+  // Early Exits starts collapsed (closed); Regular starts expanded (open).
+  const [earlyExitsExpanded, setEarlyExitsExpanded] = useState(false);
   const [regularExpanded, setRegularExpanded] = useState(true);
 
   const FILTER_ORDER: AttendanceFilter[] = [
@@ -362,56 +378,68 @@ export function AttendanceHistoryScreen() {
     [],
   );
 
+  const ensureActiveChipVisible = useCallback(
+    (animated = true) => {
+      const activeIndex = FILTER_ORDER.indexOf(filter);
+      if (activeIndex < 0 || !scrollRef.current) return;
+      const activeOffset = chipOffsets[activeIndex];
+      const activeWidth = chipWidths[activeIndex] ?? 0;
+      const viewportWidth = filterViewportWidth || 1;
+      const currentOffset = filterScrollOffset.current;
+      const contentWidth = chipWidths.reduce(
+        (total, width) => total + width + spacing.sm,
+        0,
+      );
+      const maxOffset = Math.max(0, contentWidth - viewportWidth);
+
+      const edgeGap = spacing.sm;
+      const leftIndex = Math.max(activeIndex - 1, 0);
+      const rightIndex = Math.min(activeIndex + 1, FILTER_ORDER.length - 1);
+      if (
+        chipOffsets[leftIndex] === undefined ||
+        chipOffsets[rightIndex] === undefined
+      ) {
+        return;
+      }
+      const wantLeft = chipOffsets[leftIndex] - edgeGap;
+      const wantRight =
+        chipOffsets[rightIndex] + (chipWidths[rightIndex] ?? 0) + edgeGap;
+
+      let targetOffset = currentOffset;
+      if (wantRight - wantLeft > viewportWidth) {
+        targetOffset = activeOffset + activeWidth / 2 - viewportWidth / 2;
+      } else if (wantRight > currentOffset + viewportWidth) {
+        targetOffset = wantRight - viewportWidth;
+      } else if (wantLeft < currentOffset) {
+        targetOffset = wantLeft;
+      } else {
+        return;
+      }
+      targetOffset = Math.max(0, Math.min(maxOffset, targetOffset));
+      scrollRef.current.scrollTo({ x: targetOffset, animated });
+    },
+    [filter, chipOffsets, chipWidths, filterViewportWidth],
+  );
+
   useEffect(() => {
-    const activeIndex = FILTER_ORDER.indexOf(filter);
-    if (activeIndex < 0 || !scrollRef.current) return;
-    const activeOffset = chipOffsets[activeIndex];
-    const activeWidth = chipWidths[activeIndex] ?? 0;
-    const viewportWidth = filterViewportWidth || 1;
-    const currentOffset = filterScrollOffset.current;
-    const contentWidth = chipWidths.reduce(
-      (total, width) => total + width + spacing.sm,
-      0,
-    );
-    const maxOffset = Math.max(0, contentWidth - viewportWidth);
-
-    // Keep the active pill AND its neighbours (the one before and the one
-    // after) fully in view, so the next pill you are likely to tap is never
-    // half hidden. `edgeGap` is the breathing room kept at each end.
-    const edgeGap = spacing.sm;
-    const leftIndex = Math.max(activeIndex - 1, 0);
-    const rightIndex = Math.min(activeIndex + 1, FILTER_ORDER.length - 1);
-    if (
-      chipOffsets[leftIndex] === undefined ||
-      chipOffsets[rightIndex] === undefined
-    ) {
-      return; // pills not measured yet
-    }
-    const wantLeft = chipOffsets[leftIndex] - edgeGap;
-    const wantRight =
-      chipOffsets[rightIndex] + (chipWidths[rightIndex] ?? 0) + edgeGap;
-
-    let targetOffset = currentOffset;
-    if (wantRight - wantLeft > viewportWidth) {
-      // Not enough room for three pills: just centre the active one.
-      targetOffset = activeOffset + activeWidth / 2 - viewportWidth / 2;
-    } else if (wantRight > currentOffset + viewportWidth) {
-      targetOffset = wantRight - viewportWidth;
-    } else if (wantLeft < currentOffset) {
-      targetOffset = wantLeft;
-    } else {
-      // Active pill and both neighbours are already visible; do not move.
-      return;
-    }
-    targetOffset = Math.max(0, Math.min(maxOffset, targetOffset));
-    scrollRef.current.scrollTo({ x: targetOffset, animated: true });
-  }, [filter, chipOffsets, chipWidths, filterViewportWidth, searchOpen]);
+    ensureActiveChipVisible(true);
+  }, [ensureActiveChipVisible, searchOpen]);
 
   useFocusEffect(
     useCallback(() => {
       setRecords(getAttendanceWithStaffForDate(selectedDateKey));
       setAvailableDates(new Set(getAttendanceDateKeys()));
-    }, [selectedDateKey]),
+      // Re-restore the persisted active pill and ensure it is scrolled into view on return
+      setFilter(persistedAttendanceFilter);
+      if (persistedAttendanceFilter === 'clockedOut') {
+        setEarlyExitsExpanded(false);
+        setRegularExpanded(true);
+      }
+      const timer = setTimeout(() => {
+        ensureActiveChipVisible(false);
+      }, 50);
+      return () => clearTimeout(timer);
+    }, [selectedDateKey, ensureActiveChipVisible]),
   );
 
   const selectedDate = useMemo(
@@ -419,6 +447,33 @@ export function AttendanceHistoryScreen() {
     [selectedDateKey],
   );
   const isToday = selectedDateKey === today;
+  const sessionEnded = useMemo(() => {
+    if (selectedDateKey < today) return true;
+    if (selectedDateKey > today) return false;
+    const schedule = getSchedule();
+    return new Date() >= combineDateAndTime(selectedDateKey, schedule.endTime);
+  }, [selectedDateKey, today]);
+
+  const canOverrideRecord = useCallback(
+    (record: AttendanceWithStaffRow): boolean => {
+      if (isDateLocked(selectedDateKey)) return false;
+      if (selectedDateKey > today) return false;
+      const log = record.log;
+      if (!log) {
+        return true; // Absent: admin can clock in.
+      }
+      if (log.clockOutTime) {
+        return false; // Already clocked out / early exit: do not override.
+      }
+      if (!sessionEnded) {
+        return false;
+      }
+      return (
+        log.clockInStatus === 'on_time' || log.clockInStatus === 'late'
+      );
+    },
+    [selectedDateKey, today, sessionEnded],
+  );
 
   const selectDate = (dateKey: string) => {
     setSelectedDateKey(dateKey);
@@ -514,6 +569,7 @@ export function AttendanceHistoryScreen() {
     const now = new Date();
     setOverrideRecord(record);
     setOverrideError(null);
+    setOverrideTimeEditing(false);
     setOverrideNote(log?.overrideNote ?? '');
 
     if (!log) {
@@ -593,6 +649,7 @@ export function AttendanceHistoryScreen() {
         );
       }
       const staffName = overrideRecord.staff.fullName;
+      setOverrideTimeEditing(false);
       setOverrideRecord(null);
       setRecords(getAttendanceWithStaffForDate(selectedDateKey));
       setAvailableDates(new Set(getAttendanceDateKeys()));
@@ -685,8 +742,6 @@ export function AttendanceHistoryScreen() {
 
   const summary = formatStatusSummary(records);
 
-  // Switching pills while the hero is hidden: keep the hero hidden and show the
-  // new list from its first row, instead of landing in the middle of it.
   const snapListBelowHero = () => {
     if (scrollOffset.current > heroHeight) {
       listScrollRef.current?.scrollTo({ y: heroHeight, animated: false });
@@ -694,12 +749,51 @@ export function AttendanceHistoryScreen() {
   };
 
   const selectFilter = (next: AttendanceFilter) => {
+    persistedAttendanceFilter = next;
     setFilter(next);
+    if (next === 'clockedOut') {
+      setEarlyExitsExpanded(false);
+      setRegularExpanded(true);
+    }
     snapListBelowHero();
   };
 
-  // Search looks at everyone for the selected day (it ignores the pills), by
-  // name or staff code. An empty query shows everyone.
+  // Determine which accordion header should pin directly beneath the pills bar
+  // while scrolling through the "Out" (clockedOut) tab.
+  const hasEarly =
+    filter === 'clockedOut' && !searchOpen && clockedOutGroups.early.length > 0;
+  const hasRegular =
+    filter === 'clockedOut' && !searchOpen && clockedOutGroups.regular.length > 0;
+
+  const isHeaderPinnedUnderPills =
+    (hasEarly || hasRegular) &&
+    heroHeight > 0 &&
+    scrollPosY >= heroHeight + spacing.md;
+
+  // Keep the pinned accordion bar disabled so the two section headers never
+  // swap or overlap while scrolling; Early Exits stays above Regular.
+  const pinnedSection: 'early' | 'regular' | null = null;
+
+  const toggleEarlyExits = () => {
+    setEarlyExitsExpanded((prev) => {
+      const next = !prev;
+      if (!next && pinnedSection === 'early' && scrollOffset.current > heroHeight) {
+        listScrollRef.current?.scrollTo({ y: heroHeight, animated: false });
+      }
+      return next;
+    });
+  };
+
+  const toggleRegular = () => {
+    setRegularExpanded((prev) => {
+      const next = !prev;
+      if (!next && pinnedSection === 'regular' && scrollOffset.current > heroHeight) {
+        listScrollRef.current?.scrollTo({ y: heroHeight, animated: false });
+      }
+      return next;
+    });
+  };
+
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return records;
@@ -714,7 +808,6 @@ export function AttendanceHistoryScreen() {
 
   const openSearch = () => {
     setSearchOpen(true);
-    // Tuck the hero away so there is room above the keyboard.
     if (heroHeight > 0 && scrollOffset.current < heroHeight) {
       listScrollRef.current?.scrollTo({ y: heroHeight, animated: true });
     }
@@ -733,8 +826,13 @@ export function AttendanceHistoryScreen() {
   };
 
   useEffect(() => {
-    if (routeFilter) {
+    if (routeFilter && routeFilter !== 'all') {
+      persistedAttendanceFilter = routeFilter;
       setFilter(routeFilter);
+      if (routeFilter === 'clockedOut') {
+        setEarlyExitsExpanded(false);
+        setRegularExpanded(true);
+      }
     }
   }, [routeFilter]);
 
@@ -754,10 +852,7 @@ export function AttendanceHistoryScreen() {
           contentContainerStyle={[
             styles.collapseContent,
             {
-              // Space for the hero + pills that float above the list.
               paddingTop: headerHeight,
-              // Always allow the hero to fully collapse, even on short lists,
-              // so switching pills never makes the hero jump back in.
               minHeight: viewportHeight + heroHeight,
             },
           ]}
@@ -791,11 +886,11 @@ export function AttendanceHistoryScreen() {
                       key={item.log ? `log-${item.log.id}` : `staff-${item.staff.id}`}
                       record={item}
                       onOverride={
-                        canOverrideRecord(item, selectedDateKey)
+                        canOverrideRecord(item)
                           ? openOverride
                           : undefined
                       }
-                      overrideAvailable={canOverrideRecord(item, selectedDateKey)}
+                      overrideAvailable={canOverrideRecord(item)}
                     />
                   ))}
                 </View>
@@ -818,8 +913,14 @@ export function AttendanceHistoryScreen() {
               {clockedOutGroups.early.length > 0 ? (
                 <View>
                   <Pressable
-                    style={styles.accordionHeader}
-                    onPress={() => setEarlyExitsExpanded((value) => !value)}
+                    onLayout={(e) =>
+                      setAccordionRowHeight(e.nativeEvent.layout.height)
+                    }
+                    style={[
+                      styles.accordionHeader,
+                      pinnedSection === 'early' && styles.accordionHeaderHidden,
+                    ]}
+                    onPress={toggleEarlyExits}
                   >
                     <Text style={styles.accordionTitle}>
                       {'\u{1F7E0}'} Early Exits ({clockedOutGroups.early.length})
@@ -834,21 +935,31 @@ export function AttendanceHistoryScreen() {
                           key={item.log ? `log-${item.log.id}` : `staff-${item.staff.id}`}
                           record={item}
                           onOverride={
-                            canOverrideRecord(item, selectedDateKey)
+                            canOverrideRecord(item)
                               ? openOverride
                               : undefined
                           }
-                          overrideAvailable={canOverrideRecord(item, selectedDateKey)}
+                          overrideAvailable={canOverrideRecord(item)}
                         />
                       ))
                     : null}
                 </View>
               ) : null}
               {clockedOutGroups.regular.length > 0 ? (
-                <View>
+                <View
+                  onLayout={(e) => setRegularSectionY(e.nativeEvent.layout.y)}
+                >
                   <Pressable
-                    style={styles.accordionHeader}
-                    onPress={() => setRegularExpanded((value) => !value)}
+                    onLayout={(e) => {
+                      if (accordionRowHeight === 0) {
+                        setAccordionRowHeight(e.nativeEvent.layout.height);
+                      }
+                    }}
+                    style={[
+                      styles.accordionHeader,
+                      pinnedSection === 'regular' && styles.accordionHeaderHidden,
+                    ]}
+                    onPress={toggleRegular}
                   >
                     <Text style={styles.accordionTitle}>
                       {'\u{1F535}'} Regular ({clockedOutGroups.regular.length})
@@ -863,11 +974,11 @@ export function AttendanceHistoryScreen() {
                           key={item.log ? `log-${item.log.id}` : `staff-${item.staff.id}`}
                           record={item}
                           onOverride={
-                            canOverrideRecord(item, selectedDateKey)
+                            canOverrideRecord(item)
                               ? openOverride
                               : undefined
                           }
-                          overrideAvailable={canOverrideRecord(item, selectedDateKey)}
+                          overrideAvailable={canOverrideRecord(item)}
                         />
                       ))
                     : null}
@@ -892,11 +1003,11 @@ export function AttendanceHistoryScreen() {
                     key={item.log ? `log-${item.log.id}` : `staff-${item.staff.id}`}
                     record={item}
                     onOverride={
-                      canOverrideRecord(item, selectedDateKey)
+                      canOverrideRecord(item)
                         ? openOverride
                         : undefined
                     }
-                    overrideAvailable={canOverrideRecord(item, selectedDateKey)}
+                    overrideAvailable={canOverrideRecord(item)}
                   />
                 ))}
               </View>
@@ -1071,6 +1182,34 @@ export function AttendanceHistoryScreen() {
               </>
             )}
           </View>
+
+          {/* Pinned accordion bar directly under the pills bar while scrolling */}
+          {pinnedSection ? (
+            <View style={styles.pinnedAccordionWrap}>
+              <Pressable
+                style={[styles.accordionHeader, styles.pinnedAccordionHeader]}
+                onPress={
+                  pinnedSection === 'early' ? toggleEarlyExits : toggleRegular
+                }
+              >
+                <Text style={styles.accordionTitle}>
+                  {pinnedSection === 'early'
+                    ? `${'\u{1F7E0}'} Early Exits (${clockedOutGroups.early.length})`
+                    : `${'\u{1F535}'} Regular (${clockedOutGroups.regular.length})`}
+                </Text>
+                <Text style={styles.accordionIcon}>
+                  {(
+                    pinnedSection === 'early'
+                      ? earlyExitsExpanded
+                      : regularExpanded
+                  )
+                    ? '\u25BC'
+                    : '\u25B6'}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
           <Animated.View
             pointerEvents="none"
             style={[styles.headerDivider, { opacity: dividerOpacity }]}
@@ -1523,14 +1662,14 @@ export function AttendanceHistoryScreen() {
                 </View>
 
                 <View style={styles.overrideTimeField}>
-                  <TimeField
+                  <TimeRow
                     label={
                       overrideAction === 'clock_in'
                         ? 'Clock-in time'
                         : 'Clock-out time'
                     }
                     value={overrideTime}
-                    onChange={setOverrideTime}
+                    onPress={() => setOverrideTimeEditing(true)}
                   />
                 </View>
 
@@ -1599,7 +1738,10 @@ export function AttendanceHistoryScreen() {
                 <AppButton
                   title="Cancel"
                   variant="ghost"
-                  onPress={() => setOverrideRecord(null)}
+                  onPress={() => {
+                    setOverrideTimeEditing(false);
+                    setOverrideRecord(null);
+                  }}
                 />
 
                 <Text style={styles.overrideFootnote}>
@@ -1608,6 +1750,36 @@ export function AttendanceHistoryScreen() {
                 </Text>
               </ScrollView>
             </Card>
+          ) : null}
+
+          {overrideRecord && Platform.OS === 'ios' ? (
+            <TimePickerSheet
+              visible={overrideTimeEditing}
+              title={
+                overrideAction === 'clock_in'
+                  ? 'Clock-in time'
+                  : 'Clock-out time'
+              }
+              value={overrideTime}
+              onChange={setOverrideTime}
+              onClose={() => setOverrideTimeEditing(false)}
+            />
+          ) : null}
+          {overrideRecord &&
+          Platform.OS !== 'ios' &&
+          overrideTimeEditing ? (
+            <DateTimePicker
+              value={timeToDate(overrideTime)}
+              mode="time"
+              is24Hour={false}
+              display="default"
+              onChange={(event: DateTimePickerEvent, date?: Date) => {
+                setOverrideTimeEditing(false);
+                if (event.type === 'set' && date) {
+                  setOverrideTime(dateToTime(date));
+                }
+              }}
+            />
           ) : null}
         </KeyboardAvoidingView>
       </Modal>
@@ -1920,6 +2092,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.slate50,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
+  },
+  accordionHeaderHidden: {
+    opacity: 0,
+  },
+  pinnedAccordionWrap: {
+    paddingHorizontal: spacing.lg,
+    backgroundColor: PAGE_BACKGROUND,
+  },
+  pinnedAccordionHeader: {
+    borderTopLeftRadius: radius.md,
+    borderTopRightRadius: radius.md,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderTopWidth: 1,
+    borderColor: colors.border,
   },
   accordionTitle: {
     fontSize: fontSize.sm,

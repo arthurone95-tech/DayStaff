@@ -1,5 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 
 import { AppButton } from '../../components/AppButton';
 import { Screen } from '../../components/Screen';
@@ -8,6 +15,15 @@ import { colors, fontSize, radius, spacing } from '../../theme';
 interface HomeScreenProps {
   onGetStarted: () => void;
 }
+
+// Space above the banner. The floating Tools button can be moved around and is
+// allowed to sit on top of the page, so no extra room is kept for it.
+const TOP_SPACE = 40;
+
+// banner.png is 1024 x 500. The banner is sized from the screen width, so it
+// can never leave empty space above or below itself.
+const BANNER_ASPECT = 1024 / 500;
+const BANNER_MAX_WIDTH = 360;
 
 const FEATURES = [
   {
@@ -28,25 +44,36 @@ const FEATURES = [
 ];
 
 export function HomeScreen({ onGetStarted }: HomeScreenProps) {
+  const { width } = useWindowDimensions();
+  const bannerWidth = Math.min(width - spacing.xl * 2, BANNER_MAX_WIDTH);
+  const bannerHeight = bannerWidth / BANNER_ASPECT;
+
   return (
     <Screen edges={['top', 'left', 'right', 'bottom']}>
+      {/* Fits on one screen on normal phones; only scrolls if a very small
+          screen cannot fit everything, so Get started is never cut off. */}
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        bounces={false}
+        overScrollMode="never"
       >
         <View style={styles.hero}>
           <Image
-            source={require('../../../assets/icon.png')}
-            style={styles.logo}
+            source={require('../../../assets/banner.png')}
+            style={[styles.banner, { width: bannerWidth, height: bannerHeight }]}
             resizeMode="contain"
           />
-          <Text style={styles.title}>DayStaff</Text>
-          <Text style={styles.subtitle}>Staff attendance terminal</Text>
           <Text style={styles.description}>
             Set up your organisation, secure the admin area, and start tracking
             attendance in minutes.
           </Text>
         </View>
+
+        {/* Leftover height is shared between these two gaps (and the top
+            of the page stays tight), instead of piling up at the bottom. */}
+        <View style={styles.gapAfterBanner} />
 
         <View style={styles.features}>
           {FEATURES.map((feature) => (
@@ -66,6 +93,8 @@ export function HomeScreen({ onGetStarted }: HomeScreenProps) {
           ))}
         </View>
 
+        <View style={styles.gapBeforeButton} />
+
         <View style={styles.actions}>
           <AppButton
             title="Get started"
@@ -83,48 +112,42 @@ export function HomeScreen({ onGetStarted }: HomeScreenProps) {
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+  },
   content: {
     flexGrow: 1,
     paddingHorizontal: spacing.xl,
-    paddingTop: spacing.xxl,
-    paddingBottom: spacing.xl,
+    paddingTop: TOP_SPACE,
+    paddingBottom: spacing.md,
   },
   hero: {
     alignItems: 'center',
-    marginBottom: spacing.xxl,
   },
-  logo: {
-    width: 96,
-    height: 96,
-    borderRadius: radius.xl,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.lg,
+  // flex values set how the spare height is split (1 : 1.5). minHeight is the
+  // smallest gap on short screens.
+  gapAfterBanner: {
+    flex: 1,
+    minHeight: spacing.md,
   },
-  title: {
-    fontSize: fontSize.display,
-    fontWeight: '800',
-    color: colors.slate900,
-    letterSpacing: 0.5,
+  gapBeforeButton: {
+    flex: 1,
+    minHeight: spacing.md,
   },
-  subtitle: {
-    marginTop: spacing.xs,
-    fontSize: fontSize.md,
-    fontWeight: '600',
-    color: colors.slate500,
+  banner: {
+    borderRadius: radius.lg,
+    marginBottom: spacing.xs,
   },
   description: {
-    marginTop: spacing.md,
+    marginTop: 12,
     fontSize: fontSize.sm,
-    lineHeight: 22,
+    lineHeight: 18,
     color: colors.slate500,
     textAlign: 'center',
     maxWidth: 360,
   },
   features: {
-    gap: spacing.md,
-    marginBottom: spacing.xxl,
+    gap: spacing.sm,
   },
   featureRow: {
     flexDirection: 'row',
@@ -134,11 +157,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.lg,
+    padding: spacing.md,
   },
   featureIcon: {
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
     borderRadius: radius.md,
     backgroundColor: colors.infoSoft,
     alignItems: 'center',
@@ -153,14 +176,13 @@ const styles = StyleSheet.create({
     color: colors.slate900,
   },
   featureBody: {
-    marginTop: spacing.xs,
+    marginTop: 2,
     fontSize: fontSize.sm,
-    lineHeight: 20,
+    lineHeight: 17,
     color: colors.slate500,
   },
   actions: {
-    marginTop: 'auto',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   footnote: {
     fontSize: fontSize.xs,

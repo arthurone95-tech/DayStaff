@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import * as Clipboard from 'expo-clipboard';
 import {
   BackHandler,
   Keyboard,
@@ -127,6 +128,7 @@ export function AdminSettingsScreen() {
   );
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const [recoveryAcknowledged, setRecoveryAcknowledged] = useState(false);
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
   const [regeneratingRecovery, setRegeneratingRecovery] = useState(false);
   const [strictness, setStrictnessState] =
     useState<FaceStrictness>(getFaceStrictness());
@@ -184,6 +186,21 @@ export function AdminSettingsScreen() {
       });
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleCopyRecoveryCode = async () => {
+    if (!recoveryCode) return;
+    try {
+      await Clipboard.setStringAsync(recoveryCode);
+      setRecoveryCopied(true);
+      setTimeout(() => setRecoveryCopied(false), 2000);
+    } catch {
+      alert({
+        tone: 'danger',
+        title: 'Could not copy',
+        message: 'Please try copying the recovery code again.',
+      });
     }
   };
 
@@ -852,6 +869,7 @@ export function AdminSettingsScreen() {
                               const code = generateAdminRecoveryCode();
                               await storeAdminRecoveryCode(code);
                               setRecoveryAcknowledged(false);
+                              setRecoveryCopied(false);
                               setRecoveryCode(code);
                             } catch (error) {
                               alert({
@@ -927,6 +945,30 @@ export function AdminSettingsScreen() {
                 </Text>
                 <View style={styles.recoveryCodeBox}>
                   <Text style={styles.recoveryCode}>{recoveryCode}</Text>
+                  <Pressable
+                    onPress={handleCopyRecoveryCode}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      recoveryCopied
+                        ? 'Recovery code copied'
+                        : 'Copy recovery code'
+                    }
+                    hitSlop={12}
+                    style={({ pressed }) => [
+                      styles.copyIcon,
+                      pressed && styles.copyIconPressed,
+                    ]}
+                  >
+                    <Ionicons
+                      name={
+                        recoveryCopied ? 'checkmark-circle' : 'copy-outline'
+                      }
+                      size={22}
+                      color={
+                        recoveryCopied ? colors.successDark : colors.primary
+                      }
+                    />
+                  </Pressable>
                 </View>
                 <View style={styles.toggleRow}>
                   <View style={styles.toggleText}>
@@ -944,6 +986,7 @@ export function AdminSettingsScreen() {
                   onPress={() => {
                     setRecoveryCode(null);
                     setRecoveryAcknowledged(false);
+                    setRecoveryCopied(false);
                   }}
                   size="lg"
                   disabled={!recoveryAcknowledged}
@@ -1191,10 +1234,22 @@ const styles = StyleSheet.create({
   },
   recoveryCodeBox: {
     marginVertical: spacing.lg,
-    padding: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
     borderRadius: radius.md,
     backgroundColor: colors.slate100,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copyIcon: {
+    position: 'absolute',
+    right: spacing.lg,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  copyIconPressed: {
+    opacity: 0.6,
   },
   recoveryCode: {
     fontSize: fontSize.xl,

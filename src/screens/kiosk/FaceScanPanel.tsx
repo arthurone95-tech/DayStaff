@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Animated,
   Linking,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -53,6 +54,8 @@ interface FaceScanPanelProps {
   onError?: (message: string) => void;
   /** Increment to auto-trigger a scan once the camera is ready. */
   triggerScan?: number;
+  /** Show a camera flip control (useful when an admin scans another person). */
+  showCameraFlip?: boolean;
 }
 
 export function FaceScanPanel({
@@ -66,6 +69,7 @@ export function FaceScanPanel({
   onUseCode,
   onError,
   triggerScan,
+  showCameraFlip = false,
 }: FaceScanPanelProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView | null>(null);
@@ -75,6 +79,7 @@ export function FaceScanPanel({
   const [stepIndex, setStepIndex] = useState(0);
   const [hint, setHint] = useState<string | null>(null);
   const [cameraKey, setCameraKey] = useState(0);
+  const [facing, setFacing] = useState<'front' | 'back'>('front');
   const { pictureSize, chooseSize } = useFacePictureSize(cameraRef);
   const isFocused = useIsFocused();
   const [cameraRetry, setCameraRetry] = useState(0);
@@ -353,7 +358,7 @@ export function FaceScanPanel({
             key={cameraKey + cameraRetry}
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
-            facing="front"
+            facing={facing}
             enableTorch={lightOn}
             pictureSize={pictureSize}
             onCameraReady={() => {
@@ -392,6 +397,19 @@ export function FaceScanPanel({
             { transform: [{ translateY: scanLineTranslate }] },
           ]}
         />
+
+        {showCameraFlip ? (
+          <Pressable
+            onPress={() =>
+              setFacing((prev) => (prev === 'front' ? 'back' : 'front'))
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Switch camera"
+            style={styles.cameraFlipButton}
+          >
+            <Ionicons name="camera-reverse-outline" size={20} color={colors.white} />
+          </Pressable>
+        ) : null}
 
         {busy || scanning || !ready ? (
           <View style={styles.cameraBusy}>
@@ -616,5 +634,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.kioskSurface,
   },
   scanButton: { marginTop: spacing.md },
+  cameraFlipButton: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
   useCodeButton: { marginTop: spacing.xs },
 });

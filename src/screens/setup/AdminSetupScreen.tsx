@@ -3,6 +3,7 @@ import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import {
   Animated,
   Easing,
@@ -354,6 +355,22 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
   const [editing, setEditing] = useState<'start' | 'end' | null>(null);
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const [recoveryAcknowledged, setRecoveryAcknowledged] = useState(false);
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
+
+  const handleCopyRecoveryCode = async () => {
+    if (!recoveryCode) return;
+    try {
+      await Clipboard.setStringAsync(recoveryCode);
+      setRecoveryCopied(true);
+      setTimeout(() => setRecoveryCopied(false), 2000);
+    } catch {
+      alert({
+        tone: 'danger',
+        title: 'Could not copy',
+        message: 'Please try copying the recovery code again.',
+      });
+    }
+  };
 
   const scrollToTop = () => {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -392,7 +409,7 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
 
     if (step === 0) {
       if (!companyName.trim()) {
-        setError('Enter your company or school name.');
+        setError('Enter your company name.');
         return;
       }
       if (startTime === endTime) {
@@ -614,8 +631,7 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
                     color={colors.infoDark}
                   />
                   <Text style={styles.pinInfoText}>
-                    There is no default PIN. Keep this PIN somewhere safe — it
-                    cannot be recovered from the device.
+                    There is no default PIN. Keep this PIN somewhere safe.
                   </Text>
                 </View>
 
@@ -757,7 +773,31 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
                 This code will not be shown again.
               </Text>
               <View style={styles.recoveryCodeBox}>
-                <Text style={styles.recoveryCode}>{recoveryCode}</Text>
+                <Text style={styles.recoveryCode}>
+                  {recoveryCode}
+                </Text>
+                <Pressable
+                  onPress={handleCopyRecoveryCode}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    recoveryCopied
+                      ? 'Recovery code copied'
+                      : 'Copy recovery code'
+                  }
+                  hitSlop={12}
+                  style={({ pressed }) => [
+                    styles.copyIcon,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons
+                    name={recoveryCopied ? 'checkmark-circle' : 'copy-outline'}
+                    size={22}
+                    color={
+                      recoveryCopied ? colors.successDark : colors.primary
+                    }
+                  />
+                </Pressable>
               </View>
               <View style={styles.toggleRow}>
                 <View style={styles.toggleText}>
@@ -774,6 +814,7 @@ export function AdminSetupScreen({ onComplete }: AdminSetupScreenProps) {
                 title="I have saved it"
                 onPress={() => {
                   setRecoveryAcknowledged(false);
+                  setRecoveryCopied(false);
                   setRecoveryCode(null);
                   onComplete();
                 }}
@@ -1159,10 +1200,19 @@ const styles = StyleSheet.create({
   },
   recoveryCodeBox: {
     marginVertical: spacing.lg,
-    padding: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
     borderRadius: radius.md,
     backgroundColor: colors.slate100,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copyIcon: {
+    position: 'absolute',
+    right: spacing.lg,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   recoveryCode: {
     fontSize: fontSize.xl,

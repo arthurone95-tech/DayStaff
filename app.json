@@ -11,7 +11,7 @@
       "image": "./assets/splash-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#061734",
-      "imageWidth": 280
+      "imageWidth": 200
     },
     "ios": {
       "supportsTablet": true,
@@ -29,9 +29,7 @@
       "package": "com.daystaff.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/icon.png",
-        "backgroundImage": "./assets/icon.png",
-        "monochromeImage": "./assets/icon.png"
+        "foregroundImage": "./assets/adaptive-icon.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -83,7 +81,7 @@
           "resizeMode": "contain",
           "backgroundColor": "#061734",
           "android": {
-            "imageWidth": 280
+            "imageWidth": 200
           }
         }
       ]

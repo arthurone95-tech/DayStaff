@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useCallback, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
@@ -54,6 +54,7 @@ import {
   setPersonalStaffPin,
 } from '../../services/lookalikeService';
 import { PhonePairingModal } from '../../components/PhonePairingModal';
+import { findDuplicateFace } from '../../services/faceRecognitionService';
 import { STAFF_CODE_MAX_LENGTH } from '../../config/app';
 import { colors, fontSize, radius, shadow, spacing } from '../../theme';
 
@@ -63,40 +64,11 @@ type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 /* ---------- Small building blocks ---------- */
 
-function InfoRow({
-  icon,
-  label,
-  children,
-  last,
-  compact,
-}: {
-  icon: IconName;
-  label: string;
-  children: React.ReactNode;
-  last?: boolean;
-  compact?: boolean;
-}) {
-  return (
-    <View
-      style={[
-        styles.infoRow,
-        compact && styles.rowCompact,
-        !last && styles.rowDivider,
-      ]}
-    >
-      <View style={[styles.rowIconWrap, styles.rowIconWrapPrimary]}>
-        <Ionicons name={icon} size={18} color={colors.primary} />
-      </View>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <View style={styles.infoValueWrap}>{children}</View>
-    </View>
-  );
-}
-
 function ActionRow({
   icon,
   title,
   subtitle,
+  badge,
   onPress,
   danger,
   last,
@@ -105,6 +77,8 @@ function ActionRow({
   icon: IconName;
   title: string;
   subtitle?: string;
+  // Optional status chip shown before the chevron (e.g. "Enrolled", "Set").
+  badge?: { label: string; tone: React.ComponentProps<typeof Badge>['tone'] };
   onPress: () => void;
   danger?: boolean;
   last?: boolean;
@@ -138,6 +112,7 @@ function ActionRow({
           <Text style={styles.actionSubtitle}>{subtitle}</Text>
         ) : null}
       </View>
+      {badge ? <Badge label={badge.label} tone={badge.tone} /> : null}
       <Ionicons name="chevron-forward" size={18} color={colors.slate500} />
     </Pressable>
   );
@@ -157,6 +132,7 @@ export function StaffProfileScreen({ navigation, route }: Props) {
   // Editable fields
   const [fullName, setFullName] = useState('');
   const [staffCode, setStaffCode] = useState('');
+  const [staffCodeError, setStaffCodeError] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [photoUri, setPhotoUri] = useState<Staff['photoUri'] | undefined>(undefined);
   const [photoSheetOpen, setPhotoSheetOpen] = useState(false);
@@ -169,15 +145,29 @@ export function StaffProfileScreen({ navigation, route }: Props) {
   const [pinError, setPinError] = useState('');
   const [pairingOpen, setPairingOpen] = useState(false);
   const [faceScanOpen, setFaceScanOpen] = useState(false);
+  const [faceScanTrigger, setFaceScanTrigger] = useState(0);
   const [faceBusy, setFaceBusy] = useState(false);
   const [adminPinVisible, setAdminPinVisible] = useState(false);
   const [personalPinVisible, setPersonalPinVisible] = useState(false);
 
-  // Hide the header back button (and swipe-back) while editing
-  useLayoutEffect(() => {
+  // Keep the standard header back button available while editing, but make
+  // it close the editor instead of leaving the screen.
+  useEffect(() => {
     navigation.setOptions({
-      headerBackVisible: !editing,
-      headerLeft: editing ? () => null : undefined,
+      headerBackVisible: true,
+      headerLeft: editing
+        ? () => (
+            <Pressable
+              onPress={() => setEditing(false)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Back to profile"
+              style={({ pressed }) => [{ paddingHorizontal: 6, paddingVertical: 6 }, pressed && { opacity: 0.55 }]}
+            >
+              <Ionicons name="chevron-back" size={22} color={colors.primary} />
+            </Pressable>
+          )
+        : undefined,
       gestureEnabled: !editing,
     });
   }, [navigation, editing]);
@@ -227,6 +217,19 @@ export function StaffProfileScreen({ navigation, route }: Props) {
         throw new Error('The scan could not be converted into a face signature.');
       }
       const signature = serializeFaceEmbedding(liveEmbedding);
+
+      // Guard against re-registering a face that already belongs to another
+      // staff member, mirroring the registration flow.
+      const duplicate = await findDuplicateFace(signature, staffId, keptEmbeddings);
+      if (duplicate) {
+        alert({
+          tone: 'warning',
+          title: 'Face already registered',
+          message: `This face is already registered under ${duplicate.staff.fullName} (${duplicate.staff.staffCode}).`,
+        });
+        return;
+      }
+
       setStaffPhotoAndFaceSignature(staffId, frames[0] ?? null, signature);
       if (keptEmbeddings.length > 0) {
         setStaffFaceEmbeddings(staffId, keptEmbeddings);
@@ -249,7 +252,7 @@ export function StaffProfileScreen({ navigation, route }: Props) {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!staff || !staffId) return;
 
     if (!fullName.trim()) {
@@ -261,53 +264,38 @@ export function StaffProfileScreen({ navigation, route }: Props) {
       return;
     }
 
-    confirm({
-      tone: 'success',
-      icon: 'checkmark-circle',
-      title: 'Save changes?',
-      message: 'This will save the updated staff details. Continue?',
-      confirmLabel: 'Save',
-      cancelLabel: 'Cancel',
-      onConfirm: async () => {
-        setSaving(true);
-        try {
-          const normalizedCode = staffCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
-          if (
-            normalizedCode &&
-            normalizedCode.length !== STAFF_CODE_MAX_LENGTH
-          ) {
-            alert({
-              tone: 'warning',
-              title: 'Invalid staff code',
-              message: `Use exactly ${STAFF_CODE_MAX_LENGTH} letters or numbers, or clear the field to generate a new one.`,
-            });
-            setSaving(false);
-            return;
-          }
-          updateStaff(staffId, {
-            fullName: fullName.trim(),
-            staffCode: normalizedCode || undefined,
-            photoUri: photoUri ?? null,
-            faceSignature: staff.faceSignature,
-          });
-          setStaff(getStaffById(staffId) ?? null);
-          setEditing(false);
-          alert({
-            tone: 'success',
-            title: 'Staff updated',
-            message: `${fullName.trim()}'s details have been saved.`,
-          });
-        } catch (error) {
-          alert({
-            tone: 'danger',
-            title: 'Could not save staff member',
-            message: error instanceof Error ? error.message : 'Please try again.',
-          });
-        } finally {
-          setSaving(false);
-        }
-      },
-    });
+    setSaving(true);
+    try {
+      const normalizedCode = staffCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!normalizedCode) {
+        setStaffCodeError('Staff code cannot be empty.');
+        setSaving(false);
+        return;
+      }
+      if (!/^[A-Z][0-9]$/.test(normalizedCode)) {
+        setStaffCodeError(
+          'Staff code must be exactly one letter followed by one number.',
+        );
+        setSaving(false);
+        return;
+      }
+      updateStaff(staffId, {
+        fullName: fullName.trim(),
+        staffCode: normalizedCode,
+        photoUri: photoUri ?? null,
+        faceSignature: staff.faceSignature,
+      });
+      setStaff(getStaffById(staffId) ?? null);
+      setEditing(false);
+    } catch (error) {
+      alert({
+        tone: 'danger',
+        title: 'Could not save staff member',
+        message: error instanceof Error ? error.message : 'Please try again.',
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const openPinSheet = () => {
@@ -556,80 +544,84 @@ export function StaffProfileScreen({ navigation, route }: Props) {
                     </View>
                   </View>
                 </View>
-              </View>
-
-              {/* ===== VIEW MODE: DETAILS ===== */}
-              <Text style={[styles.sectionTitle, styles.sectionTitleTight]}>
-                Details
-              </Text>
-              <View style={styles.card}>
-                <InfoRow icon="scan-outline" label="Face profile" compact>
-                  <Badge
-                    label={staff.faceSignature ? 'Enrolled' : 'Not enrolled'}
-                    tone={staff.faceSignature ? 'success' : 'neutral'}
-                  />
-                </InfoRow>
-                <InfoRow icon="key-outline" label="Fallback PIN" compact>
-                  <Badge
-                    label={staff.staffPinHash ? 'Set' : 'Not set'}
-                    tone={staff.staffPinHash ? 'success' : 'neutral'}
-                  />
-                </InfoRow>
-                {staff.requiresPin ? (
-                  <InfoRow icon="key-outline" label="Personal PIN" compact last>
-                    <Badge
-                      label={staff.personalPinHash ? 'Set' : 'Not set'}
-                      tone={staff.personalPinHash ? 'success' : 'neutral'}
-                    />
-                  </InfoRow>
-                ) : null}
-
-              </View>
-
-              {/* ===== VIEW MODE: PRIMARY ACTION ===== */}
-              <View style={styles.primaryAction}>
-                <AppButton
-                  title="Edit profile"
+                <Pressable
                   onPress={() => setEditing(true)}
-                  icon={
-                    <Ionicons name="create-outline" size={18} color="#FFFFFF" />
-                  }
-                />
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit profile"
+                  style={({ pressed }) => [
+                    styles.editPill,
+                    pressed && styles.editPillPressed,
+                  ]}
+                >
+                  <Ionicons name="create-outline" size={16} color={colors.slate700} />
+                  <Text style={styles.editPillText}>Edit</Text>
+                </Pressable>
               </View>
 
-              {/* ===== VIEW MODE: MANAGE ACCESS ===== */}
+              {/* ===== VIEW MODE: SIGN-IN METHODS ===== */}
               <Text style={[styles.sectionTitle, styles.sectionTitleTight]}>
-                Manage access
+                Sign-in methods
               </Text>
               <View style={styles.card}>
-                <ActionRow
-                  compact
-                  icon="key-outline"
-                  title={staff.staffPinHash ? 'Change fallback PIN' : 'Add fallback PIN'}
-                  onPress={openPinSheet}
-                />
                 <ActionRow
                   compact
                   icon="scan-outline"
-                  title="Update face scan"
-                  subtitle="Rescan face for appearance changes"
-                  onPress={() => setFaceScanOpen(true)}
+                  title="Face scan"
+                  subtitle={
+                    staff.faceSignature
+                      ? 'Rescan if appearance changes'
+                      : 'Scan to enable face sign-in'
+                  }
+                  badge={{
+                    label: staff.faceSignature ? 'Enrolled' : 'Not enrolled',
+                    tone: staff.faceSignature ? 'success' : 'neutral',
+                  }}
+                  onPress={() => {
+                    setFaceScanTrigger(0);
+                    setFaceScanOpen(true);
+                  }}
+                />
+                <ActionRow
+                  compact
+                  icon="key-outline"
+                  title="Fallback PIN"
+                  subtitle="Used when face scan fails"
+                  badge={{
+                    label: staff.staffPinHash ? 'Set' : 'Not set',
+                    tone: staff.staffPinHash ? 'success' : 'neutral',
+                  }}
+                  onPress={openPinSheet}
+                  last={!staff.requiresPin}
                 />
                 {staff.requiresPin ? (
                   <ActionRow
                     compact
-                    icon="key-outline"
-                    title="Reset personal PIN"
-                    subtitle="Change the look-alike PIN"
+                    icon="shield-checkmark-outline"
+                    title="Personal PIN"
+                    subtitle="Look-alike PIN"
+                    badge={{
+                      label: staff.personalPinHash ? 'Set' : 'Not set',
+                      tone: staff.personalPinHash ? 'success' : 'neutral',
+                    }}
                     onPress={() => setAdminPinVisible(true)}
+                    last
                   />
                 ) : null}
+              </View>
 
+              {/* ===== VIEW MODE: ACCOUNT ===== */}
+              <Text style={styles.sectionTitle}>Account</Text>
+              <View style={styles.card}>
                 <ActionRow
                   compact
                   icon={isActive ? 'person-remove-outline' : 'person-add-outline'}
                   title={
                     isActive ? 'Deactivate staff member' : 'Reactivate staff member'
+                  }
+                  subtitle={
+                    isActive
+                      ? 'Hide from the kiosk. Records are kept.'
+                      : 'Show on the kiosk again.'
                   }
                   onPress={handleToggleActive}
                   danger={isActive}
@@ -638,6 +630,7 @@ export function StaffProfileScreen({ navigation, route }: Props) {
                   compact
                   icon="trash-outline"
                   title="Delete staff profile"
+                  subtitle="Permanently removes face data and photos"
                   onPress={handleDeleteStaff}
                   danger
                   last
@@ -648,13 +641,21 @@ export function StaffProfileScreen({ navigation, route }: Props) {
             <>
               {/* ===== EDIT MODE: COMPACT HEADER ===== */}
               <View style={styles.editHeader}>
-                <View style={styles.editAvatarWrap}>
+                <Pressable
+                  onPress={() => setPhotoSheetOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Change profile photo"
+                  style={styles.editAvatarWrap}
+                >
                   <Avatar
                     name={fullName || staff.fullName}
                     photoUri={photoUri ?? null}
                     size={88}
                   />
-                </View>
+                  <View style={styles.cameraBadge}>
+                    <Ionicons name="camera" size={14} color={colors.white} />
+                  </View>
+                </Pressable>
                 <View style={styles.editHeaderText}>
                   <Text style={styles.editTitle}>Editing profile</Text>
                   <Text style={styles.editSubtitle} numberOfLines={1}>
@@ -678,27 +679,25 @@ export function StaffProfileScreen({ navigation, route }: Props) {
                 <TextField
                   label="Staff code"
                   value={staffCode}
-                  onChangeText={setStaffCode}
+                  onChangeText={(value: string) => {
+                    setStaffCode(value);
+                    setStaffCodeError('');
+                  }}
                   autoCapitalize="characters"
                   maxLength={STAFF_CODE_MAX_LENGTH}
                 />
                 <Text style={styles.helperText}>
-                  Exactly two letters or numbers. Leave blank to generate a new
-                  code. Used to look this person up at the kiosk.
+                  Should be a letter followed by a number (e.g. A1). Used to look
+                  this person up at the kiosk.
                 </Text>
+                {staffCodeError ? (
+                  <Text style={styles.fieldError}>{staffCodeError}</Text>
+                ) : null}
               </View>
 
               {/* ===== EDIT MODE: FOOTER ACTIONS ===== */}
               <View style={styles.editFooter}>
-                <View style={styles.footerButton}>
-                  <AppButton
-                    title="Cancel"
-                    variant="ghost"
-                    onPress={handleCancelEdit}
-                    disabled={saving}
-                  />
-                </View>
-                <View style={styles.footerButton}>
+                <View style={[styles.footerButton, { flex: 1 }]}>
                   <AppButton
                     title="Save changes"
                     onPress={handleSave}
@@ -864,7 +863,18 @@ export function StaffProfileScreen({ navigation, route }: Props) {
       >
         <View style={styles.faceScanOverlay}>
           <View style={styles.faceScanCard}>
-            <Text style={styles.editTitle}>Update face scan</Text>
+            <View style={styles.faceScanHeader}>
+              <Text style={styles.editTitle}>Update face scan</Text>
+              <Pressable
+                onPress={() => setFaceScanOpen(false)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+                style={styles.faceScanClose}
+              >
+                <Ionicons name="close" size={22} color={colors.slate700} />
+              </Pressable>
+            </View>
             <Text style={styles.editSubtitle}>
               {staff?.fullName}
             </Text>
@@ -872,6 +882,8 @@ export function StaffProfileScreen({ navigation, route }: Props) {
               busy={faceBusy}
               profileCount={1}
               engineAvailable={null}
+              showCameraFlip
+              triggerScan={faceScanTrigger}
               onScanStart={() => {}}
               onScanEnd={() => {}}
               onScanned={(frames, embedding) =>
@@ -879,9 +891,9 @@ export function StaffProfileScreen({ navigation, route }: Props) {
               }
             />
             <AppButton
-              title="Close"
-              onPress={() => setFaceScanOpen(false)}
-              variant="ghost"
+              title="Scan face"
+              onPress={() => setFaceScanTrigger((value) => value + 1)}
+              disabled={faceBusy}
               style={styles.pinButtons}
             />
           </View>
@@ -1020,31 +1032,21 @@ const styles = StyleSheet.create({
   rowIconWrapPrimary: { backgroundColor: 'rgba(100,116,139,0.12)' },
   rowIconWrapDanger: { backgroundColor: 'rgba(220,38,38,0.1)' },
 
-  /* Info rows */
-  infoRow: {
+  /* Edit pill (profile header) */
+  editPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: 6,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(100,116,139,0.12)',
   },
-  infoLabel: {
-    flex: 1,
-    fontSize: fontSize.md,
-    color: colors.slate500,
-  },
-  infoValueWrap: {
-    alignItems: 'flex-end',
-  },
-  infoValue: {
-    fontSize: fontSize.md,
+  editPillPressed: { opacity: 0.7 },
+  editPillText: {
+    fontSize: fontSize.sm,
     fontWeight: '700',
-    color: colors.slate900,
-  },
-
-  /* Primary action */
-  primaryAction: {
-    marginTop: spacing.lg,
+    color: colors.slate700,
   },
 
   /* Action rows */
@@ -1132,6 +1134,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.danger,
   },
+  faceScanHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  faceScanClose: {
+    padding: spacing.xs,
+  },
   pinButtons: {
     marginTop: spacing.lg,
     flexDirection: 'row',
@@ -1158,6 +1169,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     fontSize: fontSize.sm,
     color: colors.slate500,
+  },
+  fieldError: {
+    marginTop: spacing.xs,
+    fontSize: fontSize.sm,
+    color: colors.danger,
+    fontWeight: '600',
   },
   editFooter: {
     marginTop: spacing.xl,
